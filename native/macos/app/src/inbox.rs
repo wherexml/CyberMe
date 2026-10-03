@@ -108,6 +108,8 @@ pub struct InboxView {
     auto_saver: Saver<BTreeMap<String, String>>,
     auto_attempted: BTreeMap<String, String>,
     auto_checking: bool,
+    auto_visibility_generation: u64,
+    auto_preparations: BTreeMap<String, (u64, u64)>,
     source_history: Option<Vec<serde_json::Value>>,
     source_offset: u64,
     source_more: bool,
@@ -178,7 +180,10 @@ impl InboxView {
         );
         let draft_requests: BTreeMap<String, String> = store.load("inbox-requests.json");
         let request_saver = Saver::new(store.clone(), "inbox-requests.json");
-        let auto_attempted = store.load("inbox-auto-attempts.json");
+        let mut auto_attempted: BTreeMap<String, String> = store.load("inbox-auto-attempts.json");
+        // A marker without a durable request cannot represent a submitted
+        // generation. Recover a quit/crash between preparation and submission.
+        auto_attempted.retain(|id, _| draft_requests.contains_key(id));
         let auto_saver = Saver::new(store.clone(), "inbox-auto-attempts.json");
         let saver = Saver::new(store, opstwin_store::INBOX_FILE);
         let search =
@@ -230,6 +235,8 @@ impl InboxView {
             auto_saver,
             auto_attempted,
             auto_checking: false,
+            auto_visibility_generation: 0,
+            auto_preparations: BTreeMap::new(),
             source_history: None,
             source_offset: 0,
             source_more: false,
@@ -278,6 +285,17 @@ impl InboxView {
     }
 
     pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
+        if self.visible != visible {
+            self.auto_visibility_generation += 1;
+            self.auto_checking = false;
+            self.stale = true;
+            if !visible {
+                self.auto_preparations.clear();
+                self.auto_attempted
+                    .retain(|id, _| self.draft_requests.contains_key(id));
+                self.auto_saver.save(self.auto_attempted.clone());
+            }
+        }
         self.visible = visible;
         if visible && self.stale {
             // No window here; `render` performs the deferred reload.
@@ -288,6 +306,9 @@ impl InboxView {
     pub fn persist_blocking(&self) {
         self.saver.save_blocking(&self.state);
         self.request_saver.save_blocking(&self.draft_requests);
+        let mut submitted_attempts = self.auto_attempted.clone();
+        submitted_attempts.retain(|id, _| self.draft_requests.contains_key(id));
+        self.auto_saver.save_blocking(&submitted_attempts);
     }
 
     fn on_server_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -298,6 +319,10 @@ impl InboxView {
         self._debounce = Some(cx.spawn_in(window, async move |this, cx| {
             sleep(400).await;
             _ = this.update_in(cx, |this, window, cx| {
+                if !this.visible {
+                    this.stale = true;
+                    return;
+                }
                 this.refresh_list(window, cx);
                 this.reload_detail(window, cx);
             });
@@ -512,7 +537,8 @@ impl InboxView {
         cx: &mut Context<Self>,
     ) {
         let id = product.item.id.clone();
-        if self.busy.is_some()
+        if !self.visible
+            || self.busy.is_some()
             || self.auto_checking
             || self.is_dirty(cx)
             || self.editing
@@ -526,11 +552,16 @@ impl InboxView {
         let client = self.client.clone();
         let version = product.item.updated_at.clone();
         let generation = self.detail_gen;
+        let visibility_generation = self.auto_visibility_generation;
         self._tasks.push(cx.spawn_in(window, async move |this, cx| {
             let allowed = io(async move { client.inbox_auto_draft_allowed(&product).await }).await;
             let mut durable = None;
             _ = this.update_in(cx, |this, _, cx| {
-                if this.detail_gen != generation || this.selected.as_deref() != Some(id.as_str()) {
+                if !this.visible
+                    || this.auto_visibility_generation != visibility_generation
+                    || this.detail_gen != generation
+                    || this.selected.as_deref() != Some(id.as_str())
+                {
                     return;
                 }
                 this.auto_checking = false;
@@ -547,6 +578,8 @@ impl InboxView {
                 }
                 this.auto_attempted
                     .insert(id.clone(), version.clone().unwrap_or_default());
+                this.auto_preparations
+                    .insert(id.clone(), (generation, visibility_generation));
                 durable = Some(this.auto_saver.save_now(this.auto_attempted.clone()));
             });
             let Some(durable) = durable else {
@@ -554,20 +587,70 @@ impl InboxView {
             };
             let saved = io(durable).await;
             _ = this.update_in(cx, |this, window, cx| {
-                if this.detail_gen != generation || this.selected.as_deref() != Some(id.as_str()) {
+                if !this.visible
+                    || this.auto_visibility_generation != visibility_generation
+                    || this.detail_gen != generation
+                    || this.selected.as_deref() != Some(id.as_str())
+                {
+                    if this.discard_unstarted_auto_attempt(
+                        &id,
+                        &version,
+                        generation,
+                        visibility_generation,
+                    ) && this.visible
+                        && this.selected.as_deref() == Some(id.as_str())
+                    {
+                        this.stale = true;
+                        cx.notify();
+                    }
                     return;
                 }
                 if let Err(error) = saved {
+                    this.discard_unstarted_auto_attempt(
+                        &id,
+                        &version,
+                        generation,
+                        visibility_generation,
+                    );
                     this.action_error = Some(
                         crate::settings::t("无法保存自动起草状态，未运行：{error}")
                             .replace("{error}", &error),
                     );
                 } else if this.busy.is_none() && !this.is_dirty(cx) && !this.editing {
+                    this.auto_preparations.remove(&id);
                     this.generate_draft(window, cx);
+                } else {
+                    this.discard_unstarted_auto_attempt(
+                        &id,
+                        &version,
+                        generation,
+                        visibility_generation,
+                    );
                 }
                 cx.notify();
             });
         }));
+    }
+
+    fn discard_unstarted_auto_attempt(
+        &mut self,
+        id: &str,
+        version: &Option<String>,
+        generation: u64,
+        visibility_generation: u64,
+    ) -> bool {
+        if self.auto_preparations.get(id) == Some(&(generation, visibility_generation))
+            && !self.draft_requests.contains_key(id)
+            && self.auto_attempted.get(id).map(String::as_str)
+                == Some(version.as_deref().unwrap_or_default())
+        {
+            self.auto_attempted.remove(id);
+            self.auto_preparations.remove(id);
+            self.auto_saver.save(self.auto_attempted.clone());
+            true
+        } else {
+            false
+        }
     }
 
     fn load_source_history(&mut self, older: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -3303,6 +3386,10 @@ impl Render for InboxView {
             let handle = cx.entity().downgrade();
             window.defer(cx, move |window, cx| {
                 _ = handle.update(cx, |this, cx| {
+                    if !this.visible {
+                        this.stale = true;
+                        return;
+                    }
                     this.refresh_list(window, cx);
                     this.reload_detail(window, cx);
                 });
