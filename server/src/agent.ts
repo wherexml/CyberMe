@@ -1,3 +1,4 @@
+import {privatePath} from './private-paths';
 import {needsInboxAttention} from '../../shared/inbox-surfacing';
 import {inboxSources,changeInboxSourceFromChat} from './inbox-source-rules';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -14,7 +15,7 @@ import {applicationActions,actionWrites,capabilityCatalog,executeApplicationActi
 import {queryInbox,inboxSummary,bulkInboxStatus} from './inbox-operations';
 import {completedAgentWrites} from './agent-effects';
 
-export function llmConfig() {const file=join(ROOT,'.local/config.json');if(!existsSync(file))return undefined;let config;try{config=JSON.parse(readFileSync(file,'utf8'));}catch{throw new ApiError(503,'invalid_llm_config','服务端 AI 配置格式无效');}const llm=config.llm||config;if(!llm.apiKey||!llm.baseUrl)return undefined;registerSecret(llm.apiKey);registerSecret(llm.deepApiKey);return llm as {apiKey:string;baseUrl:string;model?:string;deepModel?:string;api?:string;deepBaseUrl?:string;deepApiKey?:string;deepApi?:string;deepGatewayCompatibility?:'claude-code';gatewayCompatibility?:'claude-code'};}
+export function llmConfig() {const file=privatePath('config.json');if(!existsSync(file))return undefined;let config;try{config=JSON.parse(readFileSync(file,'utf8'));}catch{throw new ApiError(503,'invalid_llm_config','服务端 AI 配置格式无效');}const llm=config.llm||config;if(!llm.apiKey||!llm.baseUrl)return undefined;registerSecret(llm.apiKey);registerSecret(llm.deepApiKey);return llm as {apiKey:string;baseUrl:string;model?:string;deepModel?:string;api?:string;deepBaseUrl?:string;deepApiKey?:string;deepApi?:string;deepGatewayCompatibility?:'claude-code';gatewayCompatibility?:'claude-code'};}
 function credentialMemory() {const values=new Map();return {read:async(provider:string)=>values.get(provider),list:async()=>[],modify:async(provider:string,fn:any)=>{const value=await fn(values.get(provider));if(value)values.set(provider,value);else values.delete(provider);return value;},delete:async(provider:string)=>{values.delete(provider);}};}
 function toolResult(value:unknown) {return {content:[{type:'text' as const,text:JSON.stringify(value)}],details:publicValue(value)};}
 const objectSchema=(properties:Record<string,any>,required:string[]=[])=>({type:'object',properties,required,additionalProperties:false}) as any;

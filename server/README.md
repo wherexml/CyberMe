@@ -44,3 +44,5 @@ Inbox 草稿只生成正文，已移除关键词／偏好触发的自动 PDF 与
 HTML Chat 接入：`chat-status.ts` 只读请求回查，`scripts/macos-study-chat-bridge.mjs` 固定46114、私有capability、限定路径；API Origin 白名单保持。参见[执行契约](../docs/design/idea-chat-judgment-contract.md)。
 
 HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 桥接提供限定 sessions 路由；主会话指针保持逻辑见 [Backend](../docs/spec/backend.md)。面板管理数据仍保存在设计稿浏览器中。
+
+设置复杂验收可通过服务端进程环境 `OPSTWIN_PRIVATE_DIR` 隔离本项目 `.local` 内的模型/语音配置及加密Bot绑定；默认路径保持。该变量不经HTTP/Agent输入，禁止越界及悬空链接。可重复真实模型/保存/重启脚本 `node scripts/native-private-runtime-http-e2e.mjs` 默认46214，也可设置 `OPSTWIN_PRIVATE_RUNTIME_PORT=46215`，拒绝占用端口；私有副本只留服务端0700/0600路径，产物不含凭据。规格和实际21项证据见[私有运行配置](../docs/spec/private-runtime.md)。

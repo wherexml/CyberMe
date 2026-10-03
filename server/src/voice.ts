@@ -1,3 +1,4 @@
+import {privatePath} from './private-paths';
 import {existsSync,readFileSync} from 'node:fs';
 import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -6,7 +7,7 @@ import {ROOT,DATA,beginRun,updateRun,now,registerSecret,publicValue} from './sto
 import {ApiError,command} from './integrations';
 
 function configuration(){
- const file=join(ROOT,'.local/config.json');let value;try{value=existsSync(file)?JSON.parse(readFileSync(file,'utf8')).voice:undefined;}catch{throw new ApiError(503,'voice_config_invalid','服务端语音配置格式无效');}
+ const file=privatePath('config.json');let value;try{value=existsSync(file)?JSON.parse(readFileSync(file,'utf8')).voice:undefined;}catch{throw new ApiError(503,'voice_config_invalid','服务端语音配置格式无效');}
  if(value?.provider==='doubao'){if(typeof value.apiKey!=='string'||!value.apiKey.trim())throw new ApiError(503,'voice_setup_required','服务端尚未配置豆包语音凭据');registerSecret(value.apiKey);return {provider:'Doubao',engine:'doubao',apiKey:value.apiKey,model:'volc.bigasr.auc_turbo',endpoint:'https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash',ffmpeg:'/opt/homebrew/bin/ffmpeg',ffprobe:'/opt/homebrew/bin/ffprobe'};}
  if(!value?.endpoint)return undefined;
  let endpoint:URL;try{endpoint=new URL(value.endpoint);}catch{throw new ApiError(503,'voice_config_invalid','语音服务地址无效');}

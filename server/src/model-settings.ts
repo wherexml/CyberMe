@@ -1,13 +1,14 @@
+import {privatePath} from './private-paths';
 import {existsSync, readFileSync, writeFileSync, renameSync, unlinkSync, statSync} from 'node:fs';
-import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {ROOT, registerSecret} from './store';
+import {registerSecret} from './store';
 import {ApiError} from './integrations';
 import type {ModelSettings, ModelSelection} from '../../shared/model-settings';
 
 type Provider = {id:string; baseUrl:string; apiKey:string; api:string; compatibility?:string};
-const file = join(ROOT, '.local/config.json');
+const file = privatePath('config.json');
 function read() {
+  privatePath('config.json');
   if (!existsSync(file)) throw new ApiError(503,'llm_setup_required','请先在本机服务端配置模型渠道。 / Configure a model provider on this server first.');
   let root:any;
   try { root=JSON.parse(readFileSync(file,'utf8')); } catch { throw new ApiError(503,'invalid_llm_config','模型配置文件无效。 / Invalid model configuration.'); }

@@ -2,18 +2,18 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import QRCode from 'qrcode';
-import { ROOT } from './store';
+import { privatePath } from './private-paths';
 import { ApiError } from './integrations';
 
 // PersonalAgent registration, following OptiONE registration.go. Never store bot
 // credentials in connection entities or expose them through the bootstrap API.
-const dir=join(ROOT,'.local','feishu-binding');
+const dir=privatePath('feishu-binding');
 const file=join(dir,'registration.enc');
 const domains=['https://accounts.feishu.cn','https://accounts.larksuite.com'];
 type State={status:'pending'|'bound'|'expired'|'denied'|'error';deviceCode?:string;url?:string;domain:string;expiresAt:number;interval:number;nextPoll:number;clientId?:string;clientSecret?:string;openId?:string;message?:string};
-function key(){mkdirSync(dir,{recursive:true,mode:0o700});const path=join(dir,'key');if(!existsSync(path))writeFileSync(path,randomBytes(32),{mode:0o600,flag:'wx'});return readFileSync(path);}
-function save(s:State){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key(),iv);const encrypted=Buffer.concat([cipher.update(JSON.stringify(s),'utf8'),cipher.final()]);writeFileSync(file+'.tmp',Buffer.concat([iv,cipher.getAuthTag(),encrypted]),{mode:0o600});renameSync(file+'.tmp',file);}
-function load():State|undefined{if(!existsSync(file))return;const b=readFileSync(file),cipher=createDecipheriv('aes-256-gcm',key(),b.subarray(0,12));cipher.setAuthTag(b.subarray(12,28));return JSON.parse(Buffer.concat([cipher.update(b.subarray(28)),cipher.final()]).toString());}
+function key(){privatePath('feishu-binding/key');mkdirSync(dir,{recursive:true,mode:0o700});const path=join(dir,'key');if(!existsSync(path))writeFileSync(path,randomBytes(32),{mode:0o600,flag:'wx'});return readFileSync(path);}
+function save(s:State){privatePath('feishu-binding/registration.enc');privatePath('feishu-binding/registration.enc.tmp');const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key(),iv);const encrypted=Buffer.concat([cipher.update(JSON.stringify(s),'utf8'),cipher.final()]);writeFileSync(file+'.tmp',Buffer.concat([iv,cipher.getAuthTag(),encrypted]),{mode:0o600});renameSync(file+'.tmp',file);}
+function load():State|undefined{privatePath('feishu-binding/registration.enc');if(!existsSync(file))return;const b=readFileSync(file),cipher=createDecipheriv('aes-256-gcm',key(),b.subarray(0,12));cipher.setAuthTag(b.subarray(12,28));return JSON.parse(Buffer.concat([cipher.update(b.subarray(28)),cipher.final()]).toString());}
 async function call(domain:string,values:Record<string,string>){try{const response=await fetch(domain+'/oauth/v1/app/registration',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(values),signal:AbortSignal.timeout(15000)});const result=await response.json() as any;if(!response.ok&&!['authorization_pending','slow_down','access_denied','expired_token'].includes(result.error))throw new Error();return result;}catch{throw new ApiError(502,'feishu_unavailable','飞书授权服务暂时无法访问，请重试');}}
 async function view(s?:State){return s?{status:s.status,expiresAt:s.expiresAt,interval:s.interval,message:s.message,...(s.status==='pending'?{url:s.url,qr:await QRCode.toDataURL(s.url!,{width:320,margin:2,errorCorrectionLevel:'M'})}:{}),...(s.status==='bound'?{message:'Bot 已绑定；消息接收与自动回复尚未接入'}:{})}:{status:'unbound'};}
 let flight:Promise<any>|undefined;
