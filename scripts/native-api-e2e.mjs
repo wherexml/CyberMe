@@ -82,6 +82,37 @@ const missing=await req('/api/conversations/conversation-does-not-exist/messages
 check('unknown conversation → 404',missing.status===404&&missing.body?.error==='not_found',`status=${missing.status}`);
 check('no secret-looking keys in page',!JSON.stringify(max.body).match(/"(apiKey|accessToken|diskPath|password|secret|token)"/));
 
+// --- M0: keyset pagination vs. full-scan reference (bootstrap messages, rowid order, stable sort by createdAt)
+{
+  const top3=[...byConv.entries()].sort((a,b)=>b[1].length-a[1].length).slice(0,3);
+  const lat=[];
+  const timed=async path=>{const t=performance.now();const r=await req(path);lat.push(performance.now()-t);return r;};
+  const refOf=msgs=>msgs.map((m,i)=>({m,i})).sort((a,b)=>{const x=String(a.m.createdAt??''),y=String(b.m.createdAt??'');return x<y?-1:x>y?1:a.i-b.i;}).map(e=>e.m.id);
+  // Reference page for (before,limit) computed exactly like the pre-M0 full-scan implementation.
+  const refPage=(ref,before,limit)=>{const end=before===undefined?ref.length:ref.indexOf(before);const start=Math.max(0,end-limit);const items=ref.slice(start,end);const hasMore=start>0;return {items,hasMore,nextBefore:hasMore&&items.length?items[0]:null};};
+  const same=(r,e)=>r.status===200&&JSON.stringify(r.body.items.map(m=>m.id))===JSON.stringify(e.items)&&r.body.hasMore===e.hasMore&&r.body.nextBefore===e.nextBefore;
+  for(const [id,msgs] of top3){
+    const ref=refOf(msgs);
+    for(const limit of [1,7,50,200]){
+      let before;let pages=0;let mismatch=0;let seen=0;
+      for(;;){const q=new URLSearchParams({limit:String(limit)});if(before)q.set('before',before);
+        const r=await timed(`/api/conversations/${encodeURIComponent(id)}/messages?${q}`);const e=refPage(ref,before,limit);pages++;
+        if(!same(r,e)){mismatch++;break;}seen+=e.items.length;if(!e.hasMore)break;before=e.nextBefore;if(pages>1000)break;}
+      check(`M0 keyset == full-scan reference conv=${id} limit=${limit}`,mismatch===0&&seen===ref.length,`total=${ref.length} seen=${seen} pages=${pages} mismatch=${mismatch}`);
+    }
+    // Arbitrary anchors (not only page boundaries): first, middle, last, and every 9th message.
+    const anchors=[...new Set([0,Math.floor(ref.length/2),ref.length-1,...ref.map((_,i)=>i).filter(i=>i%9===4)])];
+    let bad=0;
+    for(const ai of anchors){const limit=[3,10,50][ai%3];const r=await timed(`/api/conversations/${encodeURIComponent(id)}/messages?limit=${limit}&before=${encodeURIComponent(ref[ai])}`);if(!same(r,refPage(ref,ref[ai],limit)))bad++;}
+    check(`M0 arbitrary before anchors conv=${id}`,bad===0,`anchors=${anchors.length} mismatch=${bad}`);
+  }
+  const deletedCheck=await req(`/api/conversations/${encodeURIComponent(top3[0][0])}/messages?limit=200`);
+  check('M0 page excludes foreign/deleted rows',deletedCheck.body.items.every(m=>m.conversationId===top3[0][0]&&byConv.get(top3[0][0]).some(x=>x.id===m.id)),`items=${deletedCheck.body.items.length}`);
+  const sorted=[...lat].sort((a,b)=>a-b);const pct=p=>sorted[Math.min(sorted.length-1,Math.ceil(p/100*sorted.length)-1)];
+  console.log(`# M0 page latency  requests=${sorted.length} p50=${pct(50).toFixed(2)}ms p95=${pct(95).toFixed(2)}ms max=${sorted.at(-1).toFixed(2)}ms convSizes=${top3.map(([id,m])=>`${id}:${m.length}`).join(',')}`);
+  check('M0 page p95 < 100ms',pct(95)<100,`p95=${pct(95).toFixed(2)}ms`);
+}
+
 // --- S2: SSE
 const sse=openSSE();const res=await sse.ready;
 check('SSE content-type',String(res.headers['content-type']).startsWith('text/event-stream'),`status=${res.statusCode} ct=${res.headers['content-type']}`);
