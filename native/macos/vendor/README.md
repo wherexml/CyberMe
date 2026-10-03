@@ -14,3 +14,9 @@
 GUI、帧间隔、输入延迟与真实 SQL 压测分别记录。禁止将强制重绘样本或只读合成历史等同真实数据库吞吐。
 
 当前 CUA 截图环境会把仍能截图的窗口报告为 occluded。以可见性阻止 demand 会丢掉 dirty latch 的首个唤醒，所以按状态变化唤醒不受 occlusion 限制；闲置窗口不新增持续刷新。真实 v8 截图在不执行 zoom 的情况下立即展示页面切换和异步图标。
+
+## v13 导航键与文本间距
+
+`window.rs`增加非组合且ASCII输入源下escape/up/down先交GPUI；未处理时清除doCommand的重复派发状态再走原AppKit fallback。活动IME输入源或marked text保留原路由，不能因没有marked text而吞掉候选导航。`OPSTWIN_KEY_TRACE`只记导航键与路由布尔值。实际v13搜索/菜单/录音Escape及Shift-F10重开子范围通过；中文候选仍须当前包实际验收。
+
+`gpui-base/src/text/style.rs`新增可选list_block_gap，默认None沿用原paragraph gap；`node.rs`只在列表块外间距消费。Chat显式8px列表块间距，列表项4px、普通paragraph10px与其它页默认保持。对应标题margin与HTML一致，完整像素对比另由独立评分记录。上文“仅两个源文件”指原帧唤醒批次，不指后续所有补丁。

@@ -14,6 +14,7 @@ crates/opstwin-api/     reqwest(rustls,multipart)+tokio+serde；SSE 行解析；
 crates/opstwin-store/   本地 JSON 状态（原子写 tmp+fsync+rename，0600/0700）
 app/src/main.rs         启动、菜单、窗口位置恢复
 app/src/shell.rs        78pt SVG 图标导航、Cmd+1/2/3/4、Cmd+K、Cmd+,、上次页面与窗口尺寸持久化
+app/src/backdrop.rs     仅搜索背景的CoreAnimation滤镜及panel排除mask，关闭/换页/销毁清理
 app/src/sync.rs         共享变更信号（SSE / health 轮询），各页面订阅
 app/src/chat.rs         对话：历史分页、发送/重试、附件上传与下载
 app/src/inbox.rs        收件箱：列表/筛选/搜索/分页、详情、草稿编辑与冲突、生成草稿、完成/忽略、本人测试项发送与撤回
@@ -65,6 +66,8 @@ cargo build --release --locked  # 产物 target/release/opstwin
 | `OPSTWIN_DATA_DIR` | `~/Library/Application Support/OpsTwin` | 本地状态目录；设置后附件缓存也改到 `$OPSTWIN_DATA_DIR/cache/files`（QA 隔离用，如 `/tmp/opstwin-qa`） |
 
 日志写 stderr，只含 requestId、条数、错误码，不含消息正文或凭据。
+
+`OPSTWIN_KEY_TRACE=1`仅用于隔离键盘定位：输出escape/up/down键名及组合/IME/路由布尔值，不输出可打印文本。实际中文候选须单独验证，不能由英文导航路由推断通过。
 
 ## 行为约定
 
@@ -142,3 +145,7 @@ Tokio timer 必须在 `runtime::io(async move { ... })` 内构造；在 GPUI 前
 `settings-permissions.swift`经bundle脚本编译为`Contents/MacOS/opstwin-settings-permissions`。Settings仅执行同目录helper，读取AVCaptureDevice麦克风与AX辅助功能状态；异常/缺失为unknown，完整磁盘/应用文件读取许可仍unknown且disabled。helper不请求授权、不扫描私有TCC或钥匙串。权限归属由macOS当前应用责任链决定：独立终端helper结果只证明该执行上下文，不证明本地ad-hoc签名bundle已获权限；需从真实App点击刷新核验。ad-hoc不等于Developer ID或公证。
 
 新增自定义连接先把稳定`createId`原子保存到`settings-drafts.json`，回查原ID；404才`POST /api/connections`形成setup_required，再`POST /api/connections/:id/test`。重试复用原ID，已connected采用原结果；已创建但资料不同返回409并显示「读取原连接」，不再走无幂等ID的`/api/connections/test`重复生成。失败和未知保留表单，服务端真实检测成功前不显示已连接。
+
+v13尺寸/键盘恢复及版本化原失败见[恢复旅程](../../docs/journeys/native-ui-v12-recovery.md)：使用真实单行InputState外层padding获得Inbox31px/会话38px，而非单行无效h；侧会话统一单个PopupMenu owner和稳定行焦点；录音composer持续焦点在Textarea卸载期间接收Escape，取消/完成按generation恢复输入。三项真实GUI子范围通过，独立完整视觉评分与完整85项功能仍进行中。
+
+真实工作区 GUI 公开数据准备见[工作区旅程](../../docs/journeys/native-workspace-gui.md)，仅使用46214隔离服务；真实Agent本地写入后中断恢复见[partial旅程](../../docs/journeys/native-real-partial.md)，使用46218。不得将准备HTTP或真实partial恢复结果等同窗口交互通过。

@@ -3390,7 +3390,11 @@ impl BlockNode {
             } => div()
                 .w_full()
                 .min_w_0()
-                .pb(mb)
+                .pb(if options.in_list || options.is_last {
+                    rems(0.)
+                } else {
+                    node_cx.style.list_block_gap().unwrap_or(mb)
+                })
                 .children({
                     let mut items = Vec::with_capacity(children.len());
                     let mut item_index = 0;

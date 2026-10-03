@@ -21,6 +21,7 @@ pub struct TextViewStyle {
     paragraph_gap: Rems,
     list_prefix_width: Option<Pixels>,
     list_item_gap: Option<Pixels>,
+    list_block_gap: Option<Rems>,
     first_heading_flush: bool,
     strong_weight: FontWeight,
     heading: Arc<dyn Fn(u8) -> StyleRefinement + Send + Sync + 'static>,
@@ -36,6 +37,7 @@ impl PartialEq for TextViewStyle {
     fn eq(&self, other: &Self) -> bool {
         self.paragraph_gap == other.paragraph_gap
             && self.list_item_gap == other.list_item_gap
+            && self.list_block_gap == other.list_block_gap
             && self.first_heading_flush == other.first_heading_flush
             && self.list_prefix_width == other.list_prefix_width
             && self.strong_weight == other.strong_weight
@@ -86,6 +88,7 @@ impl TextViewStyle {
             paragraph_gap: rems(1.),
             list_prefix_width: None,
             list_item_gap: None,
+            list_block_gap: None,
             first_heading_flush: false,
             strong_weight: FontWeight::BOLD,
             heading: Arc::new(|_| StyleRefinement::default()),
@@ -158,6 +161,14 @@ impl TextViewStyle {
         self.list_item_gap = Some(gap);
         self
     }
+
+    /// Opt-in list block spacing; other documents retain paragraph spacing.
+    pub fn with_list_block_gap(mut self, gap: Rems) -> Self {
+        self.list_block_gap = Some(gap);
+        self
+    }
+
+    pub fn list_block_gap(&self) -> Option<Rems> { self.list_block_gap }
 
     pub fn list_item_gap(&self) -> Option<Pixels> {
         self.list_item_gap

@@ -4345,8 +4345,11 @@ fn status_label(s: &str) -> &str {
 }
 
 static LOCALE_EN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub fn is_english() -> bool {
+    LOCALE_EN.load(std::sync::atomic::Ordering::Relaxed)
+}
 pub fn t(s: &str) -> String {
-    if !LOCALE_EN.load(std::sync::atomic::Ordering::Relaxed) {
+    if !is_english() {
         return s.into();
     }
     for (prefix, english) in [

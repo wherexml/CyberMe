@@ -35,6 +35,14 @@ const PAGE: u32 = 50;
 /// Client-filtered views read server pages of this size.
 const SCAN_PAGE: u32 = 100;
 
+fn inbox_list_width(window: &Window) -> Pixels {
+    px(if window.bounds().size.width <= px(1100.) {
+        272.
+    } else {
+        300.
+    })
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Filter {
     Pending,
@@ -1454,7 +1462,7 @@ impl InboxView {
 
     // -------------------------------------------------------------- rendering
 
-    fn render_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_list(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let mut filters = h_flex().gap(px(3.)).px(px(3.)).mb(px(13.));
         for f in Filter::ALL {
@@ -1488,14 +1496,27 @@ impl InboxView {
             .flex_shrink_0()
             .child(filters)
             .child(
-                div().mx(px(7.)).mb(px(17.)).child(
-                    Input::new(&self.search)
-                        .small()
-                        .h(px(31.))
-                        .rounded(px(7.))
-                        .text_size(px(11.))
-                        .cleanable(false),
-                ),
+                div()
+                    .mx(px(7.))
+                    .mb(px(17.))
+                    .py(px(2.5))
+                    .border_1()
+                    .border_color(
+                        if self.search.read(cx).focus_handle(cx).is_focused(window) {
+                            theme.ring
+                        } else {
+                            theme.input
+                        },
+                    )
+                    .rounded(px(7.))
+                    .bg(theme.background)
+                    .child(
+                        Input::new(&self.search)
+                            .small()
+                            .appearance(false)
+                            .text_size(px(11.))
+                            .cleanable(false),
+                    ),
             );
 
         let mut list = v_flex()
@@ -1716,7 +1737,7 @@ impl InboxView {
             );
         }
         v_flex()
-            .w(px(300.))
+            .w(inbox_list_width(window))
             .flex_shrink_0()
             .h_full()
             .border_r_1()
@@ -2148,7 +2169,7 @@ impl InboxView {
         // Resolve it from actual remaining window space before text measurement.
         let source_row_width = (f32::from(window.bounds().size.width)
             - 78.
-            - 300.
+            - f32::from(inbox_list_width(window))
             - 56.
             - 2.
             - 28.
@@ -3287,7 +3308,7 @@ impl Render for InboxView {
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)
-            .child(self.render_list(cx))
+            .child(self.render_list(window, cx))
             .child(
                 v_flex()
                     .h_full()

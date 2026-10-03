@@ -15,6 +15,7 @@ use gpui_kit::component::{ActiveTheme as _, h_flex, tooltip::Tooltip, v_flex};
 use gpui_kit::*;
 use opstwin_store::{Store, UiState, WindowRect};
 use std::sync::{Arc, OnceLock};
+use std::{cell::RefCell, rc::Rc};
 
 actions!(
     opstwin_shell,
@@ -112,6 +113,7 @@ pub struct Shell {
     ideas: Entity<IdeasView>,
     search: Entity<SearchView>,
     search_open: bool,
+    search_backdrop: Rc<RefCell<crate::backdrop::SearchBackdrop>>,
     settings_window: Option<AnyWindowHandle>,
     client: opstwin_api::Client,
     toast: Option<String>,
@@ -228,6 +230,7 @@ impl Shell {
             ideas,
             search,
             search_open: false,
+            search_backdrop: Default::default(),
             settings_window: None,
             client,
             toast: None,
@@ -272,6 +275,12 @@ impl Shell {
     }
 
     pub fn show(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_open {
+            self.search_open = false;
+            self.search_backdrop.borrow_mut().clear();
+            self.search
+                .update(cx, |view, cx| view.set_visible(false, cx));
+        }
         if page == Page::Ideas {
             let target = self.chat.read(cx).selected_conversation_id();
             self.ideas
@@ -335,6 +344,7 @@ impl Shell {
     fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.chat.update(cx, |v, cx| v.cancel_dictation(cx));
         self.search_open = false;
+        self.search_backdrop.borrow_mut().clear();
         self.search.update(cx, |v, cx| v.set_visible(false, cx));
         self.show(self.page, window, cx);
     }
@@ -535,18 +545,32 @@ impl Render for Shell {
                     this.chat.update(cx, |v, cx| v.toggle_handsfree(window, cx));
                 }
             }))
-            .on_action(
-                cx.listener(|this, _: &CloseSearch, window, cx| this.close_search(window, cx)),
-            )
+            .on_action(cx.listener(|this, _: &CloseSearch, window, cx| {
+                if this.search_open {
+                    this.close_search(window, cx);
+                } else if !this
+                    .chat
+                    .update(cx, |chat, cx| chat.escape_dictation(window, cx))
+                {
+                    cx.propagate();
+                }
+            }))
             .child(sidebar)
             .child(div().flex_1().min_w_0().h_full().child(content));
+        if !self.search_open {
+            self.search_backdrop.borrow_mut().clear();
+        }
         if self.search_open {
+            let backdrop = self.search_backdrop.clone();
             root = root.child(
                 div()
                     .absolute()
                     .inset_0()
                     .bg(rgb(0x172235).opacity(0.16))
                     .flex()
+                    // Center in the content below the 24px traffic-light area,
+                    // matching the source dialog's application viewport.
+                    .pt(px(24.))
                     .items_center()
                     .justify_center()
                     .on_mouse_down(
@@ -555,6 +579,7 @@ impl Render for Shell {
                     )
                     .child(
                         div()
+                            .relative()
                             .w(px(640.))
                             .max_w(relative(0.92))
                             .max_h(relative(0.76))
@@ -564,7 +589,18 @@ impl Render for Shell {
                             .border_color(theme.border)
                             .shadow_lg()
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .child(self.search.clone()),
+                            .child(self.search.clone())
+                            .child(
+                                canvas(
+                                    move |bounds, window, _| {
+                                        backdrop.borrow_mut().update(window, bounds);
+                                    },
+                                    |_, _, _, _| {},
+                                )
+                                .absolute()
+                                .inset_0()
+                                .size_full(),
+                            ),
                     ),
             );
         }

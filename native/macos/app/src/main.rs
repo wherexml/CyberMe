@@ -1,3 +1,4 @@
+mod backdrop;
 mod chat;
 mod dictation;
 mod files;

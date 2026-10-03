@@ -2690,6 +2690,32 @@ extern "C" fn handle_key_event(this: &Object, native_event: id, key_equivalent: 
                     .flatten()
                     .is_some();
 
+            // App navigation under an ASCII input source must reach GPUI before
+            // NSTextInputContext can consume nonprinting keys without doCommand.
+            // Active IME candidates (even before marked text) keep their original path.
+            let is_navigation_key = matches!(key_down_event.keystroke.key.as_str(), "escape" | "up" | "down");
+            let ime_source_active = unsafe { is_ime_input_source_active() };
+            let key_trace = is_navigation_key && std::env::var_os("OPSTWIN_KEY_TRACE").is_some();
+            if key_trace {
+                eprintln!("[opstwin-key] key={} composing={} ime_source={}", key_down_event.keystroke.key, is_composing, ime_source_active);
+            }
+            if is_navigation_key && !is_composing && !ime_source_active {
+                let handled = run_callback(PlatformInput::KeyDown(key_down_event.clone()));
+                if key_trace { eprintln!("[opstwin-key] gpui_first={}", handled == YES); }
+                if handled == YES { return YES; }
+                // No app handler claimed it; retain normal AppKit fallback.
+                // GPUI already saw this event. doCommand must not redispatch it.
+                {
+                    let mut state = window_state.as_ref().lock();
+                    state.keystroke_for_do_command.take();
+                    state.do_command_handled.take();
+                }
+                unsafe {
+                    let input_context: id = msg_send![this, inputContext];
+                    return msg_send![input_context, handleEvent: native_event];
+                }
+            }
+
             // If we're composing, send the key to the input handler first;
             // otherwise we only send to the input handler if we don't have a matching binding.
             // The input handler may call `do_command_by_selector` if it doesn't know how to handle
@@ -2714,7 +2740,7 @@ extern "C" fn handle_key_event(this: &Object, native_event: id, key_equivalent: 
                 && !key_down_event.keystroke.modifiers.control
                 && !key_down_event.keystroke.modifiers.function
                 && !key_down_event.keystroke.modifiers.platform
-                && unsafe { is_ime_input_source_active() }
+                && ime_source_active
                 && with_input_handler(this, |input_handler| {
                     input_handler.query_prefers_ime_for_printable_keys()
                 })
@@ -2740,8 +2766,10 @@ extern "C" fn handle_key_event(this: &Object, native_event: id, key_equivalent: 
                 };
                 window_state.as_ref().lock().keystroke_for_do_command.take();
                 if let Some(handled) = window_state.as_ref().lock().do_command_handled.take() {
+                    if key_trace { eprintln!("[opstwin-key] input_context={} do_command={}", handled, true); }
                     return handled as BOOL;
                 } else if handled == YES {
+                    if key_trace { eprintln!("[opstwin-key] input_context=true do_command=false"); }
                     return YES;
                 }
 

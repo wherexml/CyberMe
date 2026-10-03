@@ -662,7 +662,7 @@ impl Render for IdeasView {
             .gap_0()
             .child(
                 div()
-                    .text_size(px(26.))
+                    .text_size(px(30.))
                     .line_height(relative(1.2))
                     .font_weight(FontWeight::SEMIBOLD)
                     .mt(px(8.))

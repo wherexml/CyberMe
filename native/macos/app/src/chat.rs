@@ -17,7 +17,7 @@ use gpui_kit::component::{
     dialog::DialogButtonProps,
     h_flex,
     input::{Input, InputEvent, InputState, Textarea, TextareaState},
-    menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenuItem},
+    menu::{DropdownMenu as _, PopupMenuItem},
     message::{Message, MessageAlignment, MessageContent, MessageFooter},
     message_scroller::{MessageScroller, MessageScrollerState},
     v_flex,
@@ -210,6 +210,10 @@ pub struct ChatView {
         Point<Pixels>,
         Anchor,
     )>,
+    keyboard_menu_previous: Option<FocusHandle>,
+    keyboard_menu_subscription: Option<Subscription>,
+    session_row_focus: Rc<std::cell::RefCell<HashMap<String, FocusHandle>>>,
+    dictation_focus: FocusHandle,
     session_row_bounds: Rc<std::cell::RefCell<HashMap<String, Bounds<Pixels>>>>,
     capture: Option<crate::dictation::Capture>,
     dictation_generation: u64,
@@ -332,6 +336,10 @@ impl ChatView {
             session_states_ready: false,
             session_state_generation: 0,
             keyboard_menu: None,
+            keyboard_menu_previous: None,
+            keyboard_menu_subscription: None,
+            session_row_focus: Default::default(),
+            dictation_focus: cx.focus_handle(),
             session_row_bounds: Rc::new(std::cell::RefCell::new(HashMap::new())),
             capture: None,
             dictation_generation: 0,
@@ -402,6 +410,8 @@ impl ChatView {
         self.visible = visible;
         if !visible {
             self.keyboard_menu = None;
+            self.keyboard_menu_previous = None;
+            self.keyboard_menu_subscription = None;
             self.cancel_dictation(cx);
         }
         if visible && std::mem::take(&mut self.stale) {
@@ -1979,6 +1989,36 @@ impl ChatView {
         }
     }
 
+    pub fn escape_dictation(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.capture.is_some() || self.dictation_processing {
+            self.cancel_dictation(cx);
+            self.restore_dictation_input(window, cx);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn restore_dictation_input(&self, window: &Window, cx: &Context<Self>) {
+        let previous = window.focused(cx);
+        let generation = self.dictation_generation;
+        let conversation = self.conversation_id.clone();
+        let view = cx.entity().downgrade();
+        window.on_next_frame(move |window, cx| {
+            _ = view.update(cx, |this, cx| {
+                if this.visible
+                    && this.dictation_generation == generation
+                    && this.conversation_id == conversation
+                    && this.capture.is_none()
+                    && !this.dictation_processing
+                    && (window.focused(cx).is_none() || window.focused(cx) == previous)
+                {
+                    this.input.focus_handle(cx).focus(window, cx);
+                }
+            });
+        });
+    }
+
     pub fn cancel_dictation(&mut self, cx: &mut Context<Self>) {
         self.dictation_generation += 1;
         if let Some(capture) = self.capture.take() {
@@ -2024,6 +2064,15 @@ impl ChatView {
         let state = capture.state.clone();
         let generation = self.dictation_generation;
         self.capture = Some(capture);
+        let view = cx.entity().downgrade();
+        window.on_next_frame(move |window, cx| {
+            _ = view.update(cx, |this, cx| {
+                if this.visible && this.dictation_generation == generation && this.capture.is_some()
+                {
+                    this.dictation_focus.focus(window, cx);
+                }
+            });
+        });
         cx.notify();
         let task = cx.spawn_in(window, async move |this, cx| {
             loop {
@@ -2089,6 +2138,7 @@ impl ChatView {
             Err(error) => {
                 self.dictation_processing = false;
                 self.upload_error = Some(error);
+                self.restore_dictation_input(window, cx);
                 cx.notify();
                 return;
             }
@@ -2127,6 +2177,7 @@ impl ChatView {
                     }
                 }
                 this.dictation_send = false;
+                this.restore_dictation_input(window, cx);
                 cx.notify();
             });
         });
@@ -2585,6 +2636,7 @@ impl ChatView {
             .with_paragraph_gap(rems(10. / 16. * body_scale))
             .with_list_prefix_width(crate::settings::body_px(22., cx))
             .with_list_item_gap(crate::settings::body_px(4., cx))
+            .with_list_block_gap(rems(8. / 16. * body_scale))
             .with_first_heading_flush(true)
             .with_strong_weight(FontWeight::SEMIBOLD)
             .with_heading(move |level| {
@@ -2596,8 +2648,8 @@ impl ChatView {
                             _ => 15.,
                         }))
                     .font_weight(FontWeight::SEMIBOLD)
-                    .mt(px(4.))
-                    .mb(px(10.))
+                    .mt(px(14. * body_scale))
+                    .mb(px(6. * body_scale))
                     .pb_0()
             })
             .with_code_block(
@@ -2923,7 +2975,16 @@ impl ChatView {
                 bounds.origin.y + bounds.size.height
             },
         );
-        let previous = window.focused(cx);
+        let previous = self
+            .session_row_focus
+            .borrow()
+            .get(&id)
+            .cloned()
+            .or_else(|| self.keyboard_menu_previous.clone())
+            .or_else(|| window.focused(cx));
+        self.keyboard_menu_subscription = None;
+        self.keyboard_menu = None;
+        self.keyboard_menu_previous = previous.clone();
         let focus = previous.clone();
         let view = cx.entity().downgrade();
         let menu = gpui_kit::component::menu::PopupMenu::build(window, cx, move |menu, _, _| {
@@ -2938,15 +2999,31 @@ impl ChatView {
         let subscription = cx.subscribe_in(
             &menu,
             window,
-            move |this, _, _: &DismissEvent, window, cx| {
+            move |this, dismissed, _: &DismissEvent, window, cx| {
+                if this
+                    .keyboard_menu
+                    .as_ref()
+                    .is_none_or(|(current, _, _)| current.entity_id() != dismissed.entity_id())
+                {
+                    return;
+                }
+                let restore_focus = window.focused(cx).is_none()
+                    || dismissed
+                        .read(cx)
+                        .focus_handle(cx)
+                        .contains_focused(window, cx);
                 this.keyboard_menu = None;
-                if let Some(focus) = &previous {
-                    focus.focus(window, cx);
+                this.keyboard_menu_previous = None;
+                this.keyboard_menu_subscription = None;
+                if restore_focus {
+                    if let Some(focus) = &previous {
+                        focus.focus(window, cx);
+                    }
                 }
                 cx.notify();
             },
         );
-        self._subscriptions.push(subscription);
+        self.keyboard_menu_subscription = Some(subscription);
         menu.read(cx).focus_handle(cx).focus(window, cx);
         self.keyboard_menu = Some((menu, position, anchor));
         cx.notify();
@@ -3109,7 +3186,7 @@ impl ChatView {
             + 32.)
     }
 
-    fn render_sessions(&self, docked: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn render_sessions(&self, docked: bool, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme().clone();
         let query = self.session_query.read(cx).value().to_lowercase();
         let mut side: Vec<_> = self
@@ -3149,14 +3226,17 @@ impl ChatView {
             let keyboard_id = id.clone();
             let bounds_id = id.clone();
             let row_bounds = self.session_row_bounds.clone();
-            let view = cx.entity().downgrade();
-            let context_view = view.clone();
-            let locked = self.session_locked(&id);
             let pinned = s.pinned;
-            let archived = s.archived;
+            let row_focus = self
+                .session_row_focus
+                .borrow_mut()
+                .entry(id.clone())
+                .or_insert_with(|| cx.focus_handle())
+                .clone();
             rows = rows.child(
                 h_flex()
                     .id(ElementId::Name(format!("chat-session-{id}").into()))
+                    .track_focus(&row_focus)
                     .h(px(36.))
                     .w_full()
                     .rounded(px(10.))
@@ -3211,16 +3291,11 @@ impl ChatView {
                         .icon(ProductIcon::Ellipsis)
                         .w(px(28.))
                         .h(px(30.))
-                        .dropdown_menu(move |menu, _, _| {
-                            Self::session_menu(
-                                menu,
-                                view.clone(),
-                                menu_id.clone(),
-                                locked,
-                                pinned,
-                                archived,
-                            )
-                        }),
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.keyboard_session_menu(menu_id.clone(), window, cx)
+                            },
+                        )),
                     )
                     .child(
                         canvas(
@@ -3232,16 +3307,13 @@ impl ChatView {
                         .absolute()
                         .size_full(),
                     )
-                    .context_menu(move |menu, _, _| {
-                        Self::session_menu(
-                            menu,
-                            context_view.clone(),
-                            context_id.clone(),
-                            locked,
-                            pinned,
-                            archived,
-                        )
-                    }),
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.keyboard_session_menu(context_id.clone(), window, cx);
+                        }),
+                    ),
             );
         }
         let primary = self.primary_id.clone();
@@ -3276,12 +3348,31 @@ impl ChatView {
                     .gap(px(6.))
                     .mb(px(12.))
                     .child(
-                        Input::new(&self.session_query)
-                            .prefix(Icon::new(ProductIcon::Search).size(px(18.)))
+                        div()
                             .flex_1()
                             .min_w_0()
+                            .py(px(2.))
+                            .border_1()
+                            .border_color(
+                                if self
+                                    .session_query
+                                    .read(cx)
+                                    .focus_handle(cx)
+                                    .is_focused(window)
+                                {
+                                    theme.ring
+                                } else {
+                                    theme.input
+                                },
+                            )
                             .rounded(px(24.))
-                            .text_size(px(13.)),
+                            .bg(theme.background)
+                            .child(
+                                Input::new(&self.session_query)
+                                    .appearance(false)
+                                    .prefix(Icon::new(ProductIcon::Search).size(px(18.)))
+                                    .text_size(px(13.)),
+                            ),
                     )
                     .child(self.render_panel_options(cx)),
             )
@@ -3644,6 +3735,7 @@ impl ChatView {
             })
             .child(
                 h_flex()
+                    .track_focus(&self.dictation_focus)
                     .relative()
                     .w_full()
                     .min_h(px(if voice { self.dictation_height } else { 60. }))
@@ -3770,7 +3862,10 @@ impl ChatView {
                                 .rounded_full()
                                 .tooltip(t("取消听写"))
                                 .accessibility_label(t("取消听写"))
-                                .on_click(cx.listener(|this, _, _, cx| this.cancel_dictation(cx))),
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.cancel_dictation(cx);
+                                    this.restore_dictation_input(window, cx);
+                                })),
                         )
                         .child(
                             div()
@@ -4079,13 +4174,13 @@ impl Render for ChatView {
                                 .max_w(relative(0.45))
                                 .flex_shrink_0()
                                 .pb(self.composer_clearance())
-                                .child(self.render_sessions(true, cx)),
+                                .child(self.render_sessions(true, _window, cx)),
                         )
                     })
                     .child(column),
             )
             .when(self.panel_open && !docked, |this| {
-                this.child(self.render_sessions(false, cx))
+                this.child(self.render_sessions(false, _window, cx))
             })
             .when_some(
                 self.keyboard_menu.clone(),

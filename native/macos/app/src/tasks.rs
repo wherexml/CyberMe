@@ -1272,14 +1272,24 @@ impl Render for TasksView {
                     .child(div().text_xs().text_color(theme.muted_foreground).child({
                         let today = chrono::Local::now();
                         use chrono::Datelike;
-                        let weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-                        format!(
-                            "{} {}",
-                            today.format("%-m月%-d日"),
-                            crate::settings::t(
+                        let weekdays = [
+                            "星期一",
+                            "星期二",
+                            "星期三",
+                            "星期四",
+                            "星期五",
+                            "星期六",
+                            "星期日",
+                        ];
+                        if crate::settings::is_english() {
+                            today.format("%b %-d, %A").to_string()
+                        } else {
+                            format!(
+                                "{}{}",
+                                today.format("%-m月%-d日"),
                                 weekdays[today.weekday().num_days_from_monday() as usize]
                             )
-                        )
+                        }
                     })),
             );
             if todays.is_empty() {
