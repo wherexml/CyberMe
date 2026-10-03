@@ -38,6 +38,7 @@ import {queryInbox,bulkInboxStatus} from './inbox-operations';
 import {completedAgentWrites} from './agent-effects';
 import {readConnectionResource,callConnectionTool} from './connection-resources';
 import {mountNativeApi} from './native-api';
+import {mountChatStatus} from './chat-status';
 
 migrateAutomaticReplyFiles();
 installSemanticCalendarProvider(semanticCalendarProvider);
@@ -123,6 +124,7 @@ app.get('/api/memories/history',c=>json(c,{history:memoryHistory()}));
 app.post('/api/memories/snapshot',c=>json(c,snapshotMemories(),201));
 app.post('/api/memories/history/:id/restore',c=>{const result=restoreMemories(c.req.param('id'));if(!result)throw new ApiError(404,'history_not_found','知识快照不存在');return json(c,result);});
 mountNativeApi(app);
+mountChatStatus(app);
 app.get('/api/conversations/primary',c=>{const id=meta<string|undefined>('primaryConversationId',undefined);return json(c,{conversationId:id,conversation:id?get('conversations',id):undefined});});
 app.post('/api/sync/feishu',async c=>json(c,await syncFeishu()));
 app.get('/api/feishu/sync',c=>json(c,syncOverview(Math.max(0,Math.floor(Number(c.req.query('offset'))||0)))));

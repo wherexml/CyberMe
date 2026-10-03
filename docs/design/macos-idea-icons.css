@@ -1,0 +1,5 @@
+/* Object illustrations belong only to Ideas; rail and Settings keep their existing glyphs. */
+.ideas-page .idea-icon {width:44px;height:44px;background:transparent;border-radius:0}
+.ideas-page .idea-artwork {display:block;width:44px;height:44px;object-fit:contain;pointer-events:none}
+body.dark .ideas-page .idea-artwork {filter:brightness(1.08)}
+@media(max-width:850px){.ideas-page .idea-icon,.ideas-page .idea-artwork{width:36px;height:36px}}

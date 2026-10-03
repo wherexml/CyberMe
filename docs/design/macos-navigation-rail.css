@@ -8,14 +8,14 @@ body, body.focus, body.dense {--nav:78px}
 }
 .window>.sidebar.muse-rail .lights i {width:14px;height:14px}
 .window>.sidebar.muse-rail .nav {
-  position:absolute;inset:48px 0 72px;overflow-y:auto;overflow-x:hidden;
+  position:absolute;inset:98px 0 122px;overflow-y:auto;overflow-x:hidden;
   padding:6px 0;gap:12px;align-items:center;
   justify-content:flex-start;justify-content:safe center;scrollbar-width:none;
 }
 .window>.sidebar.muse-rail .nav::-webkit-scrollbar {display:none}
 .window>.sidebar.muse-rail .nav-footer {
   position:absolute;bottom:10px;left:0;right:0;margin:0;padding:0;
-  display:flex;align-items:center;justify-content:center;
+  display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;
 }
 .window>.sidebar.muse-rail button[data-page] {
   display:grid;place-items:center;flex:none;width:44px;height:44px;min-height:44px;

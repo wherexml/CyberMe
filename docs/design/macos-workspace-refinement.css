@@ -77,25 +77,91 @@ button.primary:hover,.composer .send:hover {background:var(--blue)}
 .detail>.actions button {font-size:13px;padding:7px 11px;min-height:32px}
 .detail>.actions #mark-done {margin-left:0;color:var(--ink)}
 .detail>.actions .primary {margin-left:auto;margin-right:0;background:var(--blue);color:#fff}
-.task-group {margin-top:26px}
-.task-group-title {font-size:13px;font-weight:600;color:var(--ink);margin:0 0 10px;cursor:default}
-.task-group>summary {cursor:pointer;padding:7px 0}
-.task-empty {font-size:12px;color:var(--muted);padding:12px 0}
-.idea-card {position:relative}
+/* Tasks: one quiet empty state, with compact future/history disclosures. */
+.tasks h2 {margin-bottom:26px}
+.task-group {margin-top:0}
+.task-group-title {display:flex;align-items:center;gap:9px;min-width:0;font-size:13px;font-weight:550;color:var(--ink);margin:0;cursor:default}
+.task-group[data-task-group=today] {margin-bottom:24px}
+.task-group[data-task-group=today]>.task-group-title {margin-bottom:12px;min-height:24px}
+.task-group-name {flex:none}
+.task-group-count {display:inline-grid;place-items:center;min-width:23px;padding:2px 6px;border-radius:6px;background:var(--subtle);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--muted)}
+.task-day {margin-left:auto;color:var(--muted);font-size:11px;font-weight:400;white-space:nowrap}
+.task-today-empty {display:flex;align-items:center;justify-content:center;gap:12px;min-height:92px;border:1px solid var(--line);border-radius:12px;background:var(--subtle)}
+.task-empty-mark {display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--bg);color:#839789}
+.task-empty-mark svg {width:17px;height:17px}
+.task-today-empty p {font-size:13px;color:var(--muted);margin:0}
+.task-group>summary {cursor:pointer;padding:14px 2px;min-height:52px;list-style:none;border-top:1px solid var(--line)}
+.task-group>summary::-webkit-details-marker {display:none}
+.task-group-mark {display:grid;place-items:center;width:24px;height:24px;flex:none;color:var(--muted)}
+.task-group-mark svg {width:16px;height:16px}
+.task-group>summary .task-group-count {margin-left:auto}
+.task-group-hint {margin-left:auto;font-size:11px;color:var(--muted);font-weight:400}
+.task-group-chevron {width:13px;height:13px;color:var(--muted);flex:none;margin-left:5px}
+.task-group[open]>summary .task-group-chevron {transform:rotate(90deg)}
+.task-group>summary:hover {color:var(--blue)}
+.task-group-body>.taskrow {padding:15px 0}
+.task-group-body>.taskrow:last-child {border-bottom:0}
+.task-empty {font-size:12px;color:var(--muted);padding:6px 35px 16px}
+@media(max-width:600px){.task-day{font-size:10px}.task-today-empty{min-height:80px}.task-group-title{gap:6px}}
+.idea-card {position:relative;padding:18px 0}
+.idea-copy p {margin-top:6px;line-height:1.65}
 .idea-open {display:block;width:auto;margin:0;padding:0;text-align:left;font-size:inherit;font-weight:inherit;background:transparent;border:0}
 .idea-open::after {content:'';position:absolute;inset:0;cursor:pointer}
 .idea-open:focus-visible {outline:none}
 .idea-card:has(.idea-open:focus-visible) {outline:2px solid var(--blue);outline-offset:4px;border-radius:8px}
-.idea-actions {min-height:28px;opacity:0;pointer-events:none}
-.idea-actions .idea-ignore {position:relative;z-index:1;font-size:13px}
+.idea-actions {position:relative;z-index:1;display:flex;align-items:center;gap:14px;min-height:26px;margin-top:8px;opacity:1;pointer-events:auto}
+.idea-actions button {min-height:26px;padding:3px 0;border:0;border-radius:4px;font-size:12px}
+.idea-actions .idea-discuss {display:inline-flex;align-items:center;gap:4px;color:var(--blue)}
+.idea-actions .idea-discuss svg {width:13px;height:13px}
+.idea-actions .idea-discuss:hover {text-decoration:underline;text-underline-offset:3px}
+.idea-actions .idea-ignore {position:relative;z-index:1;margin-left:auto;font-size:12px;opacity:0;pointer-events:none}
+.idea-card:hover .idea-ignore,.idea-card:focus-within .idea-ignore {opacity:1;pointer-events:auto}
 .idea-card:hover .idea-actions,.idea-card:focus-within .idea-actions {opacity:1;pointer-events:auto}
 .settings-window:not(:modal) {inset:0;z-index:20}
 .settings-window::backdrop {background:transparent;backdrop-filter:none}
 .settings-window .settings-nav button {min-height:32px;padding-top:6px;padding-bottom:6px}
+.draft-heading .draft-tools {display:flex;align-items:center;gap:12px;margin-left:auto;flex-wrap:wrap}
+.draft-heading .draft-tools button {margin:0;font-size:12px}
+.draft-heading .draft-tools button[hidden] {display:none}
+.reply-analysis-steps {padding-left:22px;margin:14px 0;line-height:1.7}
+.reply-analysis-steps li {padding:8px 0 12px}
+.reply-analysis-steps p {margin-top:5px;color:var(--muted);font-size:13px}
+.inbox-item .item-head b {min-width:0;flex:1}
+.inbox-item .item-head time {white-space:nowrap}
 .ss-preference-error {display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:13px;margin-bottom:18px}
 @media(max-width:1100px){.detail-scroll{padding:24px 21px}.detail>.actions{padding:12px 21px}}
 @media(max-width:760px){.detail-scroll{padding:20px 16px}.detail>.actions{padding:12px 16px}.settings-window .settings-nav button{min-height:36px}.ss-preference-error{flex-wrap:wrap}}
-@media(hover:none),(pointer:coarse){.idea-actions{opacity:1;pointer-events:auto}}
+@media(hover:none),(pointer:coarse){.idea-actions .idea-ignore{opacity:1;pointer-events:auto}.idea-actions button{min-height:36px}}
 /* Short windows must shrink the workspace instead of honoring the old 540px floor. */
 .window {min-height:0;height:calc(100dvh - 72px)}
 @media(max-width:600px){.window{height:calc(100dvh - 50px)}}
+/* Quiet idea actions: keyboard reachable and visible on touch. */
+.idea-actions .idea-discuss {opacity:0;pointer-events:none;gap:6px;transition:opacity 120ms}
+.idea-card:hover .idea-discuss,.idea-card:focus-within .idea-discuss {opacity:1;pointer-events:auto}
+.idea-actions .idea-discuss svg {width:14px;height:14px;flex:none}
+@media(hover:none),(pointer:coarse){.idea-actions .idea-discuss{opacity:1;pointer-events:auto}}
+.judgment {gap:22px;margin-top:19px}
+.judgment>div {min-width:0}
+.judgment-value {display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:7px}
+.judgment-value b {font-size:12px;font-weight:500}
+.judgment-value .probability {font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap}
+.judgment-meter {height:6px;margin-top:10px;border-radius:4px;background:var(--subtle);overflow:hidden}
+.judgment-meter i {display:block;width:var(--probability,0%);height:100%;border-radius:inherit;background:#7796d6}
+.judgment-meter[data-level=high] i {background:var(--blue)}
+.judgment-meter[data-level=low] i {background:#95a5ba}
+.judgment-meter.unknown {background:repeating-linear-gradient(90deg,var(--line) 0,var(--line) 3px,transparent 3px,transparent 6px)}
+body.dark .judgment-meter {background:#333a47}
+body.dark .judgment-meter.unknown {background:repeating-linear-gradient(90deg,var(--line) 0,var(--line) 3px,transparent 3px,transparent 6px)}
+.chat-task-context details>summary {cursor:pointer;list-style:none;font-weight:500}
+.chat-task-context details>summary::after {content:'⌄';font-size:12px;color:var(--muted);margin-left:10px}
+.chat-task-context details[open]>summary::after {content:'⌃'}
+.chat-task-context details>pre {white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit;font-size:12px;line-height:1.6;margin-top:12px}
+.chat-run-status {display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.chat-run-dot {width:6px;height:6px;flex:none;border-radius:50%;background:var(--blue)}
+.chat-retry,.chat-recover,.chat-run-link {margin-top:10px;color:var(--blue);font-size:12px;padding:4px 0;margin-right:14px}
+.chat-task-run .chat-agent-result {min-width:0}
+@media(max-width:600px){.judgment{grid-template-columns:1fr;gap:14px}.judgment>div>span{font-size:11px}.judgment-value{margin-top:4px}.judgment-meter{margin-top:6px}}
+/* Existing flex rules apply to every nested div: scope the visual stack explicitly. */
+.jev-card .judgment>div {display:block;min-width:0}
+.jev-card .judgment .judgment-value {display:flex;flex:none;width:100%;max-width:none;justify-content:space-between}
+.jev-card .judgment .judgment-meter {display:block;flex:none;width:100%;height:6px;min-height:6px}
