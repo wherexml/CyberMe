@@ -153,3 +153,5 @@ v14候选修复设置canonical保存回显及连接异步草稿迁移；搜索�
 v15候选修复隐藏Inbox自动选择造成的提前起草，并保护切页期间的迟到准备回调；[可见选择旅程](../../docs/journeys/native-inbox-visible-selection.md)记录真实Jev公开资格及未执行GUI。当前v14运行包冻结，工作树及target候选变化不改写旧包验收证据。
 
 真实工作区 GUI 公开数据准备见[工作区旅程](../../docs/journeys/native-workspace-gui.md)，仅使用46214隔离服务；真实Agent本地写入后中断恢复见[partial旅程](../../docs/journeys/native-real-partial.md)，使用46218。不得将准备HTTP或真实partial恢复结果等同窗口交互通过。
+
+v14独立搜索实测70.1%黑区，mandatory视觉gate失败、分数null；Inbox原12px间距子范围已通过。v15运行候选8a9c92a1…移除无限extent clamp，保留有限Gaussian3pt、外缘10pt不进入mask，必须检查完整背景/清晰面板/外缘突变；旧评分不继承。Opus只读阻塞分析建议实际Tab焦点及单次激活窗口后scroll复验，不能将CUA noWindowsAvailable直接记为产品FAIL。

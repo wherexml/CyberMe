@@ -89,20 +89,25 @@ impl SearchBackdrop {
             let radius = NSNumber::new_f64(3.);
             let _: () =
                 msg_send![&*filter, setValue: &*radius forKey: &*NSString::from_str("inputRadius")];
-            // Extend edge colors before blur instead of mixing transparent
-            // outside pixels into the window's visible rim. No image readback.
-            let clamp: Option<Retained<AnyObject>> =
-                msg_send![filter_class, filterWithName: &*NSString::from_str("CIAffineClamp")];
-            let Some(clamp) = clamp else { return };
-            let _: () = msg_send![&*clamp, setDefaults];
-            let filters = NSArray::from_slice(&[&*clamp, &*filter]);
+            // Infinite-extent affine clamp distorted the actual CA backdrop
+            // in v14. Keep the finite filter and exclude its outside-sampling
+            // rim instead; the original GPUI background stays below the dim.
+            let filters = NSArray::from_slice(&[&*filter]);
             let layer: Retained<AnyObject> = msg_send![layer_class, new];
             let mask: Retained<AnyObject> = msg_send![mask_class, new];
             let path = CGPathCreateMutable();
             if path.is_null() {
                 return;
             }
-            CGPathAddRect(path, std::ptr::null(), frame);
+            let edge_guard = 10.;
+            let filtered_interior = NSRect::new(
+                NSPoint::new(frame.origin.x + edge_guard, frame.origin.y + edge_guard),
+                objc2_foundation::NSSize::new(
+                    (frame.size.width - edge_guard * 2.).max(0.),
+                    (frame.size.height - edge_guard * 2.).max(0.),
+                ),
+            );
+            CGPathAddRect(path, std::ptr::null(), filtered_interior);
             let hole = NSRect::new(
                 NSPoint::new(geometry[2], geometry[3]),
                 objc2_foundation::NSSize::new(geometry[4], geometry[5]),
