@@ -6,14 +6,14 @@ import sharp from 'sharp';
 import {ApiError,command} from './integrations';
 import {get,list,put,activity,now} from './store';
 import {attachmentKind,exactAttachmentEnabled,inspectWechatAttachment,materializeWechatAttachment,verifyWechatAttachmentCli,type WechatAttachmentKind} from './wechat-attachment-cli';
+import {wechatRuntimeSelection} from './wechat-runtime-selector';
 const ID='wechat-sync-local';
-const binary=process.env.OPSTWIN_WECHAT_CLI||'/opt/homebrew/bin/greenbubbles';
 const seenConversations=new Map<string,{version:string,sourceHash:string,at:number}>();
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)??'').digest('hex');
 async function query(args:string[],stdin?:string){
   verifyWechatAttachmentCli();
   let result;
-  try{result=await command(binary,args,20000,stdin);}catch{throw new ApiError(503,'wechat_cli_unavailable','无法启动 wechat-sync，请确认本机 GreenBubbles 已安装。');}
+  try{result=await command(wechatRuntimeSelection().binary,args,20000,stdin);}catch{throw new ApiError(503,'wechat_cli_unavailable','无法启动 wechat-sync，请确认本机 GreenBubbles 已安装。');}
   verifyWechatAttachmentCli();
   if(result.timedOut)throw new ApiError(504,'wechat_timeout','微信读取超时，请稍后重试。');
   let value;try{value=JSON.parse(result.stdout);}catch{throw new ApiError(502,'wechat_invalid_response','微信同步返回格式异常，请检查 GreenBubbles。');}
@@ -22,6 +22,7 @@ async function query(args:string[],stdin?:string){
   return value;
 }
 export async function connectWechat(){
+  wechatRuntimeSelection();
   const old=get('connections',ID);let status='error',message='',evidence:any={readOnly:true},sample:any;
   try{
     const source=await query(['source','status']);
@@ -37,7 +38,7 @@ export async function connectWechat(){
   activity('连接个人微信','connection',status==='connected'?'succeeded':'failed',message,ID);
   return {ok:status==='connected',connection,message,capabilities:connection.capabilities};
 }
-function requireConnection(){const c=get('connections',ID);if(c?.status!=='connected'||!c.permissions?.includes('read')){clearWechatReader();throw new ApiError(409,'wechat_not_connected','请先连接本机微信。');}return c;}
+function requireConnection(){wechatRuntimeSelection();const c=get('connections',ID);if(c?.status!=='connected'||!c.permissions?.includes('read')){clearWechatReader();throw new ApiError(409,'wechat_not_connected','请先连接本机微信。');}return c;}
 function rememberConversations(items:any[],value:any,version=requireConnection().updatedAt){if(!value.source?.identity)return;if([...seenConversations.values()].some(v=>v.version!==version||v.sourceHash!==digest(value.source.identity)))clearWechatReader();for(const item of items)if(typeof item.id==='string')seenConversations.set(item.id,{version,sourceHash:digest(value.source.identity),at:Date.now()});for(const [id,v] of seenConversations)if(Date.now()-v.at>3600000)seenConversations.delete(id);while(seenConversations.size>1000){const oldest=seenConversations.keys().next().value;if(!oldest)break;seenConversations.delete(oldest);}}
 function verifiedConversation(input:unknown){requireConnection();const id=exactId(input,'conversation');const selected=seenConversations.get(id);if(!selected||selected.version!==requireConnection().updatedAt||Date.now()-selected.at>3600000)throw new ApiError(409,'wechat_conversation_unverified','请刷新联系人或会话列表，并选择精确会话标识。');return id;}
 function assertConversationSource(id:string,value:any){if(seenConversations.get(id)?.sourceHash!==digest(value.source?.identity)){clearWechatReader();throw new ApiError(409,'wechat_source_changed','本机微信来源已变化，请刷新并重新选择会话。');}}
@@ -92,7 +93,7 @@ async function legacyWechatAttachment(input:any){
  if(!Number.isSafeInteger(m.createdAtUnix))throw attachmentError('wechat_attachment_ambiguous');
  const args=['messages','list','--conversation',conversation,'--since',String(m.createdAtUnix),'--until',String(m.createdAtUnix),'--limit','2'];
  const range=await read([...args,'--json']);if(digest(range.source?.identity)!==digest(exact.source?.identity)||range.consistency?.coverageComplete!==true||range.page?.hasMore===true||rows(range).length!==1||range.items[0].id!==id||digest(range.items[0])!==digest(m))throw attachmentError('wechat_attachment_ambiguous');
- let result;try{result=await command(binary,[...args,'--brief'],20000);}catch{throw attachmentError('wechat_attachment_unavailable');}if(result.timedOut||result.exitCode!==0)throw attachmentError('wechat_attachment_unavailable');
+ let result;try{result=await command(wechatRuntimeSelection().binary,[...args,'--brief'],20000);}catch{throw attachmentError('wechat_attachment_unavailable');}if(result.timedOut||result.exitCode!==0)throw attachmentError('wechat_attachment_unavailable');
  let lines:any[];try{lines=result.stdout.split('\n').filter(Boolean).map(l=>JSON.parse(l));}catch{throw attachmentError('wechat_invalid_response');}
  const briefRows=lines.filter(v=>typeof v.from==='string');if(lines[0]?.hasMore!==false||lines[0]?.returned!==1||briefRows.length!==1||typeof briefRows[0].file!=='string')throw attachmentError('wechat_attachment_ambiguous');
  const expected=resolve(homedir(),'.greenbubbles/cache/media');let cacheRoot:string,path:string,bytes:Buffer;

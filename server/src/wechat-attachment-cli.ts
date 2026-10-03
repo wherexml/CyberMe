@@ -6,13 +6,13 @@ import sharp from 'sharp';
 import {ApiError,command} from './integrations';
 import {PRIVATE_DIR,privatePath} from './private-paths';
 import {ROOT} from './store';
+import {wechatRuntimeSelection} from './wechat-runtime-selector';
 
 export type WechatAttachmentKind='image'|'voice'|'video'|'document';
 const maxBytes=25000000;
 const sha=(data:Buffer)=>createHash('sha256').update(data).digest('hex');
 const failure=(code:string,status=409)=>new ApiError(status,code,'微信附件验证失败，请重新读取原消息。');
-const configuredHash=process.env.OPSTWIN_WECHAT_ATTACHMENT_SHA256;
-export function exactAttachmentEnabled(){return configuredHash!==undefined;}
+export function exactAttachmentEnabled(){return wechatRuntimeSelection().mode==='exact';}
 
 function noLinks(path:string){
   const root=parse(path).root;let current=root;
@@ -23,9 +23,10 @@ function noLinks(path:string){
 }
 // Rehash on every invocation, including ordinary queries when this mode is selected.
 export function verifyWechatAttachmentCli(){
-  if(!exactAttachmentEnabled())return false;
+  const selected=wechatRuntimeSelection();
+  if(selected.mode!=='exact')return false;
   try{
-    const path=process.env.OPSTWIN_WECHAT_CLI;
+    const path=selected.binary,configuredHash=selected.sha256;
     if(!path||!isAbsolute(path)||resolve(path)!==path||!configuredHash||!/^[a-f0-9]{64}$/.test(configuredHash))throw Error();
     const archive=join(ROOT,'.local','greenbubbles-attachment-candidate','bin',configuredHash);
     if(path!==join(archive,'greenbubbles'))throw Error();
@@ -56,7 +57,7 @@ async function invoke(args:string[],operation:string,kind:WechatAttachmentKind,g
   guard();
   verifyWechatAttachmentCli();
   guard();
-  let result;try{result=await command(process.env.OPSTWIN_WECHAT_CLI!,args,20000);}catch{throw failure('wechat_attachment_unavailable');}
+  let result;try{result=await command(wechatRuntimeSelection().binary,args,20000);}catch{throw failure('wechat_attachment_unavailable');}
   guard();
   verifyWechatAttachmentCli();
   if(result.timedOut)throw failure('wechat_attachment_timeout',504);

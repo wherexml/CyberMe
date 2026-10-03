@@ -55,7 +55,7 @@ await writeFile(wrapper,wrapperSource,{mode:0o500,flag:'wx'});await chmod(wrappe
 await writeFile(join(priv,'config.json'),'{}',{mode:0o600});
 const sql=join(work,'server','opstwin-advance.db');await mkdir(join(work,'server'),{mode:0o700});
 const db=new DatabaseSync(sql);db.exec('CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)');db.prepare('INSERT INTO meta VALUES(?,?)').run('initialized','true');db.prepare('INSERT INTO meta VALUES(?,?)').run('settings',JSON.stringify({identity:{name:'OPSADV-QA attachment HTTP',language:'en'},autonomy:{holdSending:true},channels:{}}));db.close();
-const paths=['server/src/wechat-sync.ts','server/src/wechat-attachment-cli.ts','server/src/index.ts','scripts/native-wechat-attachment-http-e2e.mjs','scripts/lib/greenbubbles-public-attachment-fixture.mjs'];
+const paths=['server/src/wechat-sync.ts','server/src/wechat-attachment-cli.ts','server/src/wechat-runtime-selector.ts','server/src/index.ts','scripts/native-wechat-attachment-http-e2e.mjs','scripts/lib/greenbubbles-public-attachment-fixture.mjs'];
 const sourceHashes=Object.fromEntries(await Promise.all(paths.map(async p=>[p,sha(await readFile(join(root,p)))])));
 const report={schema:1,at:new Date().toISOString(),scope:'public SQLite actual CLI + isolated production HTTP; synthetic bytes, no live/private/default-profile reads',recovery,naturalExpiry,compiledHash:ready.compiledHash,buildManifestHash:sha(readyBytes),wrapperHash,fixtureSchemaHash:fixture.fixtureSchemaHash,sourceHashes,checks:[],guiAcceptance:false,realNonimageUsability:'NOT_RUN_NO_CANDIDATE',externalSends:0};
 const check=(id,ok,evidence={})=>report.checks.push({id,status:ok?'PASS':'FAIL',...evidence});
