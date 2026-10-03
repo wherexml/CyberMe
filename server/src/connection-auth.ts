@@ -1,5 +1,5 @@
 import {db,publicValue,put} from './store';
-import {validConnectionCredentials} from './connection-credentials-policy';
+import {validConnectionCredentials,hasCredentialHeaders,isPrivateCredentialHeader} from './connection-credentials-policy';
 export {validConnectionCredentials,hasCredentialHeaders,connectionCredentialValues} from './connection-credentials-policy';
 
 // Private transport credentials belong to a saved target, never to its display name.
@@ -7,6 +7,7 @@ export function credentialTarget(connection:any) {
  return {type:String(connection.type||'REST').toLowerCase(),provider:String(connection.provider||'Custom').toLowerCase(),endpoint:String(connection.endpoint||connection.config?.endpoint||''),path:String(connection.config?.path||'')};
 }
 const sameTarget=(a:any,b:any)=>JSON.stringify(a)===JSON.stringify(b);
+const protocolHeaders=(headers:any)=>Object.fromEntries(Object.entries(headers&&typeof headers==='object'&&!Array.isArray(headers)?headers:{}).filter(([name])=>!isPrivateCredentialHeader(name)));
 export function privateConnectionConfig(id?:string):Record<string,any> {
  const row=id?db.prepare('SELECT data FROM connection_private WHERE id=?').get(id) as any:undefined;
  return row?JSON.parse(row.data):{};
@@ -19,13 +20,17 @@ export function connectionAuth(connection:any,old?:any,input:any={}) {
  // A legacy credential is anchored to the original entity before any reconfiguration.
  const bound=stored._credentialTarget||(old?credentialTarget(old):undefined),target=credentialTarget(connection);
  const config={...connection.config,...input};delete config.credentialReady;delete config._credentialTarget;delete config._credentialMethod;delete config.apiKey;delete config.headers;
- const authMethod=String(config.authMethod||stored.authMethod||(input.apiKey||stored.apiKey?'api-key':input.headers||stored.headers?'headers':'none')).toLowerCase();
+ const authMethod=String(config.authMethod||stored.authMethod||(input.apiKey||stored.apiKey?'api-key':hasCredentialHeaders(input)||hasCredentialHeaders(stored)?'headers':'none')).toLowerCase();
  config.authMethod=authMethod;
+ // Public protocol negotiation remains useful without authentication. Never
+ // retain a private header when switching to none or changing target.
+ const publicHeaders={...(sameTarget(bound,target)?protocolHeaders(stored.headers):{}),...protocolHeaders(connection.config?.headers),...protocolHeaders(input.headers)};
+ if(Object.keys(publicHeaders).length)config.headers=publicHeaders;
  if(authMethod!=='none'&&authMethod!=='oauth'&&['rest','mcp'].includes(target.type)) {
   const boundMethod=String(stored._credentialMethod||stored.authMethod||old?.config?.authMethod||(stored.apiKey?'api-key':stored.headers?'headers':'none')).toLowerCase();
   if(sameTarget(bound,target)&&boundMethod===authMethod){if(stored.apiKey)config.apiKey=stored.apiKey;if(stored.headers)config.headers=stored.headers;}
   if(typeof input.apiKey==='string'&&input.apiKey.trim())config.apiKey=input.apiKey.trim();
-  if(input.headers&&typeof input.headers==='object'&&!Array.isArray(input.headers))config.headers=input.headers;
+  if(input.headers&&typeof input.headers==='object'&&!Array.isArray(input.headers))config.headers={...publicHeaders,...input.headers};
  }
  const ready=authMethod==='api-key'&&typeof config.apiKey==='string'&&config.apiKey.trim().length>=8&&validConnectionCredentials(config);
  return {config,ready,privateConfig:{...config,_credentialTarget:target,_credentialMethod:authMethod},publicConfig:publicConnectionConfig(config,ready)};
