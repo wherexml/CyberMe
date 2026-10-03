@@ -381,11 +381,11 @@ impl Shell {
             cx.new(|cx| SettingsView::new(client, hub, window, cx))
         }) {
             Ok((handle, view)) => {
-                view.update(cx, |v, cx| v.set_visible(true, cx));
                 self.settings_window = Some(handle);
                 self._subscriptions
-                    .push(cx.subscribe(&view, move |_, _, event, cx| match event {
+                    .push(cx.subscribe(&view, move |_, view, event, cx| match event {
                         SettingsEvent::Close => {
+                            view.update(cx, |v, cx| v.set_visible(false, cx));
                             _ = handle.update(cx, |_, window, _| window.remove_window());
                         }
                         SettingsEvent::Appearance {

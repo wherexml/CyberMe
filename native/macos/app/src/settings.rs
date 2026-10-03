@@ -62,6 +62,14 @@ impl Field {
         }
     }
 }
+#[derive(Clone, PartialEq)]
+struct WechatReaderConnection {
+    id: String,
+    updated_at: Value,
+    status: String,
+    readable: bool,
+}
+
 pub struct SettingsView {
     client: Client,
     section: String,
@@ -106,6 +114,8 @@ pub struct SettingsView {
     wechat_messages: Value,
     wechat_loading: bool,
     wechat_generation: u64,
+    wechat_selected_message: Option<String>,
+    wechat_query_needs_reset: bool,
     wechat_chat_cursors: Vec<String>,
     wechat_message_cursors: Vec<String>,
     sync_scope: String,
@@ -134,7 +144,16 @@ impl SettingsView {
             .map(|s| s.load("settings-drafts.json"))
             .unwrap_or_default();
         let saver = store.map(|s| Saver::new(s, "settings-drafts.json"));
+        let closing_view = cx.weak_entity();
+        _window.on_window_should_close(cx, move |_, cx| {
+            _ = closing_view.update(cx, |this, cx| this.set_visible(false, cx));
+            true
+        });
         let subs = vec![
+            cx.observe_window_visibility(_window, |this, visibility, _, cx| {
+                this.set_visible(visibility.is_visible(), cx);
+                cx.notify();
+            }),
             cx.subscribe(&hub, |this: &mut Self, _, ev: &SyncEvent, cx| {
                 if matches!(
                     ev,
@@ -149,7 +168,8 @@ impl SettingsView {
             }),
         ];
         let wechat_query = cx.new(|cx| InputState::new(_window, cx).placeholder(t("查找联系人或当前会话消息")));
-        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
+        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
+        this.visible = _window.is_visible();
         this.reload(cx);
         this
     }
@@ -157,6 +177,9 @@ impl SettingsView {
         self.visible = v;
         if !v {
             self.drop_connection_secret();
+            self.invalidate_wechat_reader(false, true);
+            // Reopen refreshes canonical connection scope, never auto-reads private history.
+            self.stale = true;
         }
         if v && std::mem::take(&mut self.stale) {
             self.reload(cx)
@@ -165,8 +188,7 @@ impl SettingsView {
     pub fn section(&mut self, name: &str, cx: &mut Context<Self>) {
         if SECTIONS.iter().any(|x| x.0 == name) {
             self.drop_connection_secret();
-            self.wechat_generation += 1;
-            self.wechat_loading = false;
+            self.invalidate_wechat_reader(true, true);
             self.section = name.into();
             self.detail = None;
             self.delete_confirm = false;
@@ -298,7 +320,11 @@ impl SettingsView {
                 this.loading = false;
                 match result {
                     Ok((b, m, s, f, permissions, records)) => {
+                        let previous_wechat = this.wechat_reader_connection();
                         this.data = b;
+                        if previous_wechat != this.wechat_reader_connection() {
+                            this.invalidate_wechat_reader(true, true);
+                        }
                         set_language(
                             this.data["settings"]["identity"]["language"]
                                 .as_str()
@@ -317,18 +343,6 @@ impl SettingsView {
                             if let Ok(records) = records {
                                 this.sync_records = records;
                             }
-                        }
-                        if !this
-                            .provider_connection("wechat-sync")
-                            .is_some_and(|c| c["status"] == "connected")
-                        {
-                            this.wechat_generation += 1;
-                            this.wechat_loading = false;
-                            this.wechat_page = json!({});
-                            this.wechat_exact = None;
-                            this.wechat_image = None;
-                            this.wechat_messages = json!({});
-                            this.wechat_chat = None;
                         }
                         this.refresh_qr();
                         this.error = None;
@@ -569,13 +583,7 @@ impl SettingsView {
         }
         self.busy = true;
         if path.contains("wechat-sync-local") && path.ends_with("/disconnect") {
-            self.wechat_generation += 1;
-            self.wechat_loading = false;
-            self.wechat_page = json!({});
-            self.wechat_exact = None;
-            self.wechat_image = None;
-            self.wechat_messages = json!({});
-            self.wechat_chat = None;
+            self.invalidate_wechat_reader(true, true);
         }
         self.error = None;
         let model_test = path == "/api/settings/models/test";
@@ -1615,45 +1623,74 @@ impl SettingsView {
         });
         self._tasks.push(t);
     }
-    fn read_wechat(&mut self, cursor: String, history: Vec<String>, cx: &mut Context<Self>) {
-        if self.wechat_loading {
-            return;
-        }
-        let connected = self.provider_connection("wechat-sync").is_some_and(|c| {
-            c["status"] == "connected"
-                && c["permissions"]
-                    .as_array()
-                    .is_some_and(|a| a.iter().any(|v| v == "read"))
-        });
-        if !connected {
+    // Scope changes clear private reader results, never ordinary settings drafts.
+    // InputState needs the actual render Window; reset it there, not via a new window.
+    fn invalidate_wechat_reader(&mut self, scope_changed: bool, clear_pages: bool) {
+        self.wechat_generation = self.wechat_generation.wrapping_add(1);
+        self.wechat_loading = false;
+        self.wechat_selected_message = None;
+        self.wechat_exact = None;
+        self.wechat_image = None;
+        if clear_pages {
             self.wechat_page = json!({});
-            self.wechat_exact = None;
-            self.wechat_image = None;
             self.wechat_messages = json!({});
+            self.wechat_chat_cursors.clear();
+            self.wechat_message_cursors.clear();
+        }
+        if scope_changed {
+            self.wechat_chat = None;
+            self.wechat_applied_query.clear();
+            self.wechat_query_needs_reset = true;
+        }
+    }
+    fn wechat_reader_connection(&self) -> Option<WechatReaderConnection> {
+        self.provider_connection("wechat-sync").map(|c| WechatReaderConnection {
+            id: c["id"].as_str().unwrap_or("").to_string(),
+            updated_at: c["updatedAt"].clone(),
+            status: c["status"].as_str().unwrap_or("").to_string(),
+            readable: c["permissions"].as_array().is_some_and(|p| p.iter().any(|v| v == "read")),
+        })
+    }
+    fn wechat_reader_active(&self) -> bool {
+        self.visible && self.section == "connections"
+            && self.detail.as_deref() == Some("wechat-sync-local")
+    }
+    fn wechat_owner_matches(&self, generation: u64, connection: &WechatReaderConnection,
+        conversation: Option<&str>, message: Option<&str>) -> bool {
+        self.wechat_reader_active() && self.wechat_generation == generation
+            && connection.status == "connected" && connection.readable
+            && self.wechat_reader_connection().as_ref() == Some(connection)
+            && self.wechat_chat.as_ref().map(|c| c.0.as_str()) == conversation
+            && self.wechat_selected_message.as_deref() == message
+    }
+    fn wechat_reader_error(&mut self, error: opstwin_api::ApiError) {
+        if matches!(error.code(), Some("wechat_not_connected" | "connection_changed" | "wechat_source_changed")) {
+            self.invalidate_wechat_reader(true, true);
+        }
+        self.error = Some(error.user_text());
+    }
+    fn read_wechat(&mut self, cursor: String, history: Vec<String>, cx: &mut Context<Self>) {
+        if self.wechat_loading || !self.wechat_reader_active() { return; }
+        let Some(connection) = self.wechat_reader_connection()
+            .filter(|c| c.status == "connected" && c.readable) else {
+            self.invalidate_wechat_reader(true, true);
             self.error = Some(t("请先连接本机微信"));
             cx.notify();
             return;
-        }
-        self.wechat_generation += 1;
+        };
+        self.invalidate_wechat_reader(false, false);
         let generation = self.wechat_generation;
         self.wechat_loading = true;
         self.error = None;
-        let chat = self.wechat_chat.clone();
-        let messages = chat.is_some();
-        let path = if let Some((id, _)) = chat {
-            format!(
-                "/api/wechat/messages?conversation={}&cursor={}",
-                opstwin_api::product::query_value(&id),
-                opstwin_api::product::query_value(&cursor)
-            )
+        let conversation = self.wechat_chat.as_ref().map(|c| c.0.clone());
+        let owner_conversation = conversation.clone();
+        let path = if let Some(id) = &conversation {
+            format!("/api/wechat/messages?conversation={}&cursor={}",
+                opstwin_api::product::query_value(id), opstwin_api::product::query_value(&cursor))
         } else {
-            format!(
-                "/api/wechat/chats?cursor={}",
-                opstwin_api::product::query_value(&cursor)
-            )
+            format!("/api/wechat/chats?cursor={}", opstwin_api::product::query_value(&cursor))
         };
         let applied_query = self.wechat_applied_query.clone();
-        let conversation = self.wechat_chat.as_ref().map(|c| c.0.clone());
         let client = self.client.clone();
         let task = cx.spawn(async move |this, cx| {
             let result = io(async move {
@@ -1662,38 +1699,19 @@ impl SettingsView {
                 else { client.wechat_contacts(json!({"query":applied_query,"cursor":cursor})).await }
             }).await;
             _ = this.update(cx, |this, cx| {
-                if this.wechat_generation != generation {
-                    return;
-                }
+                if !this.wechat_owner_matches(generation, &connection, owner_conversation.as_deref(), None) { return; }
                 this.wechat_loading = false;
                 match result {
                     Ok(value) => {
-                        if this
-                            .provider_connection("wechat-sync")
-                            .is_some_and(|c| c["status"] == "connected")
-                        {
-                            if messages {
-                                this.wechat_messages = value;
-                                this.wechat_message_cursors = history;
-                            } else {
-                                this.wechat_page = value;
-                                this.wechat_chat_cursors = history;
-                            }
+                        if owner_conversation.is_some() {
+                            this.wechat_messages = value;
+                            this.wechat_message_cursors = history;
+                        } else {
+                            this.wechat_page = value;
+                            this.wechat_chat_cursors = history;
                         }
                     }
-                    Err(error) => {
-                        if matches!(
-                            error.code(),
-                            Some("wechat_not_connected" | "connection_changed" | "wechat_source_changed")
-                        ) {
-                            this.wechat_page = json!({});
-                            this.wechat_exact = None;
-                            this.wechat_image = None;
-                            this.wechat_messages = json!({});
-                            this.wechat_chat = None;
-                        }
-                        this.error = Some(error.user_text());
-                    }
+                    Err(error) => this.wechat_reader_error(error),
                 }
                 cx.notify();
             });
@@ -1701,43 +1719,85 @@ impl SettingsView {
         self._tasks.push(task);
         cx.notify();
     }
-    fn read_wechat_image(&mut self, message: String, cx: &mut Context<Self>) {
-        if self.wechat_loading { return; }
-        let Some((conversation,_))=self.wechat_chat.clone() else {return;};
-        self.wechat_generation+=1;let generation=self.wechat_generation;
-        self.wechat_loading=true;self.error=None;
-        let client=self.client.clone();
-        let task=cx.spawn(async move |this,cx| {
-            let result=io(async move {
-                let meta=client.wechat_attachment(&conversation,&message).await?;
-                let token=meta["attachmentId"].as_str().ok_or_else(||opstwin_api::ApiError::Decode("missing attachment token".into()))?;
-                let file=client.wechat_attachment_bytes(token).await?;
-                use sha2::Digest;
-                let hash=format!("{:x}",sha2::Sha256::digest(&file.bytes));
-                if meta["sha256"].as_str()!=Some(hash.as_str())||meta["bytes"].as_u64()!=Some(file.bytes.len() as u64)||meta["mime"].as_str()!=file.content_type.as_deref(){return Err(opstwin_api::ApiError::Decode("attachment integrity mismatch".into()));}
-                let format=match file.content_type.as_deref(){Some("image/png")=>ImageFormat::Png,Some("image/jpeg")=>ImageFormat::Jpeg,Some("image/webp")=>ImageFormat::Webp,_=>return Err(opstwin_api::ApiError::Decode("unsupported image format".into()))};
-                Ok(std::sync::Arc::new(Image::from_bytes(format,file.bytes)))
-            }).await;
-            _=this.update(cx,|this,cx| {if this.wechat_generation!=generation{return;}this.wechat_loading=false;match result{Ok(image) if this.provider_connection("wechat-sync").is_some_and(|c|c["status"]=="connected")=>this.wechat_image=Some(image),Ok(_)=>{},Err(e)=>this.error=Some(e.user_text())}cx.notify();});
-        });self._tasks.push(task);cx.notify();
-    }
-    fn read_wechat_exact(&mut self, message: String, cx: &mut Context<Self>) {
-        if self.wechat_loading { return; }
-        let Some((conversation, _)) = self.wechat_chat.clone() else { return; };
-        self.wechat_generation += 1;
-        let generation = self.wechat_generation;
+    fn begin_wechat_message(&mut self, message: &str) {
+        if self.wechat_selected_message.as_deref() != Some(message) {
+            self.invalidate_wechat_reader(false, false);
+        } else {
+            self.wechat_generation = self.wechat_generation.wrapping_add(1);
+        }
+        self.wechat_selected_message = Some(message.to_string());
         self.wechat_loading = true;
         self.error = None;
+    }
+    fn wechat_can_read_message(&self, message: &str) -> bool {
+        self.wechat_reader_active() && !self.wechat_loading
+            && self.wechat_messages["items"].as_array().is_some_and(|items|
+                items.iter().any(|item| item["id"].as_str() == Some(message)))
+    }
+    fn read_wechat_image(&mut self, message: String, cx: &mut Context<Self>) {
+        if !self.wechat_can_read_message(&message) { return; }
+        let Some((conversation, _)) = self.wechat_chat.clone() else { return; };
+        let Some(connection) = self.wechat_reader_connection()
+            .filter(|c| c.status == "connected" && c.readable) else { return; };
+        self.begin_wechat_message(&message);
+        let generation = self.wechat_generation;
         let client = self.client.clone();
         let task = cx.spawn(async move |this, cx| {
-            let result = io(async move { client.wechat_message(&conversation, &message).await }).await;
+            let meta_conversation = conversation.clone();
+            let meta_message = message.clone();
+            let meta_client = client.clone();
+            let meta = io(async move { meta_client.wechat_attachment(&meta_conversation, &meta_message).await }).await;
+            // Do not begin a private media GET after the UI owner disappeared.
+            if !this.update(cx, |this, _| this.wechat_owner_matches(generation, &connection,
+                Some(&conversation), Some(&message))).unwrap_or(false) { return; }
+            let result = io(async move {
+                let meta = meta?;
+                let token = meta["attachmentId"].as_str().ok_or_else(|| opstwin_api::ApiError::Decode("missing attachment token".into()))?;
+                let file = client.wechat_attachment_bytes(token).await?;
+                use sha2::Digest;
+                let hash = format!("{:x}", sha2::Sha256::digest(&file.bytes));
+                if meta["sha256"].as_str() != Some(hash.as_str()) || meta["bytes"].as_u64() != Some(file.bytes.len() as u64)
+                    || meta["mime"].as_str() != file.content_type.as_deref() {
+                    return Err(opstwin_api::ApiError::Decode("attachment integrity mismatch".into()));
+                }
+                let format = match file.content_type.as_deref() {
+                    Some("image/png") => ImageFormat::Png, Some("image/jpeg") => ImageFormat::Jpeg,
+                    Some("image/webp") => ImageFormat::Webp,
+                    _ => return Err(opstwin_api::ApiError::Decode("unsupported image format".into())),
+                };
+                Ok(std::sync::Arc::new(Image::from_bytes(format, file.bytes)))
+            }).await;
             _ = this.update(cx, |this, cx| {
-                if this.wechat_generation != generation { return; }
+                if !this.wechat_owner_matches(generation, &connection, Some(&conversation), Some(&message)) { return; }
                 this.wechat_loading = false;
                 match result {
-                    Ok(value) if this.provider_connection("wechat-sync").is_some_and(|c| c["status"] == "connected") => this.wechat_exact = Some(value),
-                    Ok(_) => {},
-                    Err(error) => this.error = Some(error.user_text()),
+                    Ok(image) => this.wechat_image = Some(image),
+                    Err(error) => this.wechat_reader_error(error),
+                }
+                cx.notify();
+            });
+        });
+        self._tasks.push(task);
+        cx.notify();
+    }
+    fn read_wechat_exact(&mut self, message: String, cx: &mut Context<Self>) {
+        if !self.wechat_can_read_message(&message) { return; }
+        let Some((conversation, _)) = self.wechat_chat.clone() else { return; };
+        let Some(connection) = self.wechat_reader_connection()
+            .filter(|c| c.status == "connected" && c.readable) else { return; };
+        self.begin_wechat_message(&message);
+        let generation = self.wechat_generation;
+        let request_conversation = conversation.clone();
+        let request_message = message.clone();
+        let client = self.client.clone();
+        let task = cx.spawn(async move |this, cx| {
+            let result = io(async move { client.wechat_message(&request_conversation, &request_message).await }).await;
+            _ = this.update(cx, |this, cx| {
+                if !this.wechat_owner_matches(generation, &connection, Some(&conversation), Some(&message)) { return; }
+                this.wechat_loading = false;
+                match result {
+                    Ok(value) => this.wechat_exact = Some(value),
+                    Err(error) => this.wechat_reader_error(error),
                 }
                 cx.notify();
             });
@@ -1757,8 +1817,7 @@ impl SettingsView {
                 .label(t("‹ 连接"))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.detail = None;
-                    this.wechat_generation += 1;
-                    this.wechat_loading = false;
+                    this.invalidate_wechat_reader(true, true);
                     cx.notify();
                 })),
         );
@@ -1852,14 +1911,19 @@ impl SettingsView {
         if let Some(image)=&self.wechat_image {
             out=out.child(document_card(cx)
                 .child(Button::new("wechat-close-image").small().ghost().label(t("关闭图片"))
-                    .on_click(cx.listener(|this,_,_,cx|{this.wechat_image=None;cx.notify();})))
+                    .on_click(cx.listener(|this,_,_,cx|{
+                        this.wechat_generation = this.wechat_generation.wrapping_add(1);
+                        this.wechat_loading = false;
+                        this.wechat_image = None;
+                        cx.notify();
+                    })))
                 .child(img(image.clone()).max_w(px(580.)).max_h(px(480.)).object_fit(ObjectFit::Contain)));
         }
         if let Some(value) = &self.wechat_exact {
             let item = &value["item"];
             out = out.child(document_card(cx)
                 .child(Button::new("wechat-close-exact").small().ghost().label(t("关闭全文"))
-                    .on_click(cx.listener(|this,_,_,cx| {this.wechat_exact=None;this.wechat_image=None;cx.notify();})))
+                    .on_click(cx.listener(|this,_,_,cx| {this.invalidate_wechat_reader(false, false);cx.notify();})))
                 .child(div().text_size(body_px(13.,cx)).line_height(relative(1.65)).child(item["text"].as_str().unwrap_or("").to_string()))
                 .when(item["contentTruncated"]==true,|v|v.child(note("此来源正文仍有截断，不能视为完整消息",cx))));
         }
@@ -1875,12 +1939,7 @@ impl SettingsView {
                             .label(t("微信会话"))
                             .disabled(self.wechat_loading)
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.wechat_chat = None;
-                                this.wechat_applied_query.clear();
-                                this.wechat_exact = None;
-                            this.wechat_image = None;
-                                this.wechat_generation += 1;
-                                this.wechat_messages = json!({});
+                                this.invalidate_wechat_reader(true, true);
                                 cx.notify();
                             })),
                     )
@@ -1987,11 +2046,15 @@ impl SettingsView {
                         .child(div().w_full().text_size(px(13.)).child(label))
                         .disabled(self.wechat_loading)
                         .on_click(cx.listener(move |this, _, _, cx| {
+                            if !this.wechat_reader_active() || this.wechat_loading
+                                || !this.wechat_page["items"].as_array().is_some_and(|items|
+                                    items.iter().any(|item| item["id"].as_str() == Some(id.as_str()))) {
+                                return;
+                            }
+                            if this.wechat_chat.as_ref().map(|c| c.0.as_str()) != Some(id.as_str()) {
+                                this.invalidate_wechat_reader(true, true);
+                            }
                             this.wechat_chat = Some((id.clone(), name.clone()));
-                            this.wechat_applied_query.clear();
-                            this.wechat_exact = None;
-                            this.wechat_image = None;
-                            this.wechat_messages = json!({});
                             this.read_wechat(String::new(), vec![String::new()], cx);
                         })),
                 );
@@ -4654,6 +4717,9 @@ impl SettingsView {
 }
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.wechat_reader_active() && std::mem::take(&mut self.wechat_query_needs_reset) {
+            self.wechat_query.update(cx, |input, cx| input.set_value("", window, cx));
+        }
         let title = t("设置");
         if window.window_title() != title {
             window.set_window_title(&title);

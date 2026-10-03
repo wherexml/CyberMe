@@ -162,3 +162,7 @@ v16 独立实际截图已修复黑区和复制背景，但四边约8px暗带仍�
 
 
 个人微信完整上下文reader使用同连接/来源精确ID、RAM查询/get与已验证图片；服务端Agent日志省略query/正文，媒体RAM有界，断开阻断。真实34项HTTP和非图片缺口见[微信上下文旅程](../../docs/journeys/native-wechat-context.md)。新入口实际GUI尚未验收。
+
+v18候选只补微信reader的RAM owner生命周期：隐藏设置立即失效请求并释放已读图片/正文/列表，保留未提交查询在RAM；切设置scope、返回连接/会话、改变精确cid/mid、断开或canonical连接id/updatedAt/status/read权限变化均拒旧回包。输入查询只在真实scope变化后使用render的现有Window清空；同version后台reload不丢查询或重新发送。图片metadata后、下载前及所有结果提交均复核visible/section/detail/精确cid/mid/请求代次/连接版本；普通设置draft和Saver字段不改，旧token不持久化。此修复仍是后续候选源码与cargo检查，当前运行v16 bundle保留，GUI全部NOT_RUN；非图片读取/显式保存/系统打开仍等待统一API契约，不计入本修复通过。
+
+独立v18源码审查发现首版set_visible(false)没有真实调用接线，原失败报告保留。后续候选使用持有的`observe_window_visibility`订阅与`window.is_visible()`初值接入真实Hidden/Visible，使用弱实体的`on_window_should_close`在系统关闭前失效；Shell移除无条件true，并在显式Close路径先失效再remove。重新可见按stale刷新canonical连接，不自动读微信、不以普通blur/deactivate清查询。此接线修复仍需新包真实minimize/Hide/关闭/恢复GUI，不因源码或编译通过覆盖原审查结论。
