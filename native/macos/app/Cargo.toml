@@ -13,3 +13,13 @@ opstwin-api = { path = "../crates/opstwin-api" }
 gpui-kit.workspace = true
 tokio.workspace = true
 serde_json.workspace = true
+opstwin-store = { path = "../crates/opstwin-store" }
+serde.workspace = true
+sha2.workspace = true
+chrono = "=0.4.45"
+
+# Existing locked dependencies, exposed directly for GPUI image GET transport.
+http_client = { package = "gpui-pre-http-client", version = "=0.3.7" }
+reqwest.workspace = true
+futures-util.workspace = true
+anyhow = "1"

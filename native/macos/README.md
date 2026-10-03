@@ -1,6 +1,8 @@
-# OpsTwin macOS (GPUI) — Sprint 1003 技术验证
+# OpsTwins macOS（GPUI）
 
-Rust + Longbridge gpui-kit 的最小原生 Chat 客户端。状态仅为「macOS 技术验证」，不是已交付的原生 App（无签名/公证/安装包）。
+Rust + Longbridge gpui-kit 原生客户端：对话、收件箱、灵感、任务、全局搜索和十二个独立非模态设置分区。视觉继承 `docs/design/macos-ui-study.html` 和较新契约；真实业务复用 Web API。完整产品迁移与独立验收进行中，不能以构建成功或 HTTP 通过代替 UI／旅程评分。
+
+运行包位于 `.local/apps/OpsTwins.app`；bundle 使用本机 ad-hoc 签名解决重新构建后的 macOS 校验问题，没有 Developer ID 签名、公证或正式分发安装包。
 
 ## 结构
 
@@ -8,8 +10,25 @@ Rust + Longbridge gpui-kit 的最小原生 Chat 客户端。状态仅为「macOS
 Cargo.toml              workspace（依赖版本集中锁定）
 Cargo.lock              精确锁定（含 gpui-pre-* 快照）
 rust-toolchain.toml     固定 rustc 1.95.0（见下）
-crates/opstwin-api/     reqwest(rustls)+tokio+serde；SSE 行解析；{error,message} 类型化错误；requestId 生成
-app/                    二进制 `opstwin`：窗口、主题、Chat 视图
+crates/opstwin-api/     reqwest(rustls,multipart)+tokio+serde；SSE 行解析；{error,message,detail} 类型化错误；Chat/Inbox/Tasks/Files 端点
+crates/opstwin-store/   本地 JSON 状态（原子写 tmp+fsync+rename，0600/0700）
+app/src/main.rs         启动、菜单、窗口位置恢复
+app/src/shell.rs        78pt SVG 图标导航、Cmd+1/2/3/4、Cmd+K、Cmd+,、上次页面与窗口尺寸持久化
+app/src/sync.rs         共享变更信号（SSE / health 轮询），各页面订阅
+app/src/chat.rs         对话：历史分页、发送/重试、附件上传与下载
+app/src/inbox.rs        收件箱：列表/筛选/搜索/分页、详情、草稿编辑与冲突、生成草稿、完成/忽略、本人测试项发送与撤回
+app/src/tasks.rs        任务：筛选/搜索/分页、创建、编辑与冲突、完成/重开、取消、删除/恢复
+app/src/files.rs        上传前 25MB 检查；下载校验大小/Content-Type/SHA-256 后写缓存
+app/src/persist.rs      每个状态文件一个后台写入器（合并写；save_now 等待落盘）
+app/src/util.rs         Chrono 设备本地公历时间、大小、真实日期校验
+app/src/ideas.rs        真实灵感、类别、一步 Agent 执行与请求回查
+app/src/search.rs       真实记录检索、最近会话、详情路由
+app/src/settings.rs     十二分区、真实保存、模型／连接／同步／个人上下文
+app/src/dictation.rs    内存录音生命周期、真实 ASR、取消与迟到结果屏蔽
+assets/dictation.swift  AVAudioEngine helper，89秒／12MB，无录音落盘
+assets/settings-permissions.swift  AV/AX只读状态helper，不读取私有TCC或弹窗
+vendor/                可复现 GPUI macOS demand frame wake 修复
+acceptance/             协议级验收二进制（保持可编译）
 ```
 
 ## 锁定版本
@@ -20,7 +39,10 @@ app/                    二进制 `opstwin`：窗口、主题、Chat 视图
 | gpui-kit | `=0.7.0`（crates.io；仓库 tag `v0.7.0` = `0c830f4d257e69fdd17200650533ab4ca9a40cc0`） |
 | gpui-component / gpui-base | 0.7.0（经 gpui-kit 传递） |
 | GPUI | `gpui-pre =0.3.7`（含 gpui-pre-macos / -platform 0.3.7，由 gpui-kit 精确 pin） |
-| reqwest | 0.12（rustls-tls） / tokio 1 |
+| reqwest | 0.12（rustls-tls、multipart） / tokio 1 |
+| sha2 | 0.10（附件 SHA-256 校验；锁文件内已有，仅新增 multipart 相关条目） |
+
+MVP 新增依赖后 `Cargo.lock` 新增 12 行（`opstwin-store` 与 reqwest multipart 的 `mime_guess`），之后 `cargo build --release --locked` 通过。
 
 升级 gpui-kit 时须同时升级其 pin 的整组 `gpui-pre-*`，单独评估。
 
@@ -30,16 +52,17 @@ app/                    二进制 `opstwin`：窗口、主题、Chat 视图
 cd native/macos
 cargo build --release --locked  # 产物 target/release/opstwin
 ./target/release/opstwin        # 需本机 OpsTwin API 已在 46110 运行
-./bundle-app.sh                 # 生成 .local/apps/OpsTwin.app，可在 Finder 双击
+./bundle-app.sh                 # 生成 .local/apps/OpsTwins.app，可在 Finder 双击
 ```
 
-快捷键：Enter 发送、Shift+Enter 换行、Cmd+Shift+L 切换浅/深色、Cmd+Q 退出。启动时跟随系统外观。
+快捷键：Cmd+1 对话、Cmd+2 收件箱、Cmd+3 灵感、Cmd+4 任务、Cmd+K 搜索、Cmd+, 设置（也在「前往」菜单）、Enter 发送、Shift+Enter 换行、Cmd+Shift+L 切换浅/深色、Cmd+Q 退出。启动时恢复已保存外观，未配置时跟随系统。Option+Space 在听写设置启用后切换录音。
 
 ## 环境变量
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `OPSTWIN_API` | `http://127.0.0.1:46110` | API 基址。客户端不监听端口、不持有模型密钥 |
+| `OPSTWIN_DATA_DIR` | `~/Library/Application Support/OpsTwin` | 本地状态目录；设置后附件缓存也改到 `$OPSTWIN_DATA_DIR/cache/files`（QA 隔离用，如 `/tmp/opstwin-qa`） |
 
 日志写 stderr，只含 requestId、条数、错误码，不含消息正文或凭据。
 
@@ -48,8 +71,41 @@ cargo build --release --locked  # 产物 target/release/opstwin
 - 启动：`GET /api/native/version` 探测 features；缺 `messages.page` 时降级为 `/api/bootstrap` 切片，缺 `events.sse` 时降级为每 2 秒轮询 `/api/health` revision。
 - 历史：`GET /api/conversations/primary` → `GET /api/conversations/:id/messages?limit=50`；列表滚到顶部（或点「加载更早消息」）用 `before=nextBefore` 取上一页，按 id 合并。
 - 同步：SSE `hello`/`revision` 触发刷新最新一页并按 id 合并；若最新页与已有消息无交集则继续向前翻页补齐（最多 10 页），避免缺漏。断线指数退避重连并携带 `Last-Event-ID`。
-- 发送：`POST /api/chat {conversationId,message,requestId}`，`requestId = native-<uuid v4>`。网络错误/5xx 用同一 requestId 自动重试（最多 3 次，1s/2s 退避），之后显示「发送失败 + 重试」，重试仍用同一 requestId；409 `request_in_progress`/`conversation_busy` 显示等待并在 revision 变化后回读再询问；409 `request_conflict` 显示错误、不提供重试。
+- 发送：`POST /api/chat {conversationId,message,requestId[,attachmentIds]}`；响应解析顶层 `run`、`requestId`、`artifacts`，`requestId = native-<uuid v4>`。请求 ID 先持久化；未知结果先 GET `/api/chat/requests/:id` 回查，只在未开始的404或明确失败时用原载荷／ID重新提交；部分执行禁止重试；409 `request_in_progress`/`conversation_busy` 显示等待并在 revision 变化后回读再询问；409 `request_conflict` 显示错误、不提供重试。
 - IME：见下。
+
+## 本地持久化（opstwin-store）
+
+| 文件 | 内容 | 何时清除 |
+|---|---|---|
+| `ui.json` | `lastPage`、窗口 `x/y/width/height/maximized` | 不清除；尺寸过小或不在任何显示器上时回退默认居中 |
+| `chat.json` | 各会话独立草稿、已上传待发附件、未确认请求（`requestId`、原载荷、附件、状态、`generation`） | 依据原请求／continuation 回执确认成功后删除；历史中出现相似消息不作为确认；允许移除的明确失败由用户移除 |
+| `inbox.json` | 每项未保存草稿（文本、`baseUpdatedAt`、起点草稿）；发送幂等键（key、草稿指纹、状态、回执 ID） | 草稿保存成功或放弃时删除；幂等键保留作撤回与回读依据 |
+
+只保存服务器尚不知道的客户端状态，不保存凭据，也不复制服务端历史。普通 UI 状态损坏后移到 `*.corrupt-<ms>` 并使用默认值；文件访问策略通过 `load_strict` 读取，损坏、无权限、无效 schema 或残留损坏证据均阻止访问，禁止回退允许。重启后保留未确认请求与原载荷；先 GET 原回执，running 继续等待，partial 不重发。Cmd+Q 退出时同步写一次。
+
+## 收件箱语义
+
+- 列表：`GET /api/inbox/query?offset&limit[&query][&includeDone=true]`。待处理＝服务端默认（需关注且未完成）；全部＝`includeDone=true`；安静记录＝`includeDone=true` 后按共享注意力语义过滤，最多连续读 10 页。时间取有效来源末条日期并使用设备本地时区。
+- 详情：`GET /api/inbox/:id`，复用标准化来源消息、头像和缓存附件；Jev 成功数值显示三条横条，规则／未知／失败不伪造概率。
+- 草稿：`PATCH /api/inbox/:id {draft, editedByUser:true, baseUpdatedAt}`。409 `edit_conflict` 取 `detail.entity` 并排显示服务器版与本地版；「保留我的」以新 `updatedAt` 重新 PATCH，「使用服务器版本」丢弃本地修改。本地修改输入即写 `inbox.json`；SSE 刷新不会覆盖未保存修改，只提示服务器已变化。
+- 生成：`POST /api/inbox/:id/draft {mode:"auto", requestId}`，无总超时，显示进度；409 `request_in_progress` 每 3 秒以同一 requestId 再问；网络/5xx 失败保留 requestId，「重试生成」不会产生第二次运行。有未保存修改时禁止生成。409 `draft_review_required` 保存候选并提供审阅／采用；保留本地草稿不会丢掉候选，显式采用带版本校验。
+- 完成/忽略/重新打开：`PATCH {status:"done"|"dismissed"|"pending", baseUpdatedAt}`；已外发/未知状态禁用。
+- 发送：仅 `isSelfTest && recipientId=="self" && sourceSystem!="opstwin" && testMarker 以 OPSADV-QA- 开头` 时可用；其他项按钮禁用并说明原因。流程：生成或复用幂等键 → `save_now` 落盘 → `GET` 回读（已发送且有回执则直接显示）→ 草稿与回读不一致则停止 → `PATCH {approved:true, sensitiveApproved}` → `POST /send {draft, idempotencyKey}`。网络丢失再回读一次；仍未知时保留同一 key，下次点击先回读再以原 key 请求（服务端按 key 回放或对账）。服务端 `send_failed` 后才提供「确认无回执，用新幂等键发送」。敏感项需勾选明确批准。回执显示 `receipt.messageIds`。
+- 撤回：`POST /api/inbox/:id/undo {idempotencyKey}`，失败后回读状态。
+
+## 任务语义
+
+`GET /api/tasks?offset&limit[&deleted=true][&status][&query]`（信封）。进行中＝非 completed/cancelled（客户端过滤）；已完成/已取消用服务端 `status`；回收站用 `deleted=true`。创建 `POST /api/tasks {title,notes,status:"active",dueDate?}`；编辑 `PATCH {title,notes,dueDate,baseUpdatedAt}`，409 显示双方并选择；完成/重开 `status:"completed"/"active"`，取消 `status:"cancelled"`，均带 `baseUpdatedAt`；删除 `DELETE`；恢复 `POST /:id/restore {}`。写操作不自动重试，失败后重新读取列表。
+
+## 文件
+
+- 上传：Chat 输入框左侧「+」→ 系统文件选择器（可多选）→ 读取前检查 1 字节–25MB → `POST /api/files` multipart（`file` + 已有会话时 `conversationId`）→ 显示附件 chip（可移除）→ 随消息发送 `attachmentIds`。附件为空时请求不带该字段（服务端指纹 `attachmentIds||[]`，二者等价）。
+- 下载：消息 `attachments`（artifact id）显示为 chip；元数据来自上传结果、Chat 响应 `artifacts` 或分页 `GET /api/artifacts`（服务端无单个 artifact GET）。点击 → `GET /files/:id` 流式下载，大小超过记录即中止；校验字节数、Content-Length、Content-Type（与记录 mime 比较主类型）、必须有64位 SHA-256；缺少时刷新服务端元数据，仍缺失则拒绝打开；同大小缓存也校验 SHA-256 → 原子写入 `~/Library/Caches/OpsTwin/files/<id>-<name>` → `cx.open_with_system` 用默认应用打开。缓存命中需大小与哈希仍一致。
+
+## 同步
+
+`sync.rs` 维护单一 SSE（或 2 秒 health 轮询）连接；Chat、Inbox、Tasks 订阅。不可见页面只标记 stale，切回时刷新；可见页面 350–400ms 防抖后刷新。首次连接不触发重复加载，断线重连后补读。
 
 ## 中文输入法回车
 
@@ -61,8 +117,28 @@ cargo build --release --locked  # 产物 target/release/opstwin
 
 ## 界面验收与恢复
 
-结果与可重复步骤见 [原生 GUI 验收](../../docs/acceptance/native-gpui-20261003.md)。真实服务长回复 3111 字符可显示标题、嵌套列表、代码和表格；Web 到原生窗口可见消息的测量上界为 1802ms。隔离 1000 条历史分页、回到底部与输入已验证；它不代表真实服务器千条 SQL 查询压力测试。
+结果与可重复步骤见 [原生 GUI 验收](../../docs/acceptance/native-gpui-20261003.md)。真实服务长回复 3111 字符可显示标题、嵌套列表、代码和表格；Web 到原生窗口可见消息的测量上界为 1802ms。隔离 1000 条历史分页、回到底部与输入已验证；它不代表真实服务器千条 SQL 查询压力测试。MVP 编码后的独立评审、14 项实测矩阵与两个已知 P2 缺陷（重启恢复附件的哈希完整性、生成期并发修改后的候选草稿恢复入口）见 [MVP Review](../../docs/acceptance/native-mvp-review-20261003.md)，修复完成前不做原生 MVP 验收宣称。
 
-Tokio timer 必须在 `runtime::io(async move { ... })` 内构造；在 GPUI 前台直接调用 `tokio::time::sleep` 会因缺 reactor 崩溃。已通过真实 API 转发代理的 503 故障与 GUI 重试验证修复。发送失败保留在本地消息气泡，重试沿用 requestId；本地草稿尚未持久化。
+Tokio timer 必须在 `runtime::io(async move { ... })` 内构造；在 GPUI 前台直接调用 `tokio::time::sleep` 会因缺 reactor 崩溃。已通过真实 API 转发代理的 503 故障与 GUI 重试验证修复。发送失败保留在本地消息气泡，重试沿用 requestId；MVP 起草稿与待发消息持久化到 `chat.json`。
 
-复测工具（均只监听 loopback）：`node scripts/native-ui-proxy.mjs`（仓库根目录运行，46191 转发真实 API）；`node scripts/native-ui-history-fixture.mjs`（46192 合成只读历史）。以 `OPSTWIN_API` 指定对应地址启动二进制。`target/`、本地 bundle 与证据均忽略，不提交构建产物；bundle 未签名或公证。
+复测工具（均只监听 loopback）：`node scripts/native-ui-proxy.mjs`（仓库根目录运行，46191 转发真实 API）；`node scripts/native-ui-history-fixture.mjs`（46192 合成只读历史）。以 `OPSTWIN_API` 指定对应地址启动二进制。`target/`、本地 bundle 与证据均忽略，不提交构建产物；bundle 仅本机 ad-hoc 签名，未公证。
+
+## 产品品牌与本地启动
+
+产品名称为 OpsTwins，窗口、菜单、侧栏和本地 App bundle 使用同一名称。`assets/opstwins.svg` 沿用 Web `TwinMark` 的紫蓝渐变、双圆与白色交集；系统身份保留 SVG；主导航不重复品牌区。bundle 脚本使用 rsvg-convert 和 macOS iconutil 生成 ICNS。运行 `./bundle-app.sh` 后打开 `.local/apps/OpsTwins.app`。既有 bundle identifier、API 协议、二进制名称和用户状态目录保持兼容，不迁移历史状态。
+
+## 完整迁移与证据边界
+
+[产品迁移旅程](../../docs/journeys/native-product-parity.md)、[Chat规格](../../docs/spec/native-chat-parity.md)、[Inbox规格](../../docs/spec/native-inbox-parity.md)、[设置与灵感规格](../../docs/spec/native-product-pages.md)分别记录实现及真实验收范围。原两个P2已有修复和真实协议／文件 helper 回归，当前 UI 与硬件旅程仍需独立复核。
+
+46193 仅提供公开合成只读视觉数据；不得把它的截图当作真实 Agent、外发、系统权限或性能证明。独立截图及 Haiku 原始评分放忽略目录 `output/native-parity-20261003/`，不得自行抬分。光标、窗口、录音和失败恢复必须在真实原生 App 验收。
+
+完整交付分 Part 1 独立截图视觉与 Part 2 原生界面到真实后端的85项功能及恢复旅程，两项评分均须 >95；范围和现有证据见 [Part 2 矩阵](../../docs/acceptance/native-product-part2-matrix-20261003.md)。非空搜索通过 [全文搜索API](../../docs/spec/native-workspace-search.md)按revision分页；完整详情另GET原Entity。附件元数据按精确ID读取，消除旧5000条列表上限，内容仍必须经过大小/MIME/SHA校验。任务状态操作回读 `includeDeleted=true` 和真实SQL删除标记，保留未保存editor，已删除状态禁保存。
+
+## 设置、权限与新连接恢复
+
+设置的完整接口／需求矩阵／本批GUI未测项见[设置与灵感规格](../../docs/spec/native-product-pages.md#本模块完整需求矩阵与本批gui待测)，失败面先记录在[设置失败清单](../../docs/journeys/native-settings-failure-matrix.md)。`node scripts/native-settings-product-http-e2e.mjs`从仓库根运行，使用46110真实API；最新61项HTTP证据覆盖独立记忆全文、稳定连接与只读微信真实分页，产物在`.local/acceptance/native-settings-product/`，不含私人正文。HTTP不执行原生控件，不能替代GUI或95分视觉评分。
+
+`settings-permissions.swift`经bundle脚本编译为`Contents/MacOS/opstwin-settings-permissions`。Settings仅执行同目录helper，读取AVCaptureDevice麦克风与AX辅助功能状态；异常/缺失为unknown，完整磁盘/应用文件读取许可仍unknown且disabled。helper不请求授权、不扫描私有TCC或钥匙串。权限归属由macOS当前应用责任链决定：独立终端helper结果只证明该执行上下文，不证明本地ad-hoc签名bundle已获权限；需从真实App点击刷新核验。ad-hoc不等于Developer ID或公证。
+
+新增自定义连接先把稳定`createId`原子保存到`settings-drafts.json`，回查原ID；404才`POST /api/connections`形成setup_required，再`POST /api/connections/:id/test`。重试复用原ID，已connected采用原结果；已创建但资料不同返回409并显示「读取原连接」，不再走无幂等ID的`/api/connections/test`重复生成。失败和未知保留表单，服务端真实检测成功前不显示已连接。

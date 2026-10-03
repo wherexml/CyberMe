@@ -39,6 +39,7 @@ import {queryInbox,bulkInboxStatus} from './inbox-operations';
 import {completedAgentWrites} from './agent-effects';
 import {readConnectionResource,callConnectionTool} from './connection-resources';
 import {mountNativeApi} from './native-api';
+import {installWorkspaceSearch} from './workspace-search';
 import {mountChatStatus} from './chat-status';
 
 migrateAutomaticReplyFiles();
@@ -125,6 +126,7 @@ app.get('/api/memories/history',c=>json(c,{history:memoryHistory()}));
 app.post('/api/memories/snapshot',c=>json(c,snapshotMemories(),201));
 app.post('/api/memories/history/:id/restore',c=>{const result=restoreMemories(c.req.param('id'));if(!result)throw new ApiError(404,'history_not_found','知识快照不存在');return json(c,result);});
 mountNativeApi(app);
+installWorkspaceSearch(app);
 mountChatStatus(app);
 app.get('/api/conversations/primary',c=>{const id=meta<string|undefined>('primaryConversationId',undefined);return json(c,{conversationId:id,conversation:id?get('conversations',id):undefined});});
 app.post('/api/sync/feishu',async c=>json(c,await syncFeishu()));
@@ -140,6 +142,7 @@ app.get('/api/runs',c=>json(c,listResponse(c,list('runs'),100)));
 app.get('/api/runs/:id',c=>json(c,need('runs',c.req.param('id'))));
 app.get('/api/activities',c=>json(c,listResponse(c,list('activities'))));
 app.get('/api/artifacts',c=>json(c,listResponse(c,list('artifacts'))));
+app.get('/api/artifacts/:id',c=>json(c,need('artifacts',c.req.param('id'))));
 
 app.post('/api/wechat/connect',async c=>json(c,await connectWechat()));
 app.get('/api/wechat/chats',async c=>json(c,await wechatChats(c.req.query('cursor'))));
@@ -224,7 +227,7 @@ for(const type of TYPES){
      : list(type,deleted).map(v=>({...v,deleted}));
    return json(c,listResponse(c,values));
  });
- app.get(`/api/${type}/:id`,c=>{const item=need(type,c.req.param('id'),c.req.query('includeDeleted')==='true');return json(c,type==='inbox'?presentInbox(item):item);});
+ app.get(`/api/${type}/:id`,c=>{const includeDeleted=c.req.query('includeDeleted')==='true';const item=need(type,c.req.param('id'),includeDeleted);const result=type==='tasks'&&includeDeleted?{...item,deleted:db.prepare('SELECT deleted FROM entities WHERE type=? AND id=?').get(type,item.id)?.deleted===1}:item;return json(c,type==='inbox'?presentInbox(result):result);});
  app.post(`/api/${type}`,async c=>{const input=await body(c);if(input.id&&get(type,input.id,true))throw new ApiError(409,'already_exists','此 ID 已存在');const saved=put(type,validate(type,{...input,id:input.id||uid(type.slice(0,-1))}));if(type==='conversations')setMeta('primaryConversationId',saved.id);activity(`创建${type}：${saved.title}`,'create','succeeded',undefined,saved.id);return json(c,saved,201);});
  app.patch(`/api/${type}/:id`,async c=>{const old=need(type,c.req.param('id'));const input=await body(c);if(input.baseUpdatedAt&&input.baseUpdatedAt!==old.updatedAt)throw new ApiError(409,'edit_conflict','该对象已在其他页面更新，请刷新后再保存',{updatedAt:old.updatedAt,entity:old});if(input.id&&input.id!==old.id)throw new ApiError(400,'immutable_id','对象 ID 不能修改');const validated=validate(type,{...input,id:old.id},old);if(type==='inbox'&&['body','messages','sender','senderId','channel','sensitive'].some(key=>input[key]!==undefined&&JSON.stringify(input[key])!==JSON.stringify(old[key])))validated.attentionOverride=false;if(type==='inbox'&&input.status==='pending'&&old.status!==input.status)validated.attentionOverride=true;const saved=put(type,validated);if(type==='inbox')recordInboxFeedback(old,saved);const materialFields=type==='inbox'?['title','body','sender','senderId','messages','context','sourceId','sourceScope','attachments','sourceAttachments','draft','draftCandidate','editedByUser','approved','sensitive','sensitiveApproved','category','recipientId','isSelfTest','testMarker','sourceSystem','followup','dueDate','externalRecipient','channel','status']:type==='memories'?['title','body','content','summary','transcript','kind','entityId','contextIds','createdByRunId']:[];if(materialFields.some(key=>JSON.stringify(saved[key])!==JSON.stringify(old[key])))invalidateSemanticAuthorizationsForEntity(old.id);activity(`更新${type}：${saved.title}`,'update','succeeded',undefined,saved.id);return json(c,saved);});
  app.delete(`/api/${type}/:id`,c=>{const old=need(type,c.req.param('id'));if(type==='inbox'&&['sending','send_unknown'].includes(old.status))throw new ApiError(409,'active_outbound','正在发送或结果未知的审批项需要回读或撤回，不能隐藏');if(type==='projects'&&list('tasks').some(t=>t.projectId===old.id))throw new ApiError(409,'project_in_use','请先移动关联任务再删除项目');invalidateSemanticAuthorizationsForEntity(old.id,'Entity deleted');remove(type,old.id);activity(`删除${type}：${old.title}`,'delete','succeeded',undefined,old.id);return json(c,{ok:true,id:old.id,deleted:true});});

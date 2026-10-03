@@ -2235,8 +2235,6 @@ dependencies = [
 [[package]]
 name = "gpui-base"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64bb52b29a8dcdc8d3f595b8b0839c076f237572ab601ba4577d3da8ae085728"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2544,8 +2542,6 @@ dependencies = [
 [[package]]
 name = "gpui-pre-macos"
 version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a43af845b260b09393e923c4f1e1a67a10fcfc847b4815192bbfd02ed9fe725"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -4733,10 +4729,26 @@ dependencies = [
 name = "opstwin-app"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "chrono",
+ "futures-util",
  "gpui-kit",
+ "gpui-pre-http-client",
  "opstwin-api",
+ "opstwin-store",
+ "reqwest",
+ "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
+]
+
+[[package]]
+name = "opstwin-store"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5601,6 +5613,7 @@ dependencies = [
  "hyper-util",
  "js-sys",
  "log",
+ "mime_guess",
  "percent-encoding",
  "pin-project-lite",
  "quinn",

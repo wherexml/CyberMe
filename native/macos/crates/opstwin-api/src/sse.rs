@@ -30,7 +30,11 @@ impl Parser {
             if line.is_empty() {
                 if !self.data.is_empty() || !self.event.is_empty() {
                     out.push(Event {
-                        event: if self.event.is_empty() { "message".into() } else { std::mem::take(&mut self.event) },
+                        event: if self.event.is_empty() {
+                            "message".into()
+                        } else {
+                            std::mem::take(&mut self.event)
+                        },
                         data: self.data.join("\n"),
                         id: self.id.clone(),
                     });
