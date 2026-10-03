@@ -109,6 +109,11 @@ pub struct SettingsView {
     wechat_applied_query: String,
     wechat_exact: Option<Value>,
     wechat_image: Option<std::sync::Arc<Image>>,
+    wechat_capabilities: Value,
+    wechat_media: Option<std::sync::Arc<crate::wechat_media::Media>>,
+    wechat_saved: Option<crate::wechat_media::Saved>,
+    wechat_save_busy: bool,
+    wechat_save_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     wechat_page: Value,
     wechat_chat: Option<(String, String)>,
     wechat_messages: Value,
@@ -168,7 +173,7 @@ impl SettingsView {
             }),
         ];
         let wechat_query = cx.new(|cx| InputState::new(_window, cx).placeholder(t("查找联系人或当前会话消息")));
-        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
+        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_capabilities:json!({}),wechat_media:None,wechat_saved:None,wechat_save_busy:false,wechat_save_cancel:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
         this.visible = _window.is_visible();
         this.reload(cx);
         this
@@ -1626,11 +1631,14 @@ impl SettingsView {
     // Scope changes clear private reader results, never ordinary settings drafts.
     // InputState needs the actual render Window; reset it there, not via a new window.
     fn invalidate_wechat_reader(&mut self, scope_changed: bool, clear_pages: bool) {
+        self.cancel_wechat_save();
         self.wechat_generation = self.wechat_generation.wrapping_add(1);
         self.wechat_loading = false;
         self.wechat_selected_message = None;
         self.wechat_exact = None;
         self.wechat_image = None;
+        self.wechat_media = None;
+        self.wechat_saved = None;
         if clear_pages {
             self.wechat_page = json!({});
             self.wechat_messages = json!({});
@@ -1638,10 +1646,17 @@ impl SettingsView {
             self.wechat_message_cursors.clear();
         }
         if scope_changed {
+            self.wechat_capabilities = json!({});
             self.wechat_chat = None;
             self.wechat_applied_query.clear();
             self.wechat_query_needs_reset = true;
         }
+    }
+    fn cancel_wechat_save(&mut self) {
+        if let Some(cancel) = self.wechat_save_cancel.take() {
+            cancel.store(true, std::sync::atomic::Ordering::Release);
+        }
+        self.wechat_save_busy = false;
     }
     fn wechat_reader_connection(&self) -> Option<WechatReaderConnection> {
         self.provider_connection("wechat-sync").map(|c| WechatReaderConnection {
@@ -1664,10 +1679,10 @@ impl SettingsView {
             && self.wechat_selected_message.as_deref() == message
     }
     fn wechat_reader_error(&mut self, error: opstwin_api::ApiError) {
-        if matches!(error.code(), Some("wechat_not_connected" | "connection_changed" | "wechat_source_changed")) {
+        if matches!(error.code(), Some("wechat_not_connected" | "connection_changed" | "wechat_source_changed" | "wechat_conversation_unverified")) {
             self.invalidate_wechat_reader(true, true);
         }
-        self.error = Some(error.user_text());
+        self.error = Some(t(&error.user_text()));
     }
     fn read_wechat(&mut self, cursor: String, history: Vec<String>, cx: &mut Context<Self>) {
         if self.wechat_loading || !self.wechat_reader_active() { return; }
@@ -1679,6 +1694,7 @@ impl SettingsView {
             return;
         };
         self.invalidate_wechat_reader(false, false);
+        self.wechat_capabilities = json!({});
         let generation = self.wechat_generation;
         self.wechat_loading = true;
         self.error = None;
@@ -1693,16 +1709,22 @@ impl SettingsView {
         let applied_query = self.wechat_applied_query.clone();
         let client = self.client.clone();
         let task = cx.spawn(async move |this, cx| {
+            let capabilities_client=client.clone();
+            let capabilities=io(async move {capabilities_client.product_get("/api/wechat/capabilities").await}).await;
+            if !this.update(cx,|this,_|this.wechat_owner_matches(generation,&connection,owner_conversation.as_deref(),None)).unwrap_or(false){return;}
             let result = io(async move {
-                if applied_query.is_empty() { client.product_get(&path).await }
+                let capabilities = capabilities?;
+                let page = if applied_query.is_empty() { client.product_get(&path).await }
                 else if let Some(id) = conversation { client.wechat_search(json!({"conversation":id,"query":applied_query,"cursor":cursor})).await }
-                else { client.wechat_contacts(json!({"query":applied_query,"cursor":cursor})).await }
+                else { client.wechat_contacts(json!({"query":applied_query,"cursor":cursor})).await }?;
+                Ok::<_, opstwin_api::ApiError>((capabilities, page))
             }).await;
             _ = this.update(cx, |this, cx| {
                 if !this.wechat_owner_matches(generation, &connection, owner_conversation.as_deref(), None) { return; }
                 this.wechat_loading = false;
                 match result {
-                    Ok(value) => {
+                    Ok((capabilities, value)) => {
+                        this.wechat_capabilities = capabilities;
                         if owner_conversation.is_some() {
                             this.wechat_messages = value;
                             this.wechat_message_cursors = history;
@@ -1720,6 +1742,7 @@ impl SettingsView {
         cx.notify();
     }
     fn begin_wechat_message(&mut self, message: &str) {
+        self.cancel_wechat_save();
         if self.wechat_selected_message.as_deref() != Some(message) {
             self.invalidate_wechat_reader(false, false);
         } else {
@@ -1730,16 +1753,30 @@ impl SettingsView {
         self.error = None;
     }
     fn wechat_can_read_message(&self, message: &str) -> bool {
-        self.wechat_reader_active() && !self.wechat_loading
+        self.wechat_reader_active() && !self.wechat_loading && !self.wechat_save_busy
             && self.wechat_messages["items"].as_array().is_some_and(|items|
                 items.iter().any(|item| item["id"].as_str() == Some(message)))
     }
+    fn wechat_media_supported(&self, kind: crate::wechat_media::Kind) -> bool {
+        self.wechat_capabilities["readOnly"]==true
+            && self.wechat_capabilities["attachments"]["maxBytes"].as_u64().is_some_and(|n|n>0&&n<=crate::wechat_media::MAX_BYTES)
+            && self.wechat_capabilities["attachments"][kind.capability()].as_str()
+            .is_some_and(|v| v.starts_with("exact-message-"))
+    }
     fn read_wechat_image(&mut self, message: String, cx: &mut Context<Self>) {
-        if !self.wechat_can_read_message(&message) { return; }
+        self.read_wechat_media(message, crate::wechat_media::Kind::Image, cx);
+    }
+    fn read_wechat_media(&mut self, message: String, kind: crate::wechat_media::Kind, cx: &mut Context<Self>) {
+        if !self.wechat_can_read_message(&message) || !self.wechat_media_supported(kind)
+            || !self.wechat_messages["items"].as_array().is_some_and(|items| items.iter().any(|item|
+                item["id"].as_str()==Some(message.as_str()) && crate::wechat_media::Kind::from_message(item)==Some(kind))) { return; }
         let Some((conversation, _)) = self.wechat_chat.clone() else { return; };
         let Some(connection) = self.wechat_reader_connection()
             .filter(|c| c.status == "connected" && c.readable) else { return; };
         self.begin_wechat_message(&message);
+        self.wechat_media = None;
+        self.wechat_saved = None;
+        self.wechat_image = None;
         let generation = self.wechat_generation;
         let client = self.client.clone();
         let task = cx.spawn(async move |this, cx| {
@@ -1747,31 +1784,28 @@ impl SettingsView {
             let meta_message = message.clone();
             let meta_client = client.clone();
             let meta = io(async move { meta_client.wechat_attachment(&meta_conversation, &meta_message).await }).await;
-            // Do not begin a private media GET after the UI owner disappeared.
             if !this.update(cx, |this, _| this.wechat_owner_matches(generation, &connection,
                 Some(&conversation), Some(&message))).unwrap_or(false) { return; }
             let result = io(async move {
-                let meta = meta?;
-                let token = meta["attachmentId"].as_str().ok_or_else(|| opstwin_api::ApiError::Decode("missing attachment token".into()))?;
-                let file = client.wechat_attachment_bytes(token).await?;
-                use sha2::Digest;
-                let hash = format!("{:x}", sha2::Sha256::digest(&file.bytes));
-                if meta["sha256"].as_str() != Some(hash.as_str()) || meta["bytes"].as_u64() != Some(file.bytes.len() as u64)
-                    || meta["mime"].as_str() != file.content_type.as_deref() {
-                    return Err(opstwin_api::ApiError::Decode("attachment integrity mismatch".into()));
-                }
-                let format = match file.content_type.as_deref() {
-                    Some("image/png") => ImageFormat::Png, Some("image/jpeg") => ImageFormat::Jpeg,
-                    Some("image/webp") => ImageFormat::Webp,
-                    _ => return Err(opstwin_api::ApiError::Decode("unsupported image format".into())),
-                };
-                Ok(std::sync::Arc::new(Image::from_bytes(format, file.bytes)))
+                let meta = crate::wechat_media::MediaMeta::parse(&meta?, kind).map_err(opstwin_api::ApiError::Decode)?;
+                let file = client.wechat_attachment_bytes(&meta.token).await?;
+                crate::wechat_media::verify(meta, file).map(std::sync::Arc::new).map_err(opstwin_api::ApiError::Decode)
             }).await;
             _ = this.update(cx, |this, cx| {
                 if !this.wechat_owner_matches(generation, &connection, Some(&conversation), Some(&message)) { return; }
                 this.wechat_loading = false;
                 match result {
-                    Ok(image) => this.wechat_image = Some(image),
+                    Ok(media) => {
+                        if media.meta.kind == crate::wechat_media::Kind::Image {
+                            let format = match media.meta.mime.as_str() {
+                                "image/png"=>ImageFormat::Png, "image/jpeg"=>ImageFormat::Jpeg,
+                                "image/webp"=>ImageFormat::Webp, "image/gif"=>ImageFormat::Gif,
+                                _=>return,
+                            };
+                            this.wechat_image=Some(std::sync::Arc::new(Image::from_bytes(format, media.bytes.to_vec())));
+                        }
+                        this.wechat_media=Some(media);
+                    }
                     Err(error) => this.wechat_reader_error(error),
                 }
                 cx.notify();
@@ -1779,6 +1813,88 @@ impl SettingsView {
         });
         self._tasks.push(task);
         cx.notify();
+    }
+    fn wechat_save_owner_matches(&self, generation: u64, connection: &WechatReaderConnection,
+        conversation: &str, message: &str, media: &std::sync::Arc<crate::wechat_media::Media>,
+        cancel: &std::sync::Arc<std::sync::atomic::AtomicBool>) -> bool {
+        self.wechat_owner_matches(generation, connection, Some(conversation), Some(message))
+            && self.wechat_media.as_ref().is_some_and(|m| std::sync::Arc::ptr_eq(m,media))
+            && self.wechat_save_cancel.as_ref().is_some_and(|c|std::sync::Arc::ptr_eq(c,cancel))
+            && !cancel.load(std::sync::atomic::Ordering::Acquire)
+    }
+    fn save_wechat_media(&mut self, cx: &mut Context<Self>) {
+        if self.wechat_save_busy || self.wechat_loading || !self.wechat_reader_active() { return; }
+        let Some(media) = self.wechat_media.clone().filter(|m|!m.meta.expired()) else { return; };
+        if let Err(error)=crate::wechat_media::policy_stamp() { self.error=Some(t(&error));cx.notify();return; }
+        let Some((conversation,_))=self.wechat_chat.clone() else {return;};
+        let Some(message)=self.wechat_selected_message.clone() else {return;};
+        let Some(connection)=self.wechat_reader_connection().filter(|c|c.status=="connected"&&c.readable) else {return;};
+        self.cancel_wechat_save();
+        let cancel=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.wechat_save_cancel=Some(cancel.clone());self.wechat_save_busy=true;self.error=None;self.notice=None;
+        let generation=self.wechat_generation;
+        let home=std::env::var_os("HOME").map(std::path::PathBuf::from).filter(|p|p.is_absolute()).unwrap_or_else(||"/".into());
+        let downloads=home.join("Downloads");let directory=if downloads.is_dir(){downloads}else{home};
+        let rx=cx.prompt_for_new_path(&directory,Some(&media.suggested_name()));
+        let task=cx.spawn(async move |this,cx| {
+            let path=match rx.await {
+                Ok(Ok(Some(path)))=>path,
+                result=>{
+                    _=this.update(cx,|this,cx| {
+                        if !this.wechat_save_owner_matches(generation,&connection,&conversation,&message,&media,&cancel){return;}
+                        this.cancel_wechat_save();
+                        if matches!(result,Ok(Err(_))|Err(_)){this.error=Some(t("无法打开保存选择器，请重试"));}
+                        cx.notify();
+                    });return;
+                }
+            };
+            if !this.update(cx,|this,_|this.wechat_save_owner_matches(generation,&connection,&conversation,&message,&media,&cancel)).unwrap_or(false){return;}
+            let preparing_media=media.clone();let preparing_cancel=cancel.clone();
+            let result=io(async move {crate::wechat_media::prepare(preparing_media,path,preparing_cancel).await}).await;
+            _=this.update(cx,|this,cx| {
+                if !this.wechat_save_owner_matches(generation,&connection,&conversation,&message,&media,&cancel){return;}
+                // No await between this owner check and descriptor-bound no-overwrite publish.
+                match result.and_then(|prepared|prepared.publish()) {
+                    Ok(saved)=>{this.wechat_saved=Some(saved);this.notice=Some(t("文件已保存"));},
+                    Err(error)=>this.error=Some(t(&error)),
+                }
+                this.cancel_wechat_save();cx.notify();
+            });
+        });self._tasks.push(task);cx.notify();
+    }
+    fn open_saved_wechat_media(&mut self,cx:&mut Context<Self>) {
+        if self.wechat_save_busy||self.wechat_loading||!self.wechat_reader_active(){return;}
+        let Some(media)=self.wechat_media.clone().filter(|m|m.system_open&&!m.meta.expired()) else{return;};
+        let Some(saved)=self.wechat_saved.clone() else{return;};
+        let Some((conversation,_))=self.wechat_chat.clone() else{return;};
+        let Some(message)=self.wechat_selected_message.clone() else{return;};
+        let Some(connection)=self.wechat_reader_connection().filter(|c|c.status=="connected"&&c.readable) else{return;};
+        self.cancel_wechat_save();let cancel=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.wechat_save_cancel=Some(cancel.clone());self.wechat_save_busy=true;self.error=None;
+        let generation=self.wechat_generation;let client=self.client.clone();let verifying=media.clone();
+        let task=cx.spawn(async move |this,cx| {
+            let token=verifying.meta.token.clone();
+            let download=io(async move {client.wechat_attachment_bytes(&token).await}).await;
+            // An in-flight GET may finish, but a stale owner must not start a new disk read.
+            if !this.update(cx,|this,_|this.wechat_save_owner_matches(generation,&connection,&conversation,&message,&media,&cancel)).unwrap_or(false){return;}
+            let verifying_cancel=cancel.clone();
+            let result=io(async move {
+                crate::wechat_media::verify(verifying.meta.clone(),download?).map_err(opstwin_api::ApiError::Decode)?;
+                saved.verify_for_open(verifying,verifying_cancel).await.map_err(opstwin_api::ApiError::Decode)
+            }).await;
+            _=this.update(cx,|this,cx|{
+                if !this.wechat_save_owner_matches(generation,&connection,&conversation,&message,&media,&cancel){return;}
+                this.cancel_wechat_save();
+                match result {
+                    Ok(verified) if !media.meta.expired()=>match verified.path_if_current(){
+                        Ok(path)=>{cx.open_with_system(path);this.notice=Some(t("已请求系统打开；播放或查看取决于系统应用"));},
+                        Err(error)=>this.error=Some(t(&error)),
+                    },
+                    Ok(_)=>this.error=Some(t("附件读取已过期，请重新读取原消息")),
+                    Err(error)=>this.wechat_reader_error(error),
+                }cx.notify();
+            });
+        });self._tasks.push(task);cx.notify();
     }
     fn read_wechat_exact(&mut self, message: String, cx: &mut Context<Self>) {
         if !self.wechat_can_read_message(&message) { return; }
@@ -1895,7 +2011,7 @@ impl SettingsView {
             .child(div().flex_1().child(Input::new(&self.wechat_query).small()))
             .child(Button::new("wechat-context-search").small().h(px(32.)).outline()
                 .label(t(if self.wechat_chat.is_some() { "搜索当前会话" } else { "查找联系人" }))
-                .disabled(self.wechat_loading)
+                .disabled(self.wechat_loading || self.wechat_save_busy)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.wechat_applied_query = this.wechat_query.read(cx).value().trim().to_string();
                     this.wechat_exact = None;
@@ -1903,7 +2019,7 @@ impl SettingsView {
                     this.read_wechat(String::new(), vec![String::new()], cx);
                 })))
             .child(Button::new("wechat-context-all").small().h(px(32.)).ghost().label(t("全部"))
-                .disabled(self.wechat_loading).on_click(cx.listener(|this, _, _, cx| {
+                .disabled(self.wechat_loading || self.wechat_save_busy).on_click(cx.listener(|this, _, _, cx| {
                     this.wechat_applied_query.clear();this.wechat_exact=None;this.wechat_image=None;
                     this.read_wechat(String::new(),vec![String::new()],cx);
                 }))));
@@ -1914,10 +2030,34 @@ impl SettingsView {
                     .on_click(cx.listener(|this,_,_,cx|{
                         this.wechat_generation = this.wechat_generation.wrapping_add(1);
                         this.wechat_loading = false;
+                        this.cancel_wechat_save();
                         this.wechat_image = None;
+                        this.wechat_media = None;
+                        this.wechat_saved = None;
                         cx.notify();
                     })))
                 .child(img(image.clone()).max_w(px(580.)).max_h(px(480.)).object_fit(ObjectFit::Contain)));
+        }
+        if let Some(media)=self.wechat_media.as_ref().filter(|m|m.meta.kind!=crate::wechat_media::Kind::Image) {
+            let policy_error=crate::wechat_media::policy_stamp().err();
+            let mut panel=document_card(cx)
+                .child(h_flex().gap_2().child(div().flex_1().text_size(px(13.)).child(media.suggested_name()))
+                    .child(Button::new("wechat-close-media").small().ghost().label(t("关闭附件"))
+                        .on_click(cx.listener(|this,_,_,cx|{this.invalidate_wechat_reader(false,false);cx.notify();}))))
+                .child(note_raw(&format!("{} · {}",media.meta.mime,crate::util::human_size(media.meta.size)),cx))
+                .child(note("附件只保留在内存中；保存需要你选择位置",cx))
+                .child(h_flex().gap_2()
+                    .child(Button::new("wechat-save-media").small().outline().label(t("保存到…"))
+                        .loading(self.wechat_save_busy)
+                        .disabled(self.wechat_save_busy || media.meta.expired() || policy_error.is_some())
+                        .on_click(cx.listener(|this,_,_,cx|this.save_wechat_media(cx))))
+                    .when(self.wechat_saved.is_some(),|v|v.child(Button::new("wechat-open-saved-media").small().outline().label(t("在系统应用打开"))
+                        .disabled(self.wechat_save_busy || !media.system_open || media.meta.expired() || policy_error.is_some())
+                        .on_click(cx.listener(|this,_,_,cx|this.open_saved_wechat_media(cx))))));
+            if media.meta.expired(){panel=panel.child(note("附件读取已过期，请重新读取原消息",cx));}
+            if let Some(error)=policy_error {panel=panel.child(note(&error,cx));}
+            if !media.system_open {panel=panel.child(note("此格式只能保存，不能系统打开",cx));}
+            out=out.child(panel);
         }
         if let Some(value) = &self.wechat_exact {
             let item = &value["item"];
@@ -1937,7 +2077,7 @@ impl SettingsView {
                             .h(px(32.))
                             .ghost()
                             .label(t("微信会话"))
-                            .disabled(self.wechat_loading)
+                            .disabled(self.wechat_loading || self.wechat_save_busy)
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.invalidate_wechat_reader(true, true);
                                 cx.notify();
@@ -1986,6 +2126,8 @@ impl SettingsView {
             if self.wechat_chat.is_some() {
                 let message_id = item["id"].as_str().unwrap_or("").to_string();
                 let image_id = message_id.clone();
+                let media_kind = crate::wechat_media::Kind::from_message(item);
+                let media_id = message_id.clone();
                 let direction = match item["self"].as_bool() { Some(true)=>"本人",Some(false)=>"对方",None=>"方向未知" };
                 list = list.child(
                     v_flex()
@@ -2022,10 +2164,18 @@ impl SettingsView {
                         )
                         .child(div().text_size(px(11.)).text_color(theme.muted_foreground).child(t(direction)))
                         .when(item["contentTruncated"]==true,|v|v.child(note("正文有截断，请精确读取；来源截断可能仍无法恢复全文",cx)))
-                        .when(item["messageTypeLabel"]=="image", |v| v.child(Button::new(ElementId::Name(format!("wechat-image-{image_id}").into())).small().ghost().label(t("查看来源图片"))
-                            .disabled(self.wechat_loading).on_click(cx.listener(move |this,_,_,cx|{this.read_wechat_image(image_id.clone(),cx);}))))
+                        .when(media_kind==Some(crate::wechat_media::Kind::Image), |v| v.child(Button::new(ElementId::Name(format!("wechat-image-{image_id}").into())).small().ghost().label(t("查看来源图片"))
+                            .disabled(self.wechat_loading || self.wechat_save_busy || !self.wechat_media_supported(crate::wechat_media::Kind::Image)).on_click(cx.listener(move |this,_,_,cx|{this.read_wechat_image(image_id.clone(),cx);}))))
+                        .when(media_kind.is_some_and(|k|k!=crate::wechat_media::Kind::Image), |v| {
+                            let kind=media_kind.unwrap();
+                            let label=match kind {crate::wechat_media::Kind::Voice=>"读取来源语音",crate::wechat_media::Kind::Video=>"读取来源视频",_=>"读取来源文件"};
+                            v.child(Button::new(ElementId::Name(format!("wechat-media-{media_id}").into())).small().ghost().label(t(label))
+                                .disabled(self.wechat_loading || self.wechat_save_busy || !self.wechat_media_supported(kind))
+                                .on_click(cx.listener(move |this,_,_,cx|this.read_wechat_media(media_id.clone(),kind,cx))))
+                                .when(!self.wechat_media_supported(kind), |v|v.child(note("当前微信来源不支持此类附件，请重新检测连接",cx)))
+                        })
                         .child(Button::new(ElementId::Name(format!("wechat-exact-{message_id}").into())).small().ghost().label(t("精确读取全文"))
-                            .disabled(self.wechat_loading).on_click(cx.listener(move |this,_,_,cx| {this.read_wechat_exact(message_id.clone(),cx);})))
+                            .disabled(self.wechat_loading || self.wechat_save_busy).on_click(cx.listener(move |this,_,_,cx| {this.read_wechat_exact(message_id.clone(),cx);})))
                         .child(
                             div()
                                 .text_size(body_px(13., cx))
@@ -2044,7 +2194,7 @@ impl SettingsView {
                         .ghost()
                         .accessibility_label(label.clone())
                         .child(div().w_full().text_size(px(13.)).child(label))
-                        .disabled(self.wechat_loading)
+                        .disabled(self.wechat_loading || self.wechat_save_busy)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if !this.wechat_reader_active() || this.wechat_loading
                                 || !this.wechat_page["items"].as_array().is_some_and(|items|
@@ -5231,6 +5381,55 @@ pub fn t(s: &str) -> String {
     }
     match s {
         "{count} 条匹配记录" => "{count} matches",
+        "读取来源语音" => "Read Source Voice",
+        "读取来源视频" => "Read Source Video",
+        "读取来源文件" => "Read Source Document",
+        "当前微信来源不支持此类附件，请重新检测连接" => "This WeChat source does not support this attachment type. Check the connection again.",
+        "关闭附件" => "Close Attachment",
+        "附件只保留在内存中；保存需要你选择位置" => "Attachments stay in memory. Choose a location to save them.",
+        "保存到…" => "Save As…",
+        "文件已保存" => "File Saved",
+        "已请求系统打开；播放或查看取决于系统应用" => "System open requested. Playback or viewing depends on the system app.",
+        "无法打开保存选择器，请重试" => "Unable to open the save dialog. Retry.",
+        "附件读取已过期，请重新读取原消息" => "Attachment access expired. Read the original message again.",
+        "本机文件访问策略无法读取" => "Local file access policy cannot be read.",
+        "本机文件访问策略无法读取或已损坏" => "Local file access policy cannot be read or is damaged.",
+        "请先在设置保存有效文件访问策略" => "Save a valid file access policy in Settings first.",
+        "本机文件屏蔽策略格式无效" => "Local blocked path policy is invalid.",
+        "本机文件屏蔽路径无效" => "A local blocked path is invalid.",
+        "无法解析文件屏蔽路径，请保存有效策略后重试" => "A blocked path cannot be resolved. Save a valid policy and retry.",
+        "本机文件访问策略无效" => "Local file access policy is invalid.",
+        "所选路径无效" => "The selected path is invalid.",
+        "无法访问所选路径，请另选位置后重试" => "Cannot access the selected path. Choose another location.",
+        "保存位置必须是绝对路径" => "The save location must be an absolute path.",
+        "保存位置含无效路径或符号链接" => "The save location contains an invalid path or symbolic link.",
+        "无法验证保存位置" => "Cannot verify the save location.",
+        "保存位置无效" => "The save location is invalid.",
+        "附件读取已失效，请重新读取原消息" => "Attachment access is no longer valid. Read the original message again.",
+        "保存文件名无效" => "The save filename is invalid.",
+        "请保留已验证的文件扩展名后重试" => "Keep the verified file extension and retry.",
+        "无法写入文件，请另选位置后重试" => "Cannot write the file. Choose another location.",
+        "无法完成文件保存，请重试" => "Cannot finish saving the file. Retry.",
+        "无法验证保存文件" => "Cannot verify the saved file.",
+        "保存文件摘要校验失败" => "Saved file checksum verification failed.",
+        "保存已取消" => "Save Canceled",
+        "保存位置已变化，请另选位置" => "The save location changed. Choose another location.",
+        "无法准备保存，请重试" => "Cannot prepare the file for saving. Retry.",
+        "保存已取消或附件读取已过期" => "Saving was canceled or attachment access expired.",
+        "文件访问策略或保存位置已变化，请重试" => "File access policy or save location changed. Retry.",
+        "保存文件完整性无效" => "Saved file integrity is invalid.",
+        "保存临时文件已变化，未发布" => "The temporary file changed. The file was not published.",
+        "目标已存在，未覆盖，请另选位置" => "The target already exists and was kept. Choose another location.",
+        "无法完成保存，请另选位置后重试" => "Cannot finish saving. Choose another location.",
+        "文件已写入但磁盘同步失败，请核对目标后另选位置重试" => "The file was written but disk synchronization failed. Check the target before choosing another location.",
+        "此格式不能在系统打开，或附件读取已失效" => "This format cannot be opened by the system or attachment access expired.",
+        "文件访问策略已变化，请重新保存" => "File access policy changed. Save the file again.",
+        "无法读取已保存文件" => "Cannot read the saved file.",
+        "已保存文件不再符合安全读取条件，请重新保存" => "The saved file no longer meets safe access requirements. Save it again.",
+        "无法验证已保存文件" => "Cannot verify the saved file.",
+        "已保存文件已变化，请重新保存" => "The saved file changed. Save it again.",
+        "此格式只能保存，不能系统打开" => "This format can be saved but cannot be opened by the system.",
+        "已保存文件或访问策略已变化，请重新保存" => "The saved file or access policy changed. Save it again.",
         "将 OpsTwins 绑定到飞书 PersonalAgent Bot。" => "Bind OpsTwins to a Feishu PersonalAgent Bot.",
         "扫码创建聊天机器人。Bot 消息收发尚未接入；读取与发送权限在「连接」中管理。" => "Scan to create a chatbot. Bot messaging is not connected yet; manage read and send permissions in Connections.",
         "管理飞书连接" => "Manage Feishu Connection",

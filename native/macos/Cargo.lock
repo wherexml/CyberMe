@@ -4736,6 +4736,7 @@ dependencies = [
  "futures-util",
  "gpui-kit",
  "gpui-pre-http-client",
+ "libc",
  "objc2 0.6.4",
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",

@@ -23,6 +23,8 @@ http_client = { package = "gpui-pre-http-client", version = "=0.3.7" }
 reqwest.workspace = true
 futures-util.workspace = true
 anyhow = "1"
+# Already locked; descriptor-bound explicit private media saves, no dependency upgrade.
+libc = "=0.2.190"
 
 # Public macOS composition APIs; versions already present in Cargo.lock.
 objc2 = "=0.6.4"

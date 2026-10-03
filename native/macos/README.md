@@ -166,3 +166,13 @@ v16 独立实际截图已修复黑区和复制背景，但四边约8px暗带仍�
 v18候选只补微信reader的RAM owner生命周期：隐藏设置立即失效请求并释放已读图片/正文/列表，保留未提交查询在RAM；切设置scope、返回连接/会话、改变精确cid/mid、断开或canonical连接id/updatedAt/status/read权限变化均拒旧回包。输入查询只在真实scope变化后使用render的现有Window清空；同version后台reload不丢查询或重新发送。图片metadata后、下载前及所有结果提交均复核visible/section/detail/精确cid/mid/请求代次/连接版本；普通设置draft和Saver字段不改，旧token不持久化。此修复仍是后续候选源码与cargo检查，当前运行v16 bundle保留，GUI全部NOT_RUN；非图片读取/显式保存/系统打开仍等待统一API契约，不计入本修复通过。
 
 独立v18源码审查发现首版set_visible(false)没有真实调用接线，原失败报告保留。后续候选使用持有的`observe_window_visibility`订阅与`window.is_visible()`初值接入真实Hidden/Visible，使用弱实体的`on_window_should_close`在系统关闭前失效；Shell移除无条件true，并在显式Close路径先失效再remove。重新可见按stale刷新canonical连接，不自动读微信、不以普通blur/deactivate清查询。此接线修复仍需新包真实minimize/Hide/关闭/恢复GUI，不因源码或编译通过覆盖原审查结论。
+
+v19候选将微信语音、视频、文件接入现有exact-message附件API：先读取当前capabilities，再按真实消息类型显示读取控件；精确metadata POST返回后复核UI owner，才GET同UUID附件。客户端验证固定URL、kind/MIME/format、25,000,000字节上限、有效期、长度与SHA。内容、token、已保存路径只留RAM，不进入Saver或自动附件缓存，沿v18隐藏/切scope/精确消息/断开/连接版本保护失效；旧token不能重启恢复。已有图片预览保留。服务端完整CLI及HTTP结果不等同原生控件验收。
+
+非图片的「保存到…」使用真实GPUI `prompt_for_new_path`，取消或失败保留RAM可重试；未知/损坏文件策略禁保存。仅使用验证格式的固定文件名，未知文档保存`.bin`，不得系统打开。用户选择路径后复用fileAccess屏蔽策略，按父目录fd逐层`openat(O_NOFOLLOW)`拒符号链接，后台写随机exclusive临时文件（0600）并fsync/验证SHA；回到UI复核owner后同步`linkat`原子发布，不覆盖已有目标，失败/迟到仅清自己的临时inode。磁盘目录同步失败会明确提示目标可能已写入，不能声称回滚。仅显式选择保存才落盘；进程被强杀时未发布临时文件清理尚未验收。
+
+独立v19源码复核曾发现Open的token GET与本地验证处于同一future，末次UI guard不能阻止等待期间隐藏后开始磁盘读；原报告与源hash保留。后续修复将GET结果先送回UI检查精确owner/cancel，再启动单独文件验证；helper在入口、fileAccess await返回后、实际文件打开/内容读取前和读取返回后检查取消与到期。已开始的有界网络或文件读可完成后丢弃，并非强制中止；最终系统打开前UI owner及保存路径快检仍执行。此修复尚待独立source复核与实际延迟GET/隐藏GUI，不把编译或回查成功记为系统打开通过。
+
+「在系统应用打开」仅适用于本轮已显式保存的验证格式；先GET原token复核服务端资格，再验证已保存文件路径/inode/600权限/大小/SHA/格式，回到UI再次复核owner与路径后请求系统打开。该API没有播放/查看回执，界面只显示请求已发出，不能证明SILK等格式有系统播放器。ZIP/opaque文档只保存、不开启。容器头检查沿API的`header-only`/`opaque-bytes`语义，不声称完整媒体解码成功。此候选仅新增已锁定`libc = "=0.2.190"`直接依赖，未升级其他包；源码/locked cargo检查与GUI、文件选择器真实写入验收分别记录，当前v16运行bundle不替换。
+
+固定v19独立source复核已完成RESOLVED_SOURCE，review `3cefe28665b756c992cd2e1062812b6cb4daa2216fe13fe1454dadc7a57273c1`、artifact `f914d4828bfec2e791a865cead8e1685b61f2c34c2c5276f7a910f850ace41b5`。GET→UI owner→磁盘验证源修复不等于动态取消/真实保存或系统播放；新包GUI仍NOT_RUN，旧报告保留，详见[非图片规格](../../docs/spec/native-product-pages.md)。

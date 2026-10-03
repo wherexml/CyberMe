@@ -15,6 +15,7 @@ mod sync;
 mod tasks;
 mod theme;
 mod util;
+mod wechat_media;
 
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
