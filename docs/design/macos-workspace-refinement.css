@@ -109,12 +109,12 @@ button.primary:hover,.composer .send:hover {background:var(--blue)}
 .idea-open::after {content:'';position:absolute;inset:0;cursor:pointer}
 .idea-open:focus-visible {outline:none}
 .idea-card:has(.idea-open:focus-visible) {outline:2px solid var(--blue);outline-offset:4px;border-radius:8px}
-.idea-actions {position:relative;z-index:1;display:flex;align-items:center;gap:14px;min-height:26px;margin-top:8px;opacity:1;pointer-events:auto}
+.idea-actions {position:relative;z-index:1;display:flex;align-items:center;gap:10px;min-height:26px;margin-top:8px;opacity:1;pointer-events:auto}
 .idea-actions button {min-height:26px;padding:3px 0;border:0;border-radius:4px;font-size:12px}
 .idea-actions .idea-discuss {display:inline-flex;align-items:center;gap:4px;color:var(--blue)}
 .idea-actions .idea-discuss svg {width:13px;height:13px}
 .idea-actions .idea-discuss:hover {text-decoration:underline;text-underline-offset:3px}
-.idea-actions .idea-ignore {position:relative;z-index:1;margin-left:auto;font-size:12px;opacity:0;pointer-events:none}
+.idea-actions .idea-ignore {position:relative;z-index:1;margin-left:0;font-size:12px;opacity:0;pointer-events:none}
 .idea-card:hover .idea-ignore,.idea-card:focus-within .idea-ignore {opacity:1;pointer-events:auto}
 .idea-card:hover .idea-actions,.idea-card:focus-within .idea-actions {opacity:1;pointer-events:auto}
 .settings-window:not(:modal) {inset:0;z-index:20}
