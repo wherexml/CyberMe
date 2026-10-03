@@ -1,0 +1,511 @@
+--- a/Native/GreenBubbles/src/main.rs
++++ b/Native/GreenBubbles/src/main.rs
+@@ -1259,9 +1259,8 @@
+                 println!("{}", attachment_subcommand_help(&subcommand)?);
+                 return Ok(());
+             }
+-            let account_root =
+-                required_path(arguments.next(), "WeChat account or snapshot source root")?;
+-            let remaining = arguments.collect::<Vec<_>>();
++            let (explicit_source_root, remaining) =
++                split_optional_query_source(arguments.collect::<Vec<_>>());
+             if remaining
+                 .iter()
+                 .any(|value| matches!(value.as_str(), "--help" | "-h"))
+@@ -1275,6 +1274,7 @@
+                         &remaining,
+                         &[
+                             "--conversation",
++                            "--profile",
+                             "--md5",
+                             "--message",
+                             "--kind",
+@@ -1301,9 +1301,12 @@
+                                     .into(),
+                             );
+                         }
+-                        let access = load_live_query_access(&account_root, &remaining)?;
+-                        let source = access.open_attachment_source(&account_root)?;
+-                        let filesystem_root = attachment_account_root(&account_root);
++                        let invocation =
++                            resolve_query_invocation(explicit_source_root.clone(), &remaining)?;
++                        let source = invocation
++                            .access
++                            .open_attachment_source(&invocation.source_root)?;
++                        let filesystem_root = source.attachment_account_root();
+                         inspect_message_attachment(
+                             filesystem_root.as_deref(),
+                             &source,
+@@ -1319,6 +1322,12 @@
+                             );
+                         }
+                         reject_database_access_options(&remaining)?;
++                        if option_string(&remaining, "--profile")?.is_some() {
++                            return Err("--profile requires --message; legacy image-MD5 lookup reads no database".into());
++                        }
++                        let account_root = explicit_source_root.as_ref().ok_or(
++                            "legacy image-MD5 lookup requires an explicit WeChat account root",
++                        )?;
+                         let source_md5 = required_option(&remaining, "--md5")?;
+                         inspect_image_attachment(&account_root, &conversation, &source_md5)?
+                     };
+@@ -1329,6 +1338,7 @@
+                         &remaining,
+                         &[
+                             "--conversation",
++                            "--profile",
+                             "--md5",
+                             "--message",
+                             "--kind",
+@@ -1359,9 +1369,12 @@
+                                     .into(),
+                             );
+                         }
+-                        let access = load_live_query_access(&account_root, &remaining)?;
+-                        let source = access.open_attachment_source(&account_root)?;
+-                        let filesystem_root = attachment_account_root(&account_root);
++                        let invocation =
++                            resolve_query_invocation(explicit_source_root.clone(), &remaining)?;
++                        let source = invocation
++                            .access
++                            .open_attachment_source(&invocation.source_root)?;
++                        let filesystem_root = source.attachment_account_root();
+                         materialize_message_attachment(
+                             filesystem_root.as_deref(),
+                             &source,
+@@ -1379,6 +1392,12 @@
+                             );
+                         }
+                         reject_database_access_options(&remaining)?;
++                        if option_string(&remaining, "--profile")?.is_some() {
++                            return Err("--profile requires --message; legacy image-MD5 lookup reads no database".into());
++                        }
++                        let account_root = explicit_source_root.as_ref().ok_or(
++                            "legacy image-MD5 lookup requires an explicit WeChat account root",
++                        )?;
+                         let source_md5 = required_option(&remaining, "--md5")?;
+                         materialize_image_attachment(
+                             &account_root,
+@@ -3442,11 +3461,13 @@
+ const fn attachment_command_help() -> &'static str {
+     concat!(
+         "Usage:\n",
+-        "  greenbubbles attachment inspect <account-or-source-root> --conversation <id> --message <opaque-id> --kind image|voice|video|document <access-mode>\n",
+-        "  greenbubbles attachment materialize <account-or-source-root> --conversation <id> --message <opaque-id> --kind image|voice|video|document --attachment <opaque-id> --output <new-path> <access-mode>\n",
++        "  greenbubbles attachment inspect [account-or-source-root] --conversation <id> --message <opaque-id> --kind image|voice|video|document [access-mode] [--profile <name>]\n",
++        "  greenbubbles attachment materialize [account-or-source-root] --conversation <id> --message <opaque-id> --kind image|voice|video|document --attachment <opaque-id> --output <new-path> [access-mode] [--profile <name>]\n",
+         "  greenbubbles attachment inspect <account-root> --conversation <id> --md5 <hex>\n",
+         "  greenbubbles attachment materialize <account-root> --conversation <id> --md5 <hex> --attachment <opaque-id> --output <new-path>\n\n",
+         "Inspects or materializes one exact image, voice, video, or document on demand.\n",
++        "With --message and no root, uses the ordinary configured/default source privately.\n",
++        "Explicit source requires one access mode; --profile cannot override that source.\n",
+         "The preferred message-bound form hydrates one opaque message identity read-only,\n",
+         "then performs bounded media-DB, hardlink-metadata, or conversation filesystem\n",
+         "lookup. The legacy MD5 form remains available for images and reads no database.\n",
+@@ -3459,13 +3480,15 @@
+ const fn attachment_inspect_help() -> &'static str {
+     concat!(
+         "Usage:\n",
+-        "  greenbubbles attachment inspect <account-or-source-root> --conversation <id> --message <opaque-id> --kind image|voice|video|document <access-mode>\n",
++        "  greenbubbles attachment inspect [account-or-source-root] --conversation <id> --message <opaque-id> --kind image|voice|video|document [access-mode] [--profile <name>]\n",
+         "  greenbubbles attachment inspect <account-root> --conversation <id> --md5 <hex>\n\n",
+         "Returns a small versioned JSON description without decoding or writing media.\n",
+         "The preferred form binds the source, conversation, exact opaque message, kind,\n",
+         "candidate location or row, and current content/version evidence. Legacy --md5 is\n",
+         "image-only, accepts no database access mode, and remains compatibility syntax.\n\n",
+-        "Access modes for --message:\n",
++        "With --message and no source root, the ordinary configured/default source is used.\n",
++        "--profile selects a configured source; explicit root/access and profile are exclusive.\n\n",
++        "Access modes for an explicit source with --message:\n",
+         "  --passphrase-stdin                   Encrypted live WeChat databases\n",
+         "  --snapshot-recovery-kit <file>       Portable 24-word snapshot recovery\n",
+         "  --snapshot-local-credential <file>   Local snapshot convenience protector\n",
+@@ -3475,6 +3498,7 @@
+         "Options:\n",
+         "  --conversation <id>  ID, nickname, remark or alias; ambiguous names show choices\n",
+         "  --message <id>       Opaque identity returned by messages list/search\n",
++        "  --profile <name>     Configured source for --message without an explicit root\n",
+         "  --kind <kind>        image, voice, video, or document; default image\n",
+         "  --md5 <hex>          Legacy image locator; exactly 32 hexadecimal characters\n",
+         "  -h, --help           Show this help\n",
+@@ -3484,7 +3508,7 @@
+ const fn attachment_materialize_help() -> &'static str {
+     concat!(
+         "Usage:\n",
+-        "  greenbubbles attachment materialize <account-or-source-root> --conversation <id> --message <opaque-id> --kind image|voice|video|document --attachment <opaque-id> --output <new-path> <access-mode>\n",
++        "  greenbubbles attachment materialize [account-or-source-root] --conversation <id> --message <opaque-id> --kind image|voice|video|document --attachment <opaque-id> --output <new-path> [access-mode] [--profile <name>]\n",
+         "  greenbubbles attachment materialize <account-root> --conversation <id> --md5 <hex> --attachment <opaque-id> --output <new-path>\n\n",
+         "Materializes exactly one previously inspected candidate. Images are decoded; a\n",
+         "voice payload is converted from SILK to Ogg Opus when supported and otherwise\n",
+@@ -3493,10 +3517,11 @@
+         "must already be a current-user-owned directory with no group/other access.\n",
+         "Existing outputs are never overwritten, and output inside the protected source is\n",
+         "rejected. The response reports format, byte count, and SHA-256, but no paths.\n\n",
+-        "Access modes for --message are the same as attachment inspect.\n\n",
++        "Default source/profile resolution and explicit access modes match attachment inspect.\n\n",
+         "Options:\n",
+         "  --conversation <id>  ID, nickname, remark or alias; ambiguous names show choices\n",
+         "  --message <id>       Opaque identity returned by messages list/search\n",
++        "  --profile <name>     Configured source for --message without an explicit root\n",
+         "  --kind <kind>        image, voice, video, or document; default image\n",
+         "  --md5 <hex>          Legacy image locator; exactly 32 hexadecimal characters\n",
+         "  --attachment <id>    Opaque candidate identity returned by inspect\n",
+--- a/Native/GreenBubbles/src/live_attachment.rs
++++ b/Native/GreenBubbles/src/live_attachment.rs
+@@ -29,6 +29,8 @@
+ const MAXIMUM_DOCUMENT_SOURCE_BYTES: u64 = 512 * 1024 * 1024;
+ const MAXIMUM_DECODED_AUDIO_BYTES: u64 = 128 * 1024 * 1024;
+ const SQLITE_OWNER_MASK: u32 = 0o077;
++// Aggregate per inspection; never hash 256 individually maximum-sized files.
++const MAXIMUM_INSPECTION_HASH_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(rename_all = "camelCase")]
+@@ -170,6 +172,8 @@
+         path: PathBuf,
+         relative_path: PathBuf,
+         version: FileVersion,
++        content_sha256: [u8; 32],
++        content_md5: [u8; 16],
+     },
+     Voice {
+         data: Vec<u8>,
+@@ -183,6 +187,8 @@
+     byte_count: u64,
+     modified_seconds: i64,
+     modified_nanoseconds: i64,
++    changed_seconds: i64,
++    changed_nanoseconds: i64,
+ }
+ 
+ #[derive(Debug)]
+@@ -570,9 +576,9 @@
+                 "the exact message has no supported 32-hex attachment MD5".into(),
+             ));
+         }
+-        AttachmentKind::Document if source_md5.is_none() && title.is_none() => {
++        AttachmentKind::Document if source_md5.is_none() => {
+             return Err(LiveAttachmentError::Unavailable(
+-                "the exact document message has neither a supported MD5 nor title locator".into(),
++                "the exact document requires a supported content MD5; a title alone cannot identify bytes".into(),
+             ));
+         }
+         AttachmentKind::Voice if message.server_id <= 0 => {
+@@ -802,7 +808,20 @@
+         }
+     }
+     candidates.sort_by(|left, right| left.attachment_id.cmp(&right.attachment_id));
+-    Ok(candidates)
++    let mut by_content = BTreeMap::<[u8; 32], Candidate>::new();
++    for candidate in candidates {
++        let CandidateSource::Voice { data } = &candidate.source else {
++            return Err(LiveAttachmentError::Decode("incompatible voice candidate".into()));
++        };
++        let content_sha256: [u8; 32] = Sha256::digest(data).into();
++        by_content.entry(content_sha256).or_insert(candidate);
++    }
++    if by_content.len() > 1 {
++        return Err(LiveAttachmentError::Unavailable(
++            "voice payload is ambiguous across media database records".into(),
++        ));
++    }
++    Ok(by_content.into_values().collect())
+ }
+ 
+ fn sqlite_blob_value(value: ValueRef<'_>) -> Result<Vec<u8>, LiveAttachmentError> {
+@@ -884,21 +903,38 @@
+             "attachment candidate count exceeds the fixed inspection limit".into(),
+         ));
+     }
+-    let source_md5 = descriptor.source_md5.as_deref().unwrap_or("");
+-    paths
+-        .into_iter()
+-        .map(|(relative_path, path)| {
+-            inspect_file_candidate(
+-                account_root,
+-                path,
+-                relative_path,
+-                conversation,
+-                source_md5,
+-                kind,
+-                Some(&descriptor.message_id),
+-            )
+-        })
+-        .collect()
++    let source_md5 = descriptor.source_md5.as_deref().ok_or_else(|| {
++        LiveAttachmentError::Unavailable("media requires a declared content MD5".into())
++    })?;
++    let mut hash_budget = MAXIMUM_INSPECTION_HASH_BYTES;
++    let mut by_content = BTreeMap::<[u8; 32], Candidate>::new();
++    let mut rejected_content = 0usize;
++    for (relative_path, path) in paths {
++        let candidate = inspect_file_candidate(
++            account_root, path, relative_path, conversation, source_md5,
++            kind, Some(&descriptor.message_id), &mut hash_budget,
++        )?;
++        let CandidateSource::File { content_sha256, content_md5, .. } = &candidate.source else {
++            return Err(LiveAttachmentError::Decode("incompatible media candidate".into()));
++        };
++        // Titles and hardlink rows locate files; only bytes verify the declared content.
++        if hex::encode(content_md5) != source_md5 {
++            rejected_content += 1;
++            continue;
++        }
++        by_content.entry(*content_sha256).or_insert(candidate);
++    }
++    if by_content.len() > 1 {
++        return Err(LiveAttachmentError::Unavailable(
++            "media content is ambiguous across distinct SHA-256 candidates".into(),
++        ));
++    }
++    if by_content.is_empty() && rejected_content > 0 {
++        return Err(LiveAttachmentError::Unavailable(
++            "cached media bytes do not match the exact message declared MD5".into(),
++        ));
++    }
++    Ok(by_content.into_values().collect())
+ }
+ 
+ fn hardlink_candidate_paths(
+@@ -1046,6 +1082,12 @@
+     path: PathBuf,
+     paths: &mut BTreeMap<PathBuf, PathBuf>,
+ ) -> Result<(), LiveAttachmentError> {
++    if let Err(error) = validate_attachment_parent_chain(account_root, &path) {
++        if matches!(&error, LiveAttachmentError::Io(e) if e.kind() == std::io::ErrorKind::NotFound) {
++            return Ok(());
++        }
++        return Err(error);
++    }
+     let metadata = match fs::symlink_metadata(&path) {
+         Ok(metadata) => metadata,
+         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+@@ -1263,6 +1305,7 @@
+         }
+ 
+         let mut candidates = Vec::new();
++        let mut hash_budget = MAXIMUM_INSPECTION_HASH_BYTES;
+         let mut directory_count = 0usize;
+         let mut file_count = 0usize;
+         for directory in fs::read_dir(&conversation_root)? {
+@@ -1327,6 +1370,7 @@
+                     source_md5,
+                     AttachmentKind::Image,
+                     message_id,
++                    &mut hash_budget,
+                 )?);
+             }
+         }
+@@ -1335,6 +1379,33 @@
+         });
+         Ok(candidates)
+     }
++}
++
++fn attachment_source_open_flags() -> libc::c_int {
++    #[cfg(target_os = "macos")]
++    { libc::O_CLOEXEC | libc::O_NOFOLLOW_ANY }
++    #[cfg(not(target_os = "macos"))]
++    { libc::O_CLOEXEC | libc::O_NOFOLLOW }
++}
++
++fn validate_attachment_parent_chain(account_root: &Path, path: &Path) -> Result<(), LiveAttachmentError> {
++    let relative = path.strip_prefix(account_root).map_err(|_| {
++        LiveAttachmentError::UnsafeSource("attachment parent escaped its account".into())
++    })?;
++    validate_relative_path(relative)?;
++    let mut current = account_root.to_path_buf();
++    let count = relative.components().count();
++    for component in relative.components().take(count.saturating_sub(1)) {
++        current.push(component);
++        let metadata = fs::symlink_metadata(&current)?;
++        if metadata.file_type().is_symlink() || !metadata.is_dir()
++            || metadata.uid() != unsafe { libc::geteuid() }
++            || current.canonicalize()? != current
++        {
++            return Err(LiveAttachmentError::UnsafeSource("attachment parent contains a symbolic link or invalid directory".into()));
++        }
++    }
++    Ok(())
+ }
+ 
+ fn inspect_file_candidate(
+@@ -1345,7 +1416,9 @@
+     source_md5: &str,
+     kind: AttachmentKind,
+     message_id: Option<&str>,
++    hash_budget: &mut u64,
+ ) -> Result<Candidate, LiveAttachmentError> {
++    validate_attachment_parent_chain(account_root, &path)?;
+     let metadata = fs::symlink_metadata(&path)?;
+     if metadata.file_type().is_symlink()
+         || !metadata.is_file()
+@@ -1365,15 +1438,43 @@
+     }
+     let mut file = OpenOptions::new()
+         .read(true)
+-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
++        .custom_flags(attachment_source_open_flags())
+         .open(&path)?;
++    let version = FileVersion::from_metadata(&metadata);
++    if !version.matches(&file.metadata()?) {
++        return Err(LiveAttachmentError::SourceChanged);
++    }
++    if metadata.len() > *hash_budget {
++        return Err(LiveAttachmentError::Unavailable(
++            "attachment inspection exceeds the aggregate content-hash byte budget".into(),
++        ));
++    }
++    *hash_budget -= metadata.len();
+     let mut prefix = [0u8; 32];
+     let count = file.read(&mut prefix)?;
+     let image_format = (kind == AttachmentKind::Image)
+         .then(|| wx_media::detect_dat_format(&prefix[..count]))
+         .flatten();
+     let source_format = detect_source_format(&prefix[..count], path.extension());
+-    let version = FileVersion::from_metadata(&metadata);
++    let mut digest = Sha256::new();
++    let mut content_md5 = md5::Context::new();
++    digest.update(&prefix[..count]);
++    content_md5.consume(&prefix[..count]);
++    let mut total = count as u64;
++    let mut buffer = [0u8; 128 * 1024];
++    loop {
++        let read = file.read(&mut buffer)?;
++        if read == 0 { break; }
++        total = total.saturating_add(read as u64);
++        if total > metadata.len() { return Err(LiveAttachmentError::SourceChanged); }
++        digest.update(&buffer[..read]);
++        content_md5.consume(&buffer[..read]);
++    }
++    if total != metadata.len() || !version.matches(&file.metadata()?) {
++        return Err(LiveAttachmentError::SourceChanged);
++    }
++    let content_md5 = content_md5.finalize().0;
++    let content_sha256: [u8; 32] = digest.finalize().into();
+     let attachment_id = candidate_identity(
+         conversation,
+         source_md5,
+@@ -1381,12 +1482,15 @@
+         &metadata,
+         kind,
+         message_id,
++        &content_sha256,
+     );
+     Ok(Candidate {
+         source: CandidateSource::File {
+             path,
+             relative_path,
+             version,
++            content_sha256,
++            content_md5,
+         },
+         attachment_id,
+         byte_count: metadata.len(),
+@@ -1396,14 +1500,14 @@
+ }
+ 
+ fn read_file_candidate(candidate: &Candidate) -> Result<Vec<u8>, LiveAttachmentError> {
+-    let CandidateSource::File { path, version, .. } = &candidate.source else {
++    let CandidateSource::File { path, version, content_sha256, .. } = &candidate.source else {
+         return Err(LiveAttachmentError::Decode(
+             "the selected candidate is not a filesystem artifact".into(),
+         ));
+     };
+     let mut file = OpenOptions::new()
+         .read(true)
+-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
++        .custom_flags(attachment_source_open_flags())
+         .open(path)?;
+     let before = file.metadata()?;
+     if !version.matches(&before) {
+@@ -1417,7 +1521,7 @@
+         return Err(LiveAttachmentError::SourceChanged);
+     }
+     let after = file.metadata()?;
+-    if !version.matches(&after) {
++    if !version.matches(&after) || Sha256::digest(&data).as_slice() != content_sha256 {
+         return Err(LiveAttachmentError::SourceChanged);
+     }
+     Ok(data)
+@@ -1429,7 +1533,7 @@
+     candidate: &Candidate,
+     maximum_bytes: u64,
+ ) -> Result<(u64, String), LiveAttachmentError> {
+-    let CandidateSource::File { path, version, .. } = &candidate.source else {
++    let CandidateSource::File { path, version, content_sha256, .. } = &candidate.source else {
+         return Err(LiveAttachmentError::Decode(
+             "the selected candidate is not a filesystem artifact".into(),
+         ));
+@@ -1437,7 +1541,7 @@
+     let (parent, final_output) = validate_new_output(protected_root, output)?;
+     let mut source = OpenOptions::new()
+         .read(true)
+-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
++        .custom_flags(attachment_source_open_flags())
+         .open(path)?;
+     let before = source.metadata()?;
+     if !version.matches(&before) || before.len() > maximum_bytes {
+@@ -1465,13 +1569,17 @@
+     if byte_count != before.len() || !version.matches(&after) {
+         return Err(LiveAttachmentError::SourceChanged);
+     }
++    let decoded_digest: [u8; 32] = digest.finalize().into();
++    if &decoded_digest != content_sha256 {
++        return Err(LiveAttachmentError::SourceChanged);
++    }
+     temporary.as_file_mut().flush()?;
+     temporary.as_file().sync_all()?;
+     temporary.persist_noclobber(&final_output).map_err(|_| {
+         LiveAttachmentError::Output("attachment output could not be published atomically".into())
+     })?;
+     File::open(parent)?.sync_all()?;
+-    Ok((byte_count, hex::encode(digest.finalize())))
++    Ok((byte_count, hex::encode(decoded_digest)))
+ }
+ 
+ fn validate_new_output(
+@@ -1632,12 +1740,13 @@
+     metadata: &fs::Metadata,
+     kind: AttachmentKind,
+     message_id: Option<&str>,
++    content_sha256: &[u8; 32],
+ ) -> String {
+     let mut digest = Sha256::new();
+     digest.update(if message_id.is_some() {
+-        b"greenbubbles-live-message-attachment-v1\0".as_slice()
++        b"greenbubbles-live-message-attachment-v2\0".as_slice()
+     } else {
+-        b"greenbubbles-live-attachment-v1\0".as_slice()
++        b"greenbubbles-live-attachment-v2\0".as_slice()
+     });
+     digest.update(kind.name().as_bytes());
+     digest.update([0]);
+@@ -1655,6 +1764,9 @@
+     digest.update(metadata.len().to_le_bytes());
+     digest.update(metadata.mtime().to_le_bytes());
+     digest.update(metadata.mtime_nsec().to_le_bytes());
++    digest.update(metadata.ctime().to_le_bytes());
++    digest.update(metadata.ctime_nsec().to_le_bytes());
++    digest.update(content_sha256);
+     hex::encode(digest.finalize())
+ }
+ 
+@@ -1775,6 +1887,8 @@
+             byte_count: metadata.len(),
+             modified_seconds: metadata.mtime(),
+             modified_nanoseconds: metadata.mtime_nsec(),
++            changed_seconds: metadata.ctime(),
++            changed_nanoseconds: metadata.ctime_nsec(),
+         }
+     }
+ 
+@@ -1784,6 +1898,8 @@
+             && self.byte_count == metadata.len()
+             && self.modified_seconds == metadata.mtime()
+             && self.modified_nanoseconds == metadata.mtime_nsec()
++            && self.changed_seconds == metadata.ctime()
++            && self.changed_nanoseconds == metadata.ctime_nsec()
+     }
+ }
+ 

@@ -50,3 +50,5 @@ HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 
 自定义连接的私有凭据绑定精确目标及认证方式；公共编辑使旧验证失效，公开协议 header 以外的值不进入公共配置。REST/MCP 禁止跟随重定向，缺凭据不匿名检测为成功；旧短凭据只修复关联诊断。真实隔离 E2E：`node scripts/native-connection-credentials-http-e2e.mjs`（46220/46221），独立50/50 HTTP通过（含none/public-only协议header兼容），原生GUI另验，见[连接凭据旅程](../docs/journeys/native-connection-credentials.md)。
 
 个人微信新增 typed CLI 联系人、会话内 stdin 搜索、精确消息和有界RAM图片读取；源/连接版本绑定精确ID，断开清媒体与ID注册，Agent证据省略query及正文。`node scripts/native-wechat-context-http-e2e.mjs`（46223）区分公开协议fixture和installed实际只读调用；原生新reader、语音/视频/文件与同秒歧义能力见[微信上下文旅程](../docs/journeys/native-wechat-context.md)。
+
+精确非图片接入前基线：`node scripts/native-wechat-attachment-http-e2e.mjs`（46230，新SQL/空私有配置）使用公开 SQLite +完整候选 CLI；source 注入 wrapper 不伪造协议、不调用私人 profile。当前四个非图片附件仍实际501，10 PASS/5 FAIL基线保留；不得据候选CLI通过宣称API或原生已接通，见[附件闭环](../docs/journeys/native-wechat-attachment-api.md)。
