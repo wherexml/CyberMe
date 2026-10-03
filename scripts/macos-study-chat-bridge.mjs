@@ -23,6 +23,22 @@ const server=createServer(async(req,res)=>{
  if(req.method==='GET'&&req.url==='/health'){reply(res,200,{ready:true,scope:'authorized_local_chat',port:46114});return}
  const supplied=String(req.headers['x-opstwins-chat']||'');
  if(!/^[a-f0-9]{64}$/.test(supplied)||!timingSafeEqual(Buffer.from(supplied),Buffer.from(token))){reply(res,403,{error:'capability_required'});return}
+ if((req.method==='GET'&&req.url==='/voice/status')||(req.method==='POST'&&req.url==='/voice/transcribe')){
+  const abort=new AbortController(),disconnected=()=>{if(!res.writableEnded)abort.abort()};res.on('close',disconnected);
+  try{
+   let form;
+   if(req.method==='POST'){
+    const type=String(req.headers['content-type']||'');if(!/^multipart\/form-data;.*boundary=/i.test(type)){reply(res,400,{error:'voice_form_required'});return}
+    const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>12*1024*1024+8192){reply(res,413,{error:'voice_size'});return}chunks.push(chunk)}
+    try{form=await new Response(Buffer.concat(chunks),{headers:{'Content-Type':type}}).formData()}catch{reply(res,400,{error:'voice_form_required'});return}
+    const file=form.get('file');if([...form.keys()].length!==1||!file||typeof file==='string'){reply(res,400,{error:'voice_file_required'});return}
+    if(!file.size||file.size>12*1024*1024){reply(res,413,{error:'voice_size'});return}
+   }
+   const response=await fetch('http://127.0.0.1:46110/api'+req.url,{method:req.method,...(form?{body:form}:{}),signal:AbortSignal.any([abort.signal,AbortSignal.timeout(65000)])});
+   const result=await response.json();if(!res.destroyed)reply(res,response.status,result);
+  }catch{if(!res.destroyed)reply(res,502,{error:'voice_unavailable'})}finally{res.off('close',disconnected)}
+  return;
+ }
  const status=req.url?.match(/^\/requests\/([\w-]{1,128})$/);
  if(!((req.method==='POST'&&req.url==='/chat')||(req.method==='GET'&&status))){reply(res,404,{error:'not_found'});return}
  try{
