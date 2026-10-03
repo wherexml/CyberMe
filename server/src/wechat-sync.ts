@@ -5,13 +5,16 @@ import {resolve,sep,basename} from 'node:path';
 import sharp from 'sharp';
 import {ApiError,command} from './integrations';
 import {get,list,put,activity,now} from './store';
+import {attachmentKind,exactAttachmentEnabled,inspectWechatAttachment,materializeWechatAttachment,verifyWechatAttachmentCli,type WechatAttachmentKind} from './wechat-attachment-cli';
 const ID='wechat-sync-local';
 const binary=process.env.OPSTWIN_WECHAT_CLI||'/opt/homebrew/bin/greenbubbles';
 const seenConversations=new Map<string,{version:string,sourceHash:string,at:number}>();
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)??'').digest('hex');
 async function query(args:string[],stdin?:string){
+  verifyWechatAttachmentCli();
   let result;
   try{result=await command(binary,args,20000,stdin);}catch{throw new ApiError(503,'wechat_cli_unavailable','无法启动 wechat-sync，请确认本机 GreenBubbles 已安装。');}
+  verifyWechatAttachmentCli();
   if(result.timedOut)throw new ApiError(504,'wechat_timeout','微信读取超时，请稍后重试。');
   let value;try{value=JSON.parse(result.stdout);}catch{throw new ApiError(502,'wechat_invalid_response','微信同步返回格式异常，请检查 GreenBubbles。');}
   if(result.exitCode!==0||value?.ok!==true)throw new ApiError(503,'wechat_source_unavailable','本机微信数据暂不可读，请在 GreenBubbles 确认连接后重试。');
@@ -72,17 +75,18 @@ export async function wechatSearch(input:any){
 export async function wechatMessage(input:any){
   const conversation=verifiedConversation(input?.conversation);const id=exactId(input?.message,'message');const before=requireConnection();const value=await read(['message','get','--conversation',conversation,'--message',id]);assertConversationSource(conversation,value);if(!value.item||value.item.id!==id||value.item.conversationId!==conversation)throw new ApiError(502,'wechat_message_mismatch','精确消息引用不一致，请重新读取。');const owner=await boundOwner(value.source);if(requireConnection().updatedAt!==before.updatedAt)throw new ApiError(409,'connection_changed','连接已变更，请重新读取。');return {...pageInfo(value),accountHolderKnown:!!owner,item:message(value.item,owner)};
 }
-export function wechatCapabilities(){requireConnection();return {readOnly:true,chats:true,contacts:true,contactLookup:'bounded-page-filter',messageSearch:'conversation-only-stdin',messageGet:true,direction:'cli-account-holder-id-or-unknown',textLimitCharacters:262144,attachments:{images:'exact-message-single-row-cli-cache',voice:'unsupported-ordinary-inspect',video:'unsupported-ordinary-inspect',document:'unsupported-ordinary-inspect',maxBytes:25000000,ambiguousTimestamp:'rejected'},send:false,archiveExport:false};}
+export function wechatCapabilities(){requireConnection();const exact=verifyWechatAttachmentCli();return {readOnly:true,chats:true,contacts:true,contactLookup:'bounded-page-filter',messageSearch:'conversation-only-stdin',messageGet:true,direction:'cli-account-holder-id-or-unknown',textLimitCharacters:262144,attachments:{mode:exact?'verified-exact-cli':'installed-image-fallback',images:exact?'exact-message-inspect-materialize':'exact-message-single-row-cli-cache',voice:exact?'exact-message-inspect-materialize':'unsupported-ordinary-inspect',video:exact?'exact-message-inspect-materialize':'unsupported-ordinary-inspect',document:exact?'exact-message-inspect-materialize':'unsupported-ordinary-inspect',maxBytes:25000000,ambiguousTimestamp:'rejected',businessMediaVerified:false},send:false,archiveExport:false};}
 // Search/body never enters persisted tool evidence, including failed requests.
 export function wechatToolAudit(params:any,result?:any,errorCode?:string){return {input:{action:params?.action,scopeHash:digest(params?.input??{}),privacy:'wechat_query_omitted'},output:{privacy:'wechat_body_omitted',count:Array.isArray(result?.items)?result.items.length:result?.item?1:0,hasMore:result?.hasMore===true,coverageComplete:result?.coverageComplete===true,warningCount:Array.isArray(result?.warnings)?result.warnings.length:0,...(errorCode?{code:errorCode}:{})}};}
 
-const mediaCache=new Map<string,{data:Buffer,conversation:string,message:string,version:string,connectionVersion:string,sha256:string,mime:string,bytes:number,at:number}>();
-export function clearWechatReader(){seenConversations.clear();contactCursors.clear();mediaCache.clear();}
+const mediaCache=new Map<string,{data:Buffer,conversation:string,message:string,version:string,connectionVersion:string,sha256:string,mime:string,bytes:number,at:number,kind?:WechatAttachmentKind,format?:string,candidate?:string,epoch?:number}>();
+let readerEpoch=0,attachmentBusy=false;
+export function clearWechatReader(){readerEpoch++;seenConversations.clear();contactCursors.clear();for(const item of mediaCache.values())item.data.fill(0);mediaCache.clear();}
 const attachmentError=(code:string)=>new ApiError(409,code,'附件无法唯一验证，请在 GreenBubbles 查看原消息。');
 function rawVersion(value:any){return digest({source:value.source?.identity,item:value.item});}
 async function rawExact(conversation:string,id:string){const value=await read(['message','get','--conversation',conversation,'--message',id]);assertConversationSource(conversation,value);if(value.item?.id!==id||value.item?.conversationId!==conversation)throw attachmentError('wechat_message_mismatch');return value;}
 // The ordinary CLI materializes its own image cache. We never read its credentials.
-export async function wechatAttachment(input:any){
+async function legacyWechatAttachment(input:any){
  const conversation=verifiedConversation(input?.conversation),id=exactId(input?.message,'message');const before=requireConnection();const exact=await rawExact(conversation,id),m=exact.item;const md5=m.content?.Image?.md5;
  if(typeof md5!=='string'||!/^([a-fA-F0-9]{32})$/.test(md5))throw new ApiError(501,'wechat_attachment_kind_unsupported','当前默认来源仅能安全读取 CLI 精确图片缓存；语音、视频和文件需 CLI 默认来源 inspect 支持。');
  if(!Number.isSafeInteger(m.createdAtUnix))throw attachmentError('wechat_attachment_ambiguous');
@@ -100,9 +104,71 @@ export async function wechatAttachment(input:any){
  while(mediaCache.size>=16||[...mediaCache.values()].reduce((n,c)=>n+c.bytes,0)+bytes.length>64*1024*1024){const oldest=mediaCache.keys().next().value;if(!oldest)break;mediaCache.delete(oldest);}
  mediaCache.set(token,{data:bytes,conversation,message:id,version:rawVersion(exact),connectionVersion:before.updatedAt,sha256,mime,bytes:bytes.length,at:Date.now()});
  setTimeout(()=>mediaCache.delete(token),600000).unref();
- return {attachmentId:token,url:'/api/wechat/attachments/'+token,mime,bytes:bytes.length,sha256,width:metadata.width,height:metadata.height,binding:'exact-opaque-message-single-timestamp-cli-cache-md5-name',decodedImage:true,readOnly:true,storage:'bounded-memory',expiresInSeconds:600};
+ return {attachmentId:token,url:'/api/wechat/attachments/'+token,mime,bytes:bytes.length,sha256,width:metadata.width,height:metadata.height,kind:'image',format:metadata.format,formatValidation:'image-metadata',binding:'exact-opaque-message-single-timestamp-cli-cache-md5-name',decodedImage:true,readOnly:true,storage:'bounded-memory',expiresInSeconds:600,expiresAt:new Date(Date.now()+600000).toISOString()};
+}
+// One materialization/selection validation at a time; unrelated reads remain available.
+export async function wechatAttachment(input:any){
+ if(attachmentBusy)throw new ApiError(409,'wechat_attachment_busy','正在验证微信附件，请稍后重试。');
+ attachmentBusy=true;
+ try{return exactAttachmentEnabled()?await exactWechatAttachment(input):await legacyWechatAttachment(input);}finally{attachmentBusy=false;}
+}
+function cacheMedia(token:string,item:Parameters<typeof mediaCache.set>[1]){
+ for(const [key,c] of mediaCache)if(Date.now()-c.at>600000){c.data.fill(0);mediaCache.delete(key);}
+ while(mediaCache.size>=16||[...mediaCache.values()].reduce((n,c)=>n+c.bytes,0)+item.bytes>64*1024*1024){const key=mediaCache.keys().next().value;if(!key)break;mediaCache.get(key)?.data.fill(0);mediaCache.delete(key);}
+ mediaCache.set(token,item);setTimeout(()=>{mediaCache.get(token)?.data.fill(0);mediaCache.delete(token);},600000).unref();
+}
+function attachmentOwnerGuard(conversation:string,connectionVersion:string,epoch:number){
+ const sourceHash=seenConversations.get(conversation)?.sourceHash;
+ return ()=>{
+  if(requireConnection().updatedAt!==connectionVersion||readerEpoch!==epoch)throw attachmentError('connection_changed');
+  verifiedConversation(conversation);
+  if(!sourceHash||seenConversations.get(conversation)?.sourceHash!==sourceHash)throw attachmentError('wechat_source_changed');
+ };
+}
+async function exactWechatAttachment(input:any){
+ verifyWechatAttachmentCli();
+ const conversation=verifiedConversation(input?.conversation),id=exactId(input?.message,'message');
+ const before=requireConnection(),epoch=readerEpoch,guard=attachmentOwnerGuard(conversation,before.updatedAt,epoch);
+ guard();const exact=await rawExact(conversation,id);guard();
+ const kind=attachmentKind(exact.item),selected=await inspectWechatAttachment(conversation,id,kind,guard);
+ guard();
+ // Inspect may have waited while the user revoked access or the message changed.
+ // Rehydrate only while the original owner remains valid, before any new materialize.
+ const beforeMaterialize=await rawExact(conversation,id);guard();
+ if(rawVersion(beforeMaterialize)!==rawVersion(exact))throw attachmentError('wechat_attachment_changed');
+ const materialized=await materializeWechatAttachment(conversation,id,kind,selected.candidate,guard);
+ let published=false;
+ try{
+ guard();const selectedNow=await inspectWechatAttachment(conversation,id,kind,guard);guard();
+ if(selectedNow.candidate!==selected.candidate)throw attachmentError('wechat_attachment_changed');
+ const current=await rawExact(conversation,id);guard();
+ if(rawVersion(current)!==rawVersion(exact)||requireConnection().updatedAt!==before.updatedAt||readerEpoch!==epoch)throw attachmentError('connection_changed');
+ const token=randomUUID(),at=Date.now();
+ cacheMedia(token,{data:materialized.bytes,conversation,message:id,version:rawVersion(exact),connectionVersion:before.updatedAt,sha256:materialized.sha256,mime:materialized.mime,bytes:materialized.bytes.length,at,kind,format:materialized.format,candidate:selected.candidate,epoch});
+ published=true;
+ return {attachmentId:token,url:'/api/wechat/attachments/'+token,mime:materialized.mime,bytes:materialized.bytes.length,sha256:materialized.sha256,kind,format:materialized.format,formatValidation:materialized.formatValidation,width:'width' in materialized?materialized.width:undefined,height:'height' in materialized?materialized.height:undefined,binding:'exact-opaque-message-verified-cli-candidate-content-digest',decodedImage:kind==='image',readOnly:true,storage:'bounded-memory',expiresInSeconds:600,expiresAt:new Date(at+600000).toISOString()};
+ }finally{if(!published)materialized.bytes.fill(0);}
 }
 export async function wechatAttachmentContent(token:string){
- requireConnection();const item=mediaCache.get(token);if(!item||Date.now()-item.at>600000)throw new ApiError(404,'wechat_attachment_expired','附件读取已过期，请重新读取原消息。');if(requireConnection().updatedAt!==item.connectionVersion)throw attachmentError('connection_changed');const exact=await rawExact(item.conversation,item.message);if(rawVersion(exact)!==item.version)throw attachmentError('wechat_attachment_changed');
- const bytes=item.data;if(bytes.length!==item.bytes||createHash('sha256').update(bytes).digest('hex')!==item.sha256)throw attachmentError('wechat_attachment_changed');requireConnection();return {bytes,mime:item.mime,sha256:item.sha256};
+ if(attachmentBusy)throw new ApiError(409,'wechat_attachment_busy','正在验证微信附件，请稍后重试。');
+ attachmentBusy=true;
+ try{
+ requireConnection();const item=mediaCache.get(token);
+ if(!item||Date.now()-item.at>600000)throw new ApiError(404,'wechat_attachment_expired','附件读取已过期，请重新读取原消息。');
+ if(requireConnection().updatedAt!==item.connectionVersion)throw attachmentError('connection_changed');
+ const ownerGuard=attachmentOwnerGuard(item.conversation,item.connectionVersion,readerEpoch);
+ const guard=()=>{ownerGuard();if(mediaCache.get(token)!==item)throw attachmentError('connection_changed');};
+ guard();const exact=await rawExact(item.conversation,item.message);guard();
+ if(rawVersion(exact)!==item.version)throw attachmentError('wechat_attachment_changed');
+ if(item.candidate&&item.kind){
+  const current=await inspectWechatAttachment(item.conversation,item.message,item.kind,guard);guard();
+  if(current.candidate!==item.candidate)throw attachmentError('wechat_attachment_changed');
+  const after=await rawExact(item.conversation,item.message);guard();
+  if(rawVersion(after)!==item.version||readerEpoch!==item.epoch)throw attachmentError('wechat_attachment_changed');
+ }
+ const bytes=item.data;
+ if(bytes.length!==item.bytes||createHash('sha256').update(bytes).digest('hex')!==item.sha256)throw attachmentError('wechat_attachment_changed');
+ if(requireConnection().updatedAt!==item.connectionVersion||mediaCache.get(token)!==item)throw attachmentError('connection_changed');
+ return {bytes,mime:item.mime,sha256:item.sha256};
+ }finally{attachmentBusy=false;}
 }

@@ -51,4 +51,10 @@ HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 
 
 个人微信新增 typed CLI 联系人、会话内 stdin 搜索、精确消息和有界RAM图片读取；源/连接版本绑定精确ID，断开清媒体与ID注册，Agent证据省略query及正文。`node scripts/native-wechat-context-http-e2e.mjs`（46223）区分公开协议fixture和installed实际只读调用；原生新reader、语音/视频/文件与同秒歧义能力见[微信上下文旅程](../docs/journeys/native-wechat-context.md)。
 
-精确非图片接入前基线：`node scripts/native-wechat-attachment-http-e2e.mjs`（46230，新SQL/空私有配置）使用公开 SQLite +完整候选 CLI；source 注入 wrapper 不伪造协议、不调用私人 profile。当前四个非图片附件仍实际501，10 PASS/5 FAIL基线保留；不得据候选CLI通过宣称API或原生已接通，见[附件闭环](../docs/journeys/native-wechat-attachment-api.md)。
+精确非图片接入前基线：`node scripts/native-wechat-attachment-http-e2e.mjs`（46230，新SQL/空私有配置）使用公开 SQLite +完整候选 CLI；source 注入 wrapper 不伪造协议、不调用私人 profile。旧四个非图片附件501、10 PASS/5 FAIL基线保留；显式摘要候选模式后续已通过公开HTTP子范围，原生与真实媒体仍另验，见[附件闭环](../docs/journeys/native-wechat-attachment-api.md)。
+
+### 精确微信附件候选接口
+
+显式配置 `OPSTWIN_WECHAT_CLI` 为本项目 `.local/greenbubbles-attachment-candidate/bin/<SHA256>/greenbubbles`，并设置相同 `OPSTWIN_WECHAT_ATTACHMENT_SHA256`，才启用精确消息 inspect/materialize 模式。每次 CLI 命令前后核摘要、所有者、路径和不可写模式；缺少该摘要仍保留安装版精确图片回退，不伪造非图片支持。候选必须先完成 [独立CLI gate](../docs/journeys/native-wechat-attachment-cli.md)。
+
+附件由精确 message 推断kind，不接受请求传入的路径/candidate作为选择。私有0700专有输出经字节数/SHA/格式和原连接/来源/消息逐阶段复核后进入64 MiB/16项/10min RAM，HTTP no-store/nosniff；只有当前operation允许清理，CLI缓存不删除。非图片header-only传输不等于可播放。完整公开路径复验用 `node scripts/native-wechat-attachment-http-e2e.mjs`，旧上下文兼容用 `node scripts/native-wechat-context-http-e2e.mjs --public-only`；原生与实际媒体另验，详见 [附件闭环](../docs/journeys/native-wechat-attachment-api.md)。
