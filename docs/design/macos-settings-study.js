@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const clone = value => JSON.parse(JSON.stringify(value ?? {}));
-  const sections = {general:'通用',models:'模型',connections:'连接',identity:'身份与记忆',channels:'消息渠道',autonomy:'自主权限',computer:'电脑操作',filesystem:'文件访问',dictation:'听写',devices:'设备',data:'数据控制',secure:'安全存储',wallet:'钱包',help:'帮助',legal:'隐私与条款',about:'关于'};
+  const sections = {general:'通用',models:'模型',connections:'连接',identity:'身份与记忆',channels:'消息渠道',autonomy:'自主权限',filesystem:'文件访问',dictation:'听写',devices:'设备',help:'帮助',legal:'隐私与条款',about:'关于'};
   const providers = [
     {id:'gmail',name:'Gmail',caption:'工作邮箱',description:'通过已授权的邮件适配器接入。Google 账号一键授权尚未开放。',features:['读取与整理邮件','起草回复和附件','遵循自主规则发送']},
     {id:'google-calendar',name:'Google 日历',caption:'工作日历',description:'查看空闲时间，创建专注时段和提醒，准备会议简报。',features:['查看空闲时间','创建专注时段与提醒','准备会议简报']},
@@ -16,6 +16,7 @@
   const statusLabels = {connected:'已连接',disconnected:'未连接',not_connected:'未连接',setup_required:'需要配置',error:'需要处理',failed:'失败',expired:'已过期',auth_required:'需要授权',testing:'检测中',unsupported:'暂不支持',succeeded:'成功',partial:'部分完成',running:'进行中',interrupted:'已中断',bound:'Bot 已绑定',pending:'等待授权',unbound:'未绑定',denied:'授权已取消'};
   let ctx, detail=null, identityEditing=false, memoryEditing=false, recordKind='chats', historyPage=0;
   let state={drafts:{},saved:{}};
+  let preferenceError=false;
   const storageKey='opstwins-settings-study-v1';
   const originals=new Map();
   function dirtyGroups(){return Object.keys(state.drafts).filter(key=>originals.has(key)&&JSON.stringify(state.drafts[key])!==JSON.stringify(state.saved[key]??originals.get(key)));}
@@ -32,22 +33,22 @@
   function row(title,sub,control){const r=n('div','ss-row'),copy=n('div','ss-row-copy');copy.append(n('strong','',title));if(sub)copy.append(note(sub));r.append(copy);if(control)r.append(control);return r;}
   function brand(id){let x=n('span','ss-brand');if(providers.some(p=>p.id===id)){let image=n('img');image.src='assets/'+id+'.svg';image.alt='';x.append(image);}else x.append(ctx.icon('panel'));return x;}
   function actions(...items){const a=n('div','ss-actions');a.append(...items);return a;}
-  function select(value,options,onchange,label){const s=n('select','ss-input');s.setAttribute('aria-label',label);for(const [key,name,disabled] of options){let o=n('option','',name);o.value=key;o.disabled=!!disabled;s.append(o);}s.value=String(value??'');s.onchange=()=>onchange(s.value);return s;}
+  function select(value,options,onchange,label){return window.OpsTwinsSettingsControls.select(n,value,options,onchange,label);}
   function input(value,onchange,type='text'){const x=n(type==='textarea'?'textarea':'input','ss-input');if(type!=='textarea')x.type=type;x.value=value??'';x.oninput=()=>onchange(x.type==='number'?Number(x.value):x.value);return x;}
-  function field(title,control,sub){const l=n('label','ss-field');l.append(n('span','',title),control);if(sub)l.append(note(sub));return l;}
+  function field(title,control,sub){const l=n('label','ss-field');if(control.classList.contains('ss-select'))l.htmlFor=control.querySelector('.ss-select-trigger').id;l.append(n('span','',title),control);if(sub)l.append(note(sub));return l;}
   function toggle(value,onchange,label){const x=n('input','switch');x.type='checkbox';x.setAttribute('role','switch');x.setAttribute('aria-label',label);x.checked=!!value;x.onchange=()=>onchange(x.checked);return x;}
   function check(text,value,onchange,type='checkbox',name){const l=n('label','ss-check'),x=n('input');x.type=type;x.checked=!!value;if(name)x.name=name;x.onchange=()=>onchange(x.checked);l.append(x,n('span','',text));return l;}
   function group(){return n('div','ss-grid');}
   function fresh(key,real){return clone(state.saved[key]??real);}
   function form(key,real,path){
     originals.set(key,clone(real));const draft=state.drafts[key]??fresh(key,real);state.drafts[key]=draft;
-    const element=n('form','ss-form'),status=n('span','ss-save-state'),save=button('保存',()=>element.requestSubmit(),'ss-button primary');
+    const element=n('form','ss-form'),status=n('span','ss-save-state'),save=button('应用更改',()=>element.requestSubmit(),'ss-button primary');
     const refresh=()=>{const dirty=JSON.stringify(draft)!==JSON.stringify(fresh(key,real));save.disabled=!dirty;status.textContent=dirty?'未保存':state.saved[key]?'已保存':'';};
     const change=fn=>{fn(draft);stash();refresh();updateDraftSummary();};
-    const cancel=button('取消',()=>{delete state.drafts[key];stash();render();});
+    const cancel=button('取消更改',()=>{delete state.drafts[key];stash();render();});
     const reload=button('还原',()=>{delete state.drafts[key];delete state.saved[key];stash();render();});
     const footer=n('div','ss-form-footer');footer.append(status,actions(cancel,reload,save));
-    element.onsubmit=e=>{e.preventDefault();if(!element.reportValidity())return;const previous=clone(state);state.saved[key]=clone(draft);delete state.drafts[key];if(!stash()){state=previous;return;}ctx.toast('已保存');refresh();updateDraftSummary();render();};
+    element.onsubmit=e=>{e.preventDefault();if(!element.reportValidity())return;const previous=state.saved[key];state.saved[key]=clone(draft);delete state.drafts[key];if(!stash()){if(previous===undefined)delete state.saved[key];else state.saved[key]=previous;state.drafts[key]=draft;return;}ctx.toast('已保存');refresh();updateDraftSummary();render();};
     refresh();
     return {draft,element,change,footer,web:()=>web(path)};
   }
@@ -65,25 +66,56 @@
   function showConnection(c){detail=c.id;ctx.select('connections');}
   function header(title){const h=n('div','ss-page-heading');h.append(n('h2','',title));return h;}
   function general(root){
-    const real=ctx.data.settings.identity||{},f=form('general',{language:real.language},'/settings/general'),c=card('语言');
-    const options=n('div','ss-language-options');for(const [value,text,glyph,sub] of [['en','English','Aa','英文'],['zh-CN','简体中文','文','Simplified Chinese']]){const l=n('label','ss-language-option'),radio=n('input');radio.type='radio';radio.name='ss-language';radio.value=value;radio.checked=f.draft.language===value;radio.onchange=()=>{f.change(v=>v.language=value);options.querySelectorAll('label').forEach(x=>x.classList.toggle('selected',x.querySelector('input').checked));};l.classList.toggle('selected',radio.checked);l.append(n('span','ss-language-glyph',glyph));const textNode=n('span');textNode.append(n('strong','',text),note(sub));l.append(textNode);l.append(radio);options.append(l);}c.append(options);f.element.append(c,f.footer);root.append(f.element);
-    const appearance=card('外观');appearance.append(row('显示模式','',ctx.choiceButtons([['light','浅色'],['dark','深色'],['system','跟随系统']],ctx.prefs.appearance,v=>{ctx.prefs.appearance=v;ctx.apply();ctx.save();render();})),row('正文大小','',select(ctx.prefs.font,[['14','14 pt'],['15','15 pt'],['16','16 pt']],v=>{ctx.prefs.font=Number(v);ctx.apply();ctx.save();},'正文大小')),row('减少动态效果','',toggle(ctx.prefs.reduced,v=>{ctx.prefs.reduced=v;ctx.apply();ctx.save();},'减少动态效果')));root.append(appearance);
+    function update(key,value){ctx.prefs[key]=value;ctx.apply();preferenceError=!ctx.save();render();}
+    const language=card('语言'),options=n('div','ss-language-options');
+    for(const [value,text,glyph] of [['en','English','Aa'],['zh-CN','简体中文','文']]){
+      const l=n('label','ss-language-option'),radio=n('input');radio.type='radio';radio.name='ss-language';radio.value=value;radio.setAttribute('aria-label',text);radio.checked=ctx.prefs.language===value;radio.onchange=()=>update('language',value);l.classList.toggle('selected',radio.checked);l.append(n('span','ss-language-glyph',glyph),n('strong','',text),radio);options.append(l);
+    }
+    language.append(options);root.append(language);
+    const appearance=card('外观');appearance.append(row('显示模式','',ctx.choiceButtons([['light','浅色'],['dark','深色'],['system','跟随系统']],ctx.prefs.appearance,v=>update('appearance',v))),row('正文大小','',select(ctx.prefs.font,[['14','14 pt'],['15','15 pt'],['16','16 pt']],v=>update('font',Number(v)),'正文大小')),row('减少动态效果','',toggle(ctx.prefs.reduced,v=>update('reduced',v),'减少动态效果')));root.append(appearance);
+    if(preferenceError){const error=n('div','ss-preference-error');error.setAttribute('role','alert');error.append(n('p','','偏好未保存，当前选择已保留。'),button('重试保存',()=>{preferenceError=!ctx.save();render();}));root.append(error);}
     const shortcuts=card('快捷键');for(const [title,key] of [['全局搜索','⌘K'],['打开设置','⌘,'],['对话','⌘1'],['收件箱','⌘2'],['灵感','⌘3']])shortcuts.append(row(title,'',n('kbd','',key)));root.append(shortcuts);
   }
   function models(root){
     const source=ctx.data.models||{};if(source.unavailable||!source.standard||!source.deep||!Array.isArray(source.providers)){root.append(card('模型配置暂不可读取','请打开 Web 重新读取当前模型配置。'));return;}
     const f=form('models',{standard:source.standard,deep:source.deep},'/settings/models');
+    const catalog=Array.isArray(state.saved.modelCatalog)?state.saved.modelCatalog.filter(m=>m&&typeof m.model==='string'&&source.providers.some(p=>p.id===m.providerId)):[];
+    const add=button('新增模型',()=>addModel(source),'ss-button');add.disabled=!source.providers.some(p=>p.configured);root.querySelector('.ss-page-heading').append(add);
 
     const grid=group();for(const [key,title,sub] of [['standard','普通任务','日常聊天、来信判断、摘要及普通草稿。'],['deep','深度思考','深度思考及深度模式生成的草稿。']]){
       const c=card(title,sub),saved=source[key],choice=f.draft[key];
       let fields=group();
-      function draw(){fields.replaceChildren();const p=source.providers.find(x=>x.id===choice.providerId),suggestions=[...new Set([...(p?.models||[]),...(saved.providerId===choice.providerId?[saved.model]:[])])];
+      function draw(){const focusLabel=fields.contains(document.activeElement)?document.activeElement.getAttribute('aria-label'):null;fields.replaceChildren();const p=source.providers.find(x=>x.id===choice.providerId),suggestions=[...new Set([...(p?.models||[]),...catalog.filter(m=>m.providerId===choice.providerId).map(m=>m.model),...(saved.providerId===choice.providerId?[saved.model]:[]),...(choice.model?[choice.model]:[])])];let customKey='__custom_model__';while(suggestions.includes(customKey))customKey+='_';
         fields.append(field('服务渠道',select(choice.providerId,source.providers.map(p=>[p.id,p.name+(!p.configured?' · 未配置':''),!p.configured]),v=>{const next=source.providers.find(p=>p.id===v);if(!next)return;f.change(()=>{choice.providerId=v;choice.model=next.models?.[0]||'';});draw();},title+'服务渠道')),
-          field('模型',select(suggestions.includes(choice.model)?choice.model:'custom',[...suggestions.map(v=>[v,v]),['custom','自定义模型 ID']],v=>{f.change(()=>choice.model=v==='custom'?'':v);draw();},title+'模型')));
+          field('模型',select(suggestions.includes(choice.model)?choice.model:customKey,[...suggestions.map(v=>[v,v]),[customKey,'自定义模型 ID']],v=>{f.change(()=>choice.model=v===customKey?'':v);draw();},title+'模型')));
         if(!suggestions.includes(choice.model)){const id=input(choice.model,v=>f.change(()=>choice.model=v));id.required=true;id.maxLength=200;id.spellcheck=false;fields.append(field('模型 ID',id));}
-        const endpoint=n('details','ss-model-endpoint');endpoint.append(n('summary','','渠道详情'),n('code','',p?.baseUrl||'服务地址未提供'),note(p?[p.api,p.configured?'凭据已配置':'凭据未配置'].join(' · '):'渠道信息未提供'));fields.append(endpoint);
+        const endpoint=n('details','ss-model-endpoint');endpoint.append(n('summary','','渠道详情'),n('code','',p?.baseUrl||'服务地址未提供'),note(p?[p.api,p.configured?'凭据已配置':'凭据未配置'].join(' · '):'渠道信息未提供'));fields.append(endpoint);if(focusLabel)[...fields.querySelectorAll('button,select:not([aria-hidden])')].find(x=>x.getAttribute('aria-label')===focusLabel)?.focus({preventScroll:true});
       }draw();c.append(fields,actions(button('测试连接',()=>business('测试模型','/settings/models','测试使用 Web 已保存配置。预览中的选择尚未提交，测试可能调用真实模型。')),web('/settings/models','管理模型')));grid.append(c);
-    }f.element.append(grid,f.footer);root.append(f.element);
+    }f.element.append(grid);
+    if(catalog.length){const list=card('新增的模型'),caption=note('仅供预览');list.append(caption);for(const item of catalog){const provider=source.providers.find(p=>p.id===item.providerId);list.append(row(item.model,provider?.name||item.providerId,button('移除',()=>{const previous=state.saved.modelCatalog;state.saved.modelCatalog=catalog.filter(m=>m!==item);if(!stash()){state.saved.modelCatalog=previous;return;}render();})));}f.element.append(list);}
+    f.element.append(f.footer);root.append(f.element);
+  }
+  function addModel(source){
+    modal('新增模型',d=>{
+      const form=n('form','ss-form'),error=n('p','ss-warning');error.setAttribute('role','alert');error.hidden=true;
+      const currentProvider=state.drafts.models?.standard?.providerId||source.standard.providerId;
+      let providerId=source.providers.find(p=>p.configured&&p.id===currentProvider)?.id||source.providers.find(p=>p.configured)?.id||'';
+      const id=input('',()=>{id.setCustomValidity('');error.hidden=true;});id.required=true;id.maxLength=200;id.spellcheck=false;id.autocomplete='off';id.placeholder='例如模型服务提供的 model ID';id.setAttribute('aria-label','新增模型 ID');
+      const channel=select(providerId,source.providers.map(p=>[p.id,p.name+(!p.configured?' · 未配置':''),!p.configured]),v=>{providerId=v;id.setCustomValidity('');error.hidden=true;},'新增模型服务渠道');channel.required=true;
+      form.append(field('服务渠道',channel),field('模型 ID',id),note('添加到预览模型列表；正式配置请在 Web 中保存。'),error,actions(button('取消',()=>dialog.close()),button('添加',()=>form.requestSubmit(),'ss-button primary')));
+      form.onsubmit=event=>{
+        event.preventDefault();const model=id.value.trim(),p=source.providers.find(p=>p.id===providerId);
+        const catalog=Array.isArray(state.saved.modelCatalog)?state.saved.modelCatalog:[];
+        const choices=[source.standard,source.deep,...Object.values(state.saved.models||{}),...Object.values(state.drafts.models||{})];
+        const duplicate=p?.models?.includes(model)||catalog.some(m=>m.providerId===providerId&&m.model===model)||choices.some(m=>m?.providerId===providerId&&m.model===model);
+        const message=!p?.configured?'请选择已配置的服务渠道':!model?'请输入模型 ID':model.length>200||/[\s\u0000-\u001f\u007f]/.test(model)?'模型 ID 不能包含空白，且最多 200 个字符':duplicate?'此渠道已包含该模型':'';
+        id.setCustomValidity(message);if(message){error.textContent=message;error.hidden=false;}if(!form.reportValidity())return;
+        const previous=state.saved.modelCatalog;state.saved.modelCatalog=[...catalog,{providerId,model}];
+        if(!stash()){if(previous===undefined)delete state.saved.modelCatalog;else state.saved.modelCatalog=previous;error.textContent='保存失败，请重试';error.hidden=false;return;}
+        dialog.close();render();ctx.toast('已加入预览模型列表');
+      };
+      d.append(form);requestAnimationFrame(()=>id.focus({preventScroll:true}));
+    });
   }
   function connections(root){
     const grid=group();for(const p of providers){const c=connection(p.id),s=card(p.name),top=n('div','ss-provider-heading');top.append(brand(p.id),n('span','ss-provider-account',c?.config?.account||c?.config?.workspace||c?.evidence?.name||p.caption),badge(c?.status||'not_connected'));s.prepend(top);
@@ -156,14 +188,14 @@
     const c=card('消息处理等级','新类型从草稿开始，信任后可提高等级。');const effects={observe:'只读取并摘要，不撰写回复。',draft:'起草回复，等待你审批。',send_undo:'等待 2 分钟后发送，期间可以撤销。',autonomous:'立即发送，并记录在 Activity 中。'};
     function normalize(value){if(typeof value==='number')return levels[Math.max(0,Math.min(3,value-1))][0];if(['auto','autonomous'].includes(value))return 'autonomous';if(['send_with_undo','undo','send_undo'].includes(value))return 'send_undo';return value==='observe'?'observe':'draft';}
     for(const [key,title,sub,locked] of types){const level=locked||normalize(v.levels?.[key]),sel=select(level,levels,x=>{f.change(d=>{(d.levels??={})[key]=x;});render();},title+'自主等级');sel.disabled=!!locked;c.append(row(title,sub+(locked?' · 已锁定':'')+' · '+effects[level],sel));}f.element.append(c);
-    const deep=card('主动深度思考','为这些对象起草回复前，分身会主动深度思考。');for(const [key,title] of [['vip','VIP'],['customers','客户'],['manager','你的主管'],['stakes','涉及金钱或截止日期的任何人'],['everyone','所有人']])deep.append(check(title,(v.deepThink||[]).includes(key),on=>f.change(d=>d.deepThink=on?[...new Set([...(d.deepThink||[]),key])]:(d.deepThink||[]).filter(x=>x!==key))));f.element.append(deep);
+    const deep=card('主动深度思考','为这些对象起草回复前，分身会主动深度思考。');deep.classList.add('ss-check-list');for(const [key,title] of [['vip','VIP'],['customers','客户'],['manager','你的主管'],['stakes','涉及金钱或截止日期的任何人'],['everyone','所有人']])deep.append(check(title,(v.deepThink||[]).includes(key),on=>f.change(d=>d.deepThink=on?[...new Set([...(d.deepThink||[]),key])]:(d.deepThink||[]).filter(x=>x!==key))));f.element.append(deep);
     const quiet=card('安静时间','非紧急通知延后到安静时间结束。'),times=group();for(const [key,title] of [['quietFrom','开始'],['quietUntil','结束']])times.append(field(title,input(v[key]||'',x=>f.change(d=>d[key]=x),'time')));quiet.append(times);f.element.append(quiet);
-    const alerts=card('通知时机');for(const [key,title] of [['urgent_digest','紧急事项立即通知，其他事项每日汇总'],['every','每条需要我的消息'],['digest','仅汇总，不推送']])alerts.append(check(title,v.alerts===key,()=>f.change(d=>d.alerts=key),'radio','ss-alerts'));alerts.append(note('每日汇总于 '+(v.quietUntil||'07:00')+'（'+(connection('feishu')?.config?.timezone||'Asia/Singapore')+'）出现在 Activity 中；仅汇总模式不会发送渠道消息。'));f.element.append(alerts);
+    const alerts=card('通知时机');alerts.classList.add('ss-check-list');for(const [key,title] of [['urgent_digest','紧急事项立即通知，其他事项每日汇总'],['every','每条需要我的消息'],['digest','仅汇总，不推送']])alerts.append(check(title,v.alerts===key,()=>f.change(d=>d.alerts=key),'radio','ss-alerts'));alerts.append(note('每日汇总于 '+(v.quietUntil||'07:00')+'（'+(connection('feishu')?.config?.timezone||'Asia/Singapore')+'）出现在 Activity 中；仅汇总模式不会发送渠道消息。'));f.element.append(alerts);
     const transparent=card('透明度');transparent.append(row('标注分身自主发送的消息','某些工作场所要求公开说明，默认开启。',toggle(v.transparency,x=>f.change(d=>d.transparency=x),'标注自主消息')));f.element.append(transparent,f.footer);root.append(f.element);
   }
   function about(root){const s=card('OpsTwins','macOS 客户端 UI 设计稿');s.append(row('数据快照','只读真实工作区',n('span','ss-note',stamp(ctx.data.capturedAt))),row('工作区版本','',n('code','',ctx.data.revision?'r'+ctx.data.revision:'未载入')),note('设置内容来自现有 Web；原生客户端实现尚未同步。'));root.append(s);}
-  function render(){if(!ctx)return;const root=ctx.root;const oldKey=root.dataset.settingsKey;const scrollTop=root.scrollTop;const active=root.contains(document.activeElement)?document.activeElement:null;const focusKey=active?{id:active.id,label:active.getAttribute('aria-label'),text:active.textContent,tag:active.tagName}:null;if(root.dataset.settingsKey)openGroups.set(root.dataset.settingsKey,[...root.querySelectorAll('details[open]')].map(x=>x.querySelector('summary')?.textContent));const key=ctx.setting+':'+(detail||'');root.dataset.settingsKey=key;root.replaceChildren();root.classList.add('ss-content');const restoreGroups=()=>{const open=openGroups.get(key)||[];root.querySelectorAll('details').forEach(x=>{x.open=open.includes(x.querySelector('summary')?.textContent);});root.scrollTop=oldKey===key?scrollTop:0;if(oldKey===key&&focusKey){const match=[...root.querySelectorAll('button,a,input,select,textarea')].find(x=>!x.disabled&&x.tagName===focusKey.tag&&(focusKey.id?x.id===focusKey.id:focusKey.label?x.getAttribute('aria-label')===focusKey.label:x.textContent===focusKey.text));(match||(focusKey.text==='保存'?root.querySelector('.ss-form-footer button:not(.primary)'):null)||root.querySelector('button:not(:disabled),input:not(:disabled),select:not(:disabled)'))?.focus({preventScroll:true});}};document.querySelectorAll('[data-setting]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.setting===ctx.setting));if(ctx.setting==='connections'&&detail){customize(root);restoreGroups();updateDraftSummary();return;}
+  function render(){if(!ctx)return;window.OpsTwinsSettingsControls.close();if(!sections[ctx.setting])ctx.setting='general';const root=ctx.root;const oldKey=root.dataset.settingsKey;const scrollTop=root.scrollTop;const active=root.contains(document.activeElement)?document.activeElement:null;const focusKey=active?{id:active.id,label:active.getAttribute('aria-label'),text:active.textContent,tag:active.tagName}:null;if(root.dataset.settingsKey)openGroups.set(root.dataset.settingsKey,[...root.querySelectorAll('details[open]')].map(x=>x.querySelector('summary')?.textContent));const key=ctx.setting+':'+(detail||'');root.dataset.settingsKey=key;root.replaceChildren();root.classList.add('ss-content');const restoreGroups=()=>{const open=openGroups.get(key)||[];root.querySelectorAll('details').forEach(x=>{x.open=open.includes(x.querySelector('summary')?.textContent);});root.scrollTop=oldKey===key?scrollTop:0;if(oldKey===key&&focusKey){const match=[...root.querySelectorAll('button,a,input,select,textarea')].find(x=>!x.disabled&&x.tagName===focusKey.tag&&(focusKey.id?x.id===focusKey.id:focusKey.label?x.getAttribute('aria-label')===focusKey.label:x.textContent===focusKey.text));(match||(focusKey.text==='保存'?root.querySelector('.ss-form-footer button:not(.primary)'):null)||root.querySelector('button:not(:disabled),input:not(:disabled),select:not(:disabled)'))?.focus({preventScroll:true});}};document.querySelectorAll('[data-setting]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.setting===ctx.setting));if(ctx.setting==='connections'&&detail){customize(root);restoreGroups();updateDraftSummary();return;}
     root.append(header(sections[ctx.setting]));const builtin={general,models,connections,identity,channels,autonomy,about}[ctx.setting];if(builtin)builtin(root);else window.OpsTwinsDeviceSettings.render(ctx.setting,root,{...ctx,navigate:ctx.select,modal,card,row,actions,button,n,note,field,input,select,toggle});restoreGroups();updateDraftSummary();
   }
-  window.OpsTwinsSettingsStudy={render(options){ctx=options;if(state.revision!==ctx.data.revision||state.modelVersion!==ctx.data.models?.version){try{const stored=JSON.parse(sessionStorage.getItem(storageKey)||'null');if(stored?.revision===ctx.data.revision&&stored.modelVersion===ctx.data.models?.version&&stored.drafts&&stored.saved)state=stored;else state={revision:ctx.data.revision,modelVersion:ctx.data.models?.version,drafts:{},saved:{}};}catch{state={revision:ctx.data.revision,modelVersion:ctx.data.models?.version,drafts:{},saved:{}};}}render();},navigate(section){detail=null;if(dialog?.open)dialog.close();}};
+  window.OpsTwinsSettingsStudy={render(options){ctx=options;if(state.revision!==ctx.data.revision||state.modelVersion!==ctx.data.models?.version){try{const stored=JSON.parse(sessionStorage.getItem(storageKey)||'null');if(stored?.revision===ctx.data.revision&&stored.modelVersion===ctx.data.models?.version&&stored.drafts&&stored.saved)state=stored;else state={revision:ctx.data.revision,modelVersion:ctx.data.models?.version,drafts:{},saved:{}};}catch{state={revision:ctx.data.revision,modelVersion:ctx.data.models?.version,drafts:{},saved:{}};}}render();},navigate(section){window.OpsTwinsSettingsControls.close();detail=null;if(dialog?.open)dialog.close();}};
 })();
