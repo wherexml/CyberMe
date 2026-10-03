@@ -58,3 +58,5 @@ HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 
 显式配置 `OPSTWIN_WECHAT_CLI` 为本项目 `.local/greenbubbles-attachment-candidate/bin/<SHA256>/greenbubbles`，并设置相同 `OPSTWIN_WECHAT_ATTACHMENT_SHA256`，才启用精确消息 inspect/materialize 模式。每次 CLI 命令前后核摘要、所有者、路径和不可写模式；缺少该摘要仍保留安装版精确图片回退，不伪造非图片支持。候选必须先完成 [独立CLI gate](../docs/journeys/native-wechat-attachment-cli.md)。
 
 附件由精确 message 推断kind，不接受请求传入的路径/candidate作为选择。私有0700专有输出经字节数/SHA/格式和原连接/来源/消息逐阶段复核后进入64 MiB/16项/10min RAM，HTTP no-store/nosniff；只有当前operation允许清理，CLI缓存不删除。非图片header-only传输不等于可播放。完整公开路径复验用 `node scripts/native-wechat-attachment-http-e2e.mjs`，旧上下文兼容用 `node scripts/native-wechat-context-http-e2e.mjs --public-only`；原生与实际媒体另验，详见 [附件闭环](../docs/journeys/native-wechat-attachment-api.md)。
+
+同脚本 `--recovery` 验证本测试拥有的API正常重启、实际CLI写输出后的异常退出与死PID暂存清理，独立54/54；`--natural-expiry` 另等真实十分钟，主运行56/56且自然TTL由独立只读核验，不能将取证说成第二次等待。两个选项只作用本次公开隔离服务，不终止业务进程或原生窗口。
