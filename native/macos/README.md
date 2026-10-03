@@ -148,4 +148,6 @@ Tokio timer 必须在 `runtime::io(async move { ... })` 内构造；在 GPUI 前
 
 v13尺寸/键盘恢复及版本化原失败见[恢复旅程](../../docs/journeys/native-ui-v12-recovery.md)：使用真实单行InputState外层padding获得Inbox31px/会话38px，而非单行无效h；侧会话统一单个PopupMenu owner和稳定行焦点；录音composer持续焦点在Textarea卸载期间接收Escape，取消/完成按generation恢复输入。三项真实GUI子范围通过，独立完整视觉评分与完整85项功能仍进行中。
 
+v14候选修复设置canonical保存回显及连接异步草稿迁移；搜索半径/边缘和Inbox消息分组待新包截图。生产Rust客户端真实ASR公开音频E2E已通过，使用`acceptance/src/bin/native-asr-http-e2e.rs`；合成音频不代表硬件GUI听写通过。当前运行包与候选二进制分开记录，验收期间不覆盖其他Agent正在使用的bundle。
+
 真实工作区 GUI 公开数据准备见[工作区旅程](../../docs/journeys/native-workspace-gui.md)，仅使用46214隔离服务；真实Agent本地写入后中断恢复见[partial旅程](../../docs/journeys/native-real-partial.md)，使用46218。不得将准备HTTP或真实partial恢复结果等同窗口交互通过。

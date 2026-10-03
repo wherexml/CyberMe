@@ -84,11 +84,18 @@ impl SearchBackdrop {
                 msg_send![filter_class, filterWithName: &*NSString::from_str("CIGaussianBlur")];
             let Some(filter) = filter else { return };
             let _: () = msg_send![&*filter, setDefaults];
-            // Candidate backing-scale radius; actual pixel parity remains a GUI gate.
-            let radius = NSNumber::new_f64(3. * scale);
+            // Background filters use layer points; multiplying Retina scale
+            // doubled the actual blur in v13's independent screenshots.
+            let radius = NSNumber::new_f64(3.);
             let _: () =
                 msg_send![&*filter, setValue: &*radius forKey: &*NSString::from_str("inputRadius")];
-            let filters = NSArray::from_slice(&[&*filter]);
+            // Extend edge colors before blur instead of mixing transparent
+            // outside pixels into the window's visible rim. No image readback.
+            let clamp: Option<Retained<AnyObject>> =
+                msg_send![filter_class, filterWithName: &*NSString::from_str("CIAffineClamp")];
+            let Some(clamp) = clamp else { return };
+            let _: () = msg_send![&*clamp, setDefaults];
+            let filters = NSArray::from_slice(&[&*clamp, &*filter]);
             let layer: Retained<AnyObject> = msg_send![layer_class, new];
             let mask: Retained<AnyObject> = msg_send![mask_class, new];
             let path = CGPathCreateMutable();

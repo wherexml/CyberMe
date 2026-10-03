@@ -177,7 +177,14 @@ impl Client {
             .await
             .map_err(net)?;
         let v: Value = Self::decode(resp).await?;
-        let text = v.get("text").and_then(Value::as_str).unwrap_or("").trim();
+        // Production ASR returns transcript; keep compatibility with older
+        // adapters that used text. The server retains the run/audio evidence.
+        let text = v
+            .get("transcript")
+            .and_then(Value::as_str)
+            .or_else(|| v.get("text").and_then(Value::as_str))
+            .unwrap_or("")
+            .trim();
         if text.is_empty() {
             return Err(ApiError::Api {
                 status: 422,

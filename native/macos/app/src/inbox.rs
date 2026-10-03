@@ -2056,7 +2056,7 @@ impl InboxView {
                     .child(
                         div()
                             .text_size(px(11.))
-                            .line_height(relative(1.25))
+                            .line_height(px(16.))
                             .text_color(theme.muted_foreground)
                             .child(crate::settings::t(label)),
                     )
@@ -2076,7 +2076,7 @@ impl InboxView {
                 div()
                     .text_size(px(11.))
                     .font_weight(FontWeight::MEDIUM)
-                    .line_height(relative(1.25))
+                    .line_height(px(16.))
                     .child(crate::settings::t("Jev 回复判断")),
             )
             .child(meters);
@@ -2261,6 +2261,9 @@ impl InboxView {
                     .unwrap_or_else(|| v.to_string())
             });
             let current_time = raw_time.as_deref().and_then(crate::util::parse_ms);
+            // Only message groups have the HTML's 17px separation. The time
+            // label and its own message have no extra gap between them.
+            let mut message_group = v_flex().w_full().gap_0();
             if let Some(time) = current_time {
                 let current_date = chrono::DateTime::from_timestamp_millis(time)
                     .map(|t| t.with_timezone(&Local).date_naive());
@@ -2271,7 +2274,7 @@ impl InboxView {
                     || current_date != previous_date
                     || previous_time.is_some_and(|p| time - p >= 15 * 60 * 1000)
                 {
-                    messages = messages.child(
+                    message_group = message_group.child(
                         div()
                             .w_full()
                             .text_center()
@@ -2291,11 +2294,13 @@ impl InboxView {
             }
             if kind == "system" {
                 messages = messages.child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .text_center()
-                        .child(text.to_owned()),
+                    message_group.child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .text_center()
+                            .child(text.to_owned()),
+                    ),
                 );
                 continue;
             }
@@ -2453,7 +2458,7 @@ impl InboxView {
                     .child(div().mt(px(if personal { 0. } else { 16. })).child(pic))
                     .child(content)
             };
-            messages = messages.child(row);
+            messages = messages.child(message_group.child(row));
         }
         if let Some(product) = product {
             for attachment in &product.source_attachments {

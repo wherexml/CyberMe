@@ -576,6 +576,8 @@ impl SettingsView {
         };
         let request = self.detail.as_deref() == Some("request");
         let create = self.detail.as_deref() == Some("new") || request;
+        let saved_section = self.section.clone();
+        let submitted_draft = self.drafts.get(&key).cloned();
         self.busy = true;
         self.error = None;
         let c = self.client.clone();
@@ -621,6 +623,7 @@ impl SettingsView {
                 match result {
                     Ok(v) => {
                         if create && !request && v["ok"].as_bool() == Some(false) {
+                            let active_group = this.group_key() == key;
                             if let Some(id) = v["connection"]["id"].as_str().map(str::to_string) {
                                 let mut retained = this.drafts[&key].clone();
                                 retained["updatedAt"] = v["connection"]["updatedAt"].clone();
@@ -628,7 +631,9 @@ impl SettingsView {
                                     map.remove(&key);
                                 }
                                 this.drafts[format!("connection:{id}")] = retained;
-                                this.detail = Some(id);
+                                if active_group {
+                                    this.detail = Some(id);
+                                }
                                 this.persist();
                             }
                             this.error = Some(
@@ -639,27 +644,69 @@ impl SettingsView {
                                     )
                                     .to_string(),
                             );
-                            if let Some(connections) = this.data["connections"].as_array_mut() {
-                                connections.push(v["connection"].clone());
-                            }
+                            this.merge_saved_connection(&v["connection"]);
                             cx.notify();
                             return;
                         }
-                        if let Some(map) = this.drafts.as_object_mut() {
-                            map.remove(&key);
+                        // Rebuild controls from the canonical response, not the
+                        // old bootstrap. A later reload preserves existing input
+                        // entities and cannot repair stale values created here.
+                        let canonical_connection = if v["connection"].is_object() {
+                            v["connection"].clone()
+                        } else {
+                            v.clone()
+                        };
+                        match saved_section.as_str() {
+                            "general" | "identity" | "autonomy" => {
+                                this.data["settings"] = v.clone();
+                            }
+                            "models" => this.models = v.clone(),
+                            "connections" if !request => {
+                                this.merge_saved_connection(&canonical_connection);
+                            }
+                            _ => {}
                         }
-                        if request {
+                        let unchanged = this.drafts.get(&key) == submitted_draft.as_ref();
+                        let active_group = this.group_key() == key;
+                        if unchanged {
+                            if let Some(map) = this.drafts.as_object_mut() {
+                                map.remove(&key);
+                            }
+                        } else if saved_section == "connections" && !request {
+                            // A new edit remains a draft, based on the version
+                            // actually saved rather than the obsolete lease.
+                            this.drafts[&key]["updatedAt"] =
+                                canonical_connection["updatedAt"].clone();
+                        }
+                        if request && active_group && unchanged {
                             this.detail = None;
-                        } else if create {
-                            this.detail = v["id"]
-                                .as_str()
-                                .or_else(|| v["connection"]["id"].as_str())
-                                .map(str::to_string);
+                        } else if create && !request {
+                            if let Some(id) = canonical_connection["id"].as_str() {
+                                if !unchanged {
+                                    let retained = this.drafts[&key].clone();
+                                    if let Some(map) = this.drafts.as_object_mut() {
+                                        map.remove(&key);
+                                    }
+                                    this.drafts[format!("connection:{id}")] = retained;
+                                }
+                                if active_group {
+                                    this.detail = Some(id.to_string());
+                                }
+                            }
                         }
-                        this.fields.clear();
-                        this.pending_fields = true;
+                        if active_group && unchanged {
+                            this.fields.clear();
+                            this.pending_fields = true;
+                        }
                         this.persist();
-                        this.notice = Some("已保存".into());
+                        this.notice = Some(
+                            if unchanged {
+                                "已保存"
+                            } else {
+                                "提交的版本已保存，当前修改仍未保存"
+                            }
+                            .into(),
+                        );
                         this.reload(cx);
                     }
                     Err(e) => this.error = Some(e.user_text()),
@@ -668,6 +715,68 @@ impl SettingsView {
             });
         });
         self._tasks.push(t);
+        cx.notify();
+    }
+    fn merge_saved_connection(&mut self, saved: &Value) {
+        if !saved["id"].is_string() {
+            return;
+        }
+        if let Some(connections) = self.data["connections"].as_array_mut() {
+            if let Some(existing) = connections
+                .iter_mut()
+                .find(|item| item["id"] == saved["id"])
+            {
+                *existing = saved.clone();
+            } else {
+                connections.push(saved.clone());
+            }
+        }
+    }
+    fn recover_created_connection(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        let original_key = self.group_key();
+        self.busy = true;
+        self.error = None;
+        let client = self.client.clone();
+        let task = cx.spawn(async move |this, cx| {
+            let requested_id = id.clone();
+            let result = io(async move {
+                client
+                    .product_get(&format!("/api/connections/{requested_id}"))
+                    .await
+            })
+            .await;
+            _ = this.update(cx, |this, cx| {
+                this.busy = false;
+                match result {
+                    Ok(saved) if saved["id"].as_str() == Some(id.as_str()) => {
+                        this.merge_saved_connection(&saved);
+                        let active_group = this.group_key() == original_key;
+                        let mut retained = this.drafts[&original_key].clone();
+                        if retained["createId"].as_str() == Some(id.as_str()) {
+                            retained["updatedAt"] = saved["updatedAt"].clone();
+                            if let Some(map) = this.drafts.as_object_mut() {
+                                map.remove(&original_key);
+                            }
+                            this.drafts[format!("connection:{id}")] = retained;
+                            this.persist();
+                        }
+                        if active_group {
+                            this.detail = Some(id);
+                            this.fields.clear();
+                            this.pending_fields = true;
+                        }
+                        this.reload(cx);
+                    }
+                    Ok(_) => this.error = Some(t("原请求已保存不同内容，请核对后继续")),
+                    Err(e) => this.error = Some(e.user_text()),
+                }
+                cx.notify();
+            });
+        });
+        self._tasks.push(task);
         cx.notify();
     }
     fn save_local(&mut self, path: &str, value: Value, cx: &mut Context<Self>) {
@@ -2455,10 +2564,7 @@ impl SettingsView {
                                         .label(t("读取原连接"))
                                         .disabled(self.busy)
                                         .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.detail = Some(created.clone());
-                                            this.fields.clear();
-                                            this.pending_fields = false;
-                                            this.reload(cx);
+                                            this.recover_created_connection(created.clone(), cx);
                                         })),
                                 )
                                 .child(note("原结果未知时先读取此连接；不会重复创建。", cx));
@@ -4904,6 +5010,7 @@ pub fn t(s: &str) -> String {
         "工作日历" => "Work Calendar",
         "工作邮箱" => "Work Email",
         "已保存" => "Saved",
+        "提交的版本已保存，当前修改仍未保存" => "Submitted version saved; current edits are still unsaved",
         "已允许" => "Allowed",
         "已同步数据记录" => "Synced Data Index",
         "已拒绝" => "Denied",
