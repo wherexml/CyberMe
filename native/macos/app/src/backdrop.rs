@@ -5,7 +5,8 @@ use objc2::{
     rc::Retained,
     runtime::{AnyClass, AnyObject},
 };
-use objc2_foundation::{NSArray, NSNumber, NSPoint, NSRect, NSString};
+use objc2_core_foundation::CGAffineTransform;
+use objc2_foundation::{NSArray, NSNumber, NSPoint, NSRect, NSString, NSValue};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::ffi::c_void;
 #[link(name = "CoreImage", kind = "framework")]
@@ -72,12 +73,20 @@ impl SearchBackdrop {
                 return;
             }
             self.clear();
-            let (Some(layer_class), Some(mask_class), Some(filter_class), Some(transaction)) = (
+            let (
+                Some(layer_class),
+                Some(mask_class),
+                Some(filter_class),
+                Some(vector_class),
+                Some(transaction),
+            ) = (
                 AnyClass::get(c"CALayer"),
                 AnyClass::get(c"CAShapeLayer"),
                 AnyClass::get(c"CIFilter"),
+                AnyClass::get(c"CIVector"),
                 AnyClass::get(c"CATransaction"),
-            ) else {
+            )
+            else {
                 return;
             };
             let filter: Option<Retained<AnyObject>> =
@@ -89,25 +98,50 @@ impl SearchBackdrop {
             let radius = NSNumber::new_f64(3.);
             let _: () =
                 msg_send![&*filter, setValue: &*radius forKey: &*NSString::from_str("inputRadius")];
-            // Infinite-extent affine clamp distorted the actual CA backdrop
-            // in v14. Keep the finite filter and exclude its outside-sampling
-            // rim instead; the original GPUI background stays below the dim.
-            let filters = NSArray::from_slice(&[&*filter]);
+            let clamp: Option<Retained<AnyObject>> =
+                msg_send![filter_class, filterWithName: &*NSString::from_str("CIAffineClamp")];
+            let input_crop: Option<Retained<AnyObject>> =
+                msg_send![filter_class, filterWithName: &*NSString::from_str("CICrop")];
+            let crop: Option<Retained<AnyObject>> =
+                msg_send![filter_class, filterWithName: &*NSString::from_str("CICrop")];
+            let (Some(clamp), Some(input_crop), Some(crop)) = (clamp, input_crop, crop) else {
+                return;
+            };
+            let identity = NSValue::new(CGAffineTransform {
+                a: 1.,
+                b: 0.,
+                c: 0.,
+                d: 1.,
+                tx: 0.,
+                ty: 0.,
+            });
+            // A sampling candidate, not a mask band. Preserve full-frame blur
+            // while avoiding transparent AppKit edge pixels in CA's input.
+            let inset = 10.0_f64;
+            if geometry[0] <= inset * 2. || geometry[1] <= inset * 2. {
+                return;
+            }
+            let input_rectangle: Retained<AnyObject> = msg_send![vector_class,
+                vectorWithX: inset Y: inset Z: geometry[0] - inset * 2. W: geometry[1] - inset * 2.];
+            let _: () = msg_send![&*input_crop, setDefaults];
+            let _: () = msg_send![&*input_crop, setValue: &*input_rectangle forKey: &*NSString::from_str("inputRectangle")];
+            let rectangle: Retained<AnyObject> = msg_send![vector_class, vectorWithX: 0.0_f64 Y: 0.0_f64 Z: geometry[0] W: geometry[1]];
+            let _: () = msg_send![&*clamp, setDefaults];
+            let _: () = msg_send![&*clamp, setValue: &*identity forKey: &*NSString::from_str("inputTransform")];
+            let _: () = msg_send![&*crop, setDefaults];
+            let _: () = msg_send![&*crop, setValue: &*rectangle forKey: &*NSString::from_str("inputRectangle")];
+            // Clamp prevents transparent-edge falloff. Its infinite extent
+            // must not be the final CA output (v14 distorted the scene).
+            // The candidate crops to logical layer bounds; real Retina
+            // captures must confirm CA's automatically supplied CI extent.
+            let filters = NSArray::from_slice(&[&*input_crop, &*clamp, &*filter, &*crop]);
             let layer: Retained<AnyObject> = msg_send![layer_class, new];
             let mask: Retained<AnyObject> = msg_send![mask_class, new];
             let path = CGPathCreateMutable();
             if path.is_null() {
                 return;
             }
-            let edge_guard = 10.;
-            let filtered_interior = NSRect::new(
-                NSPoint::new(frame.origin.x + edge_guard, frame.origin.y + edge_guard),
-                objc2_foundation::NSSize::new(
-                    (frame.size.width - edge_guard * 2.).max(0.),
-                    (frame.size.height - edge_guard * 2.).max(0.),
-                ),
-            );
-            CGPathAddRect(path, std::ptr::null(), filtered_interior);
+            CGPathAddRect(path, std::ptr::null(), frame);
             let hole = NSRect::new(
                 NSPoint::new(geometry[2], geometry[3]),
                 objc2_foundation::NSSize::new(geometry[4], geometry[5]),

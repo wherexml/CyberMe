@@ -46,3 +46,7 @@ HTML Chat 接入：`chat-status.ts` 只读请求回查，`scripts/macos-study-ch
 HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 桥接提供限定 sessions 路由；主会话指针保持逻辑见 [Backend](../docs/spec/backend.md)。面板管理数据仍保存在设计稿浏览器中。
 
 设置复杂验收可通过服务端进程环境 `OPSTWIN_PRIVATE_DIR` 隔离本项目 `.local` 内的模型/语音配置及加密Bot绑定；默认路径保持。该变量不经HTTP/Agent输入，禁止越界及悬空链接。可重复真实模型/保存/重启脚本 `node scripts/native-private-runtime-http-e2e.mjs` 默认46214，也可设置 `OPSTWIN_PRIVATE_RUNTIME_PORT=46215`，拒绝占用端口；私有副本只留服务端0700/0600路径，产物不含凭据。规格和实际21项证据见[私有运行配置](../docs/spec/private-runtime.md)。
+
+自定义连接的私有凭据绑定精确目标及认证方式；公共编辑使旧验证失效，公开协议 header 以外的值不进入公共配置。REST/MCP 禁止跟随重定向，缺凭据不匿名检测为成功；旧短凭据只修复关联诊断。真实隔离 E2E：`node scripts/native-connection-credentials-http-e2e.mjs`（46220/46221），独立48/48 HTTP通过，原生GUI另验，见[连接凭据旅程](../docs/journeys/native-connection-credentials.md)。
+
+个人微信新增 typed CLI 联系人、会话内 stdin 搜索、精确消息和有界RAM图片读取；源/连接版本绑定精确ID，断开清媒体与ID注册，Agent证据省略query及正文。`node scripts/native-wechat-context-http-e2e.mjs`（46223）区分公开协议fixture和installed实际只读调用；原生新reader、语音/视频/文件与同秒歧义能力见[微信上下文旅程](../docs/journeys/native-wechat-context.md)。

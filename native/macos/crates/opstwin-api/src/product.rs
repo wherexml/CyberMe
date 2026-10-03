@@ -1,6 +1,6 @@
 //! Native product pages use the existing server contracts. No credentials are
 //! transported to the client; model reads are the public, redacted endpoint.
-use crate::{ApiError, Client};
+use crate::{ApiError, Client, Download};
 use serde_json::Value;
 
 pub fn valid_binding_url(value: &str) -> bool {
@@ -73,6 +73,34 @@ pub fn query_value(value: &str) -> String {
 }
 
 impl Client {
+    pub async fn wechat_attachment(&self, conversation: &str, message: &str) -> Result<Value, ApiError> {
+        self.product_post("/api/wechat/attachment", serde_json::json!({"conversation":conversation,"message":message})).await
+    }
+    pub async fn wechat_attachment_bytes(&self, token: &str) -> Result<Download, ApiError> {
+        use futures_util::StreamExt;
+        if token.len()!=36 || !token.bytes().all(|c|c.is_ascii_hexdigit()||c==b'-') {
+            return Err(ApiError::Decode("invalid attachment token".into()));
+        }
+        let resp = self.stream_http.get(self.url(&format!("/api/wechat/attachments/{token}"))).send().await.map_err(crate::net)?;
+        if !resp.status().is_success() {
+            return Self::decode::<Value>(resp).await.and_then(|_| Err(ApiError::Decode("unexpected attachment response".into())));
+        }
+        let content_type=resp.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v|v.to_str().ok()).map(str::to_string);
+        let content_length=resp.content_length();
+        if content_length.is_some_and(|v|v>25_000_000) {return Err(ApiError::Decode("attachment too large".into()));}
+        let mut stream=resp.bytes_stream();let mut bytes=Vec::new();
+        while let Some(chunk)=stream.next().await {bytes.extend_from_slice(&chunk.map_err(crate::net)?);if bytes.len()>25_000_000{return Err(ApiError::Decode("attachment too large".into()));}}
+        Ok(Download{bytes,content_type,content_length})
+    }
+    pub async fn wechat_contacts(&self, body: Value) -> Result<Value, ApiError> {
+        self.product_post("/api/wechat/contacts", body).await
+    }
+    pub async fn wechat_search(&self, body: Value) -> Result<Value, ApiError> {
+        self.product_post("/api/wechat/messages/search", body).await
+    }
+    pub async fn wechat_message(&self, conversation: &str, message: &str) -> Result<Value, ApiError> {
+        self.product_post("/api/wechat/message", serde_json::json!({"conversation":conversation,"message":message})).await
+    }
     /// Full server workspace search. Empty-query recent records stay local.
     pub async fn workspace_search(
         &self,

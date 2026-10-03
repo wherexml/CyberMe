@@ -155,3 +155,10 @@ v15候选修复隐藏Inbox自动选择造成的提前起草，并保护切页期
 真实工作区 GUI 公开数据准备见[工作区旅程](../../docs/journeys/native-workspace-gui.md)，仅使用46214隔离服务；真实Agent本地写入后中断恢复见[partial旅程](../../docs/journeys/native-real-partial.md)，使用46218。不得将准备HTTP或真实partial恢复结果等同窗口交互通过。
 
 v14独立搜索实测70.1%黑区，mandatory视觉gate失败、分数null；Inbox原12px间距子范围已通过。v15运行候选8a9c92a1…移除无限extent clamp，保留有限Gaussian3pt、外缘10pt不进入mask，必须检查完整背景/清晰面板/外缘突变；旧评分不继承。Opus只读阻塞分析建议实际Tab焦点及单次激活窗口后scroll复验，不能将CUA noWindowsAvailable直接记为产品FAIL。
+
+v16 独立实际截图已修复黑区和复制背景，但四边约8px暗带仍导致 mandatory gate FAIL，评分保持null。v17加入有限内侧采样crop后clamp、Gaussian3pt和完整输出crop，保留全帧mask；候选尚需新包真实截图，不以编译推定暗边关闭。旧版本原始截图及色彩证据保留在[恢复旅程](../../docs/journeys/native-ui-v12-recovery.md)。
+
+原生连接的协议选择和masked瞬时API Key由真实服务端目标绑定保护；独立HTTP48通过，原生保存/晚回包/退出尚需GUI，见[连接类型恢复](../../docs/journeys/native-connection-type-recovery.md)。飞书本人发送GUI的独立46224/46225准备服务与公开唯一草稿见[飞书GUI旅程](../../docs/journeys/native-feishu-gui.md)；准备不发送，实际回执另验。
+
+
+个人微信完整上下文reader使用同连接/来源精确ID、RAM查询/get与已验证图片；服务端Agent日志省略query/正文，媒体RAM有界，断开阻断。真实34项HTTP和非图片缺口见[微信上下文旅程](../../docs/journeys/native-wechat-context.md)。新入口实际GUI尚未验收。

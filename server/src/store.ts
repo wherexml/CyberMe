@@ -1,3 +1,4 @@
+import {connectionCredentialValues} from './connection-credentials-policy';
 import { presentInbox } from './message-presentation';
 import {isQuietInbox} from '../../shared/inbox-surfacing';
 import { normalizeInboxAttachments } from '../../shared/attachments';
@@ -100,6 +101,31 @@ export function restoreMemories(id:string) {const row=db.prepare('SELECT data FR
 // Recursive redaction is shared by every HTTP response and stored diagnostic envelope.
 const privateStrings=new Set<string>();
 export function registerSecret(value:unknown){if(typeof value==='string'&&value.length>=8){privateStrings.add(value);if(/^Bearer\s+/i.test(value))privateStrings.add(value.replace(/^Bearer\s+/i,''));}}
-for(const row of db.prepare('SELECT data FROM connection_private').all() as any[]){try{const config=JSON.parse(row.data);registerSecret(config.apiKey);for(const [name,value]of Object.entries(config.headers||{}))if(/authorization|api.?key|token/i.test(name))registerSecret(value);}catch{}}
+function redactLegacyConnectionDiagnostics(id:string,secrets:string[]) {
+ // Old short credentials are not registered globally: a one-character value
+ // would corrupt unrelated IDs and states. Only bound diagnostic fields change.
+ const redact=(value:any):any=>typeof value==='string'?secrets.reduce((text,secret)=>text.split(/(\[redacted\])/).map(part=>part==='[redacted]'?part:part.split(secret).join('[redacted]')).join(''),value):Array.isArray(value)?value.map(redact):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([key,child])=>[redact(key),redact(child)])):value;
+ db.exec('SAVEPOINT legacy_connection_diagnostics');
+ try {
+  let changed=false;
+  for(const row of db.prepare("SELECT type,id,data FROM entities WHERE (type='connections' AND id=?) OR (type='activities' AND json_extract(data,'$.entityId')=?)").all(id,id) as any[]) {
+   const data=JSON.parse(row.data);
+   for(const field of row.type==='connections'?['message','evidence']:['detail','receipt'])if(data[field]!==undefined)data[field]=redact(data[field]);
+   if(row.type==='connections'){data.config={...publicValue(data.config||{}),credentialReady:false};if(data.status==='connected'){data.status='setup_required';data.capabilities=[];delete data.identity;delete data.lastTestAt;}}
+   if(JSON.stringify(data)!==row.data){data.updatedAt=now();db.prepare('UPDATE entities SET data=? WHERE type=? AND id=?').run(JSON.stringify(data),row.type,row.id);changed=true;}
+  }
+  if(changed)bump();db.exec('RELEASE legacy_connection_diagnostics');
+ }catch(error){db.exec('ROLLBACK TO legacy_connection_diagnostics; RELEASE legacy_connection_diagnostics');throw error;}
+}
+for(const row of db.prepare('SELECT id,data FROM connection_private').all() as any[]){
+ let config:any;try{config=JSON.parse(row.data);}catch{continue;}
+ const short=new Set<string>();
+ for(const value of connectionCredentialValues(config))if(typeof value==='string'&&value.trim()){
+  const bare=value.trim().replace(/^Bearer\s+/i,'');
+  if(bare.length<8){short.add(value);short.add(bare);}else registerSecret(value);
+ }
+ if(short.size)redactLegacyConnectionDiagnostics(row.id,[...short].sort((a,b)=>b.length-a.length));
+}
+
 export function publicValue<T>(v:T):T {if(Array.isArray(v))return v.map(publicValue) as T;if(v&&typeof v==='object'){const out:Record<string,any>={};for(const [k,val]of Object.entries(v)){if(/^(apiKey|api_key|accessToken|access_token|refreshToken|refresh_token|appSecret|app_secret|authorization|password|secret|token|headers|diskPath)$/i.test(k))continue;out[k]=publicValue(val);}return out as T;}if(typeof v==='string'){let text=v.replace(/\bsk-[a-zA-Z0-9_-]{16,}\b/g,'[redacted]');for(const secret of privateStrings)if(text.includes(secret))text=text.split(secret).join('[redacted]');return text as T;}return v;}
 export function bootstrap():Bootstrap {const summarize=(entity:any,limit:number)=>{const out={...entity};for(const key of ['body','content','summary','markdown'])if(typeof out[key]==='string')out[key]=out[key].slice(0,limit);delete out.transcript;delete out.messages;return out;};const sources:any={...meta<any>('sources',{}),primaryConversationId:meta('primaryConversationId',undefined)};for(const key of ['meetings','persons','briefs','chats','mails'])if(Array.isArray(sources[key]))sources[key]=sources[key].map((x:any)=>summarize(x,600));return publicValue({tasks:list('tasks'),projects:list('projects'),inbox:list('inbox').map(presentInbox).map(i=>({...i,messages:(i.messages||[]).slice(-12),body:String(i.body||'').slice(0,8000)})),ideas:list('ideas'),activities:list('activities').slice(0,300),conversations:list('conversations'),messages:list('messages').reverse(),artifacts:list('artifacts'),connections:list('connections'),automations:list('automations'),memories:list('memories').map(x=>summarize(x,1200)),settings:settings(),sources,revision:revision()});}

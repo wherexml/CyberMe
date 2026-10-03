@@ -75,6 +75,10 @@ pub struct SettingsView {
     local: Value,
     drafts: Value,
     fields: BTreeMap<String, Field>,
+    // Secrets deliberately have no path in fields/drafts/local or Saver snapshots.
+    connection_secret: Option<(String, Entity<InputState>)>,
+    connection_secret_subscription: Option<Subscription>,
+    connection_secret_revision: u64,
     saver: Option<Saver<Value>>,
     loading: bool,
     busy: bool,
@@ -92,6 +96,11 @@ pub struct SettingsView {
     soul_details: bool,
     memory_details: bool,
     model_add: bool,
+    // Private reader state stays in RAM, outside fields/drafts/Saver.
+    wechat_query: Entity<InputState>,
+    wechat_applied_query: String,
+    wechat_exact: Option<Value>,
+    wechat_image: Option<std::sync::Arc<Image>>,
     wechat_page: Value,
     wechat_chat: Option<(String, String)>,
     wechat_messages: Value,
@@ -139,18 +148,23 @@ impl SettingsView {
                 }
             }),
         ];
-        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
+        let wechat_query = cx.new(|cx| InputState::new(_window, cx).placeholder(t("查找联系人或当前会话消息")));
+        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
         this.reload(cx);
         this
     }
     pub fn set_visible(&mut self, v: bool, cx: &mut Context<Self>) {
         self.visible = v;
+        if !v {
+            self.drop_connection_secret();
+        }
         if v && std::mem::take(&mut self.stale) {
             self.reload(cx)
         }
     }
     pub fn section(&mut self, name: &str, cx: &mut Context<Self>) {
         if SECTIONS.iter().any(|x| x.0 == name) {
+            self.drop_connection_secret();
             self.wechat_generation += 1;
             self.wechat_loading = false;
             self.section = name.into();
@@ -168,6 +182,72 @@ impl SettingsView {
         if let Some(s) = &self.saver {
             s.save(json!({"local":self.local,"drafts":self.drafts}));
         }
+    }
+    fn drop_connection_secret(&mut self) {
+        self.connection_secret_subscription = None;
+        self.connection_secret = None;
+        self.connection_secret_revision = self.connection_secret_revision.wrapping_add(1);
+    }
+    fn secret_value(&self, cx: &App) -> String {
+        self.connection_secret
+            .as_ref()
+            .filter(|(key, _)| *key == self.group_key())
+            .map(|(_, state)| state.read(cx).value().to_string())
+            .unwrap_or_default()
+    }
+    fn setup_connection_secret(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let key = self.group_key();
+        let wanted = self.section == "connections"
+            && self.detail.as_deref().is_some_and(|id| id != "request")
+            && self.draft()["config"]["authMethod"] == "api-key";
+        if self
+            .connection_secret
+            .as_ref()
+            .is_some_and(|(old, _)| *old != key || !wanted)
+        {
+            if let Some((_, old)) = self.connection_secret.as_ref() {
+                old.update(cx, |state, cx| state.set_value("", window, cx));
+            }
+            self.drop_connection_secret();
+        }
+        if wanted && self.connection_secret.is_none() {
+            let state = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .masked(true)
+                    .placeholder(t("输入 API Key（仅内存保存）"))
+            });
+            self.connection_secret_subscription = Some(cx.subscribe(
+                &state,
+                |this: &mut Self, _, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        this.connection_secret_revision =
+                            this.connection_secret_revision.wrapping_add(1);
+                        this.error = None;
+                        this.notice = None;
+                        cx.notify();
+                    }
+                },
+            ));
+            self.connection_secret = Some((key, state));
+        }
+    }
+    fn is_custom_connection(&self, value: &Value) -> bool {
+        self.detail.as_deref() == Some("new")
+            || (!matches!(
+                value["provider"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "feishu" | "lark" | "飞书" | "wechat" | "wechat-sync" | "gmail" | "google-calendar"
+            ) && matches!(
+                value["type"]
+                    .as_str()
+                    .unwrap_or("mcp")
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "mcp" | "rest" | "webhook" | "skill"
+            ))
     }
     fn reload(&mut self, cx: &mut Context<Self>) {
         self.generation += 1;
@@ -245,6 +325,8 @@ impl SettingsView {
                             this.wechat_generation += 1;
                             this.wechat_loading = false;
                             this.wechat_page = json!({});
+                            this.wechat_exact = None;
+                            this.wechat_image = None;
                             this.wechat_messages = json!({});
                             this.wechat_chat = None;
                         }
@@ -288,7 +370,7 @@ impl SettingsView {
             .unwrap_or_else(|| self.section.clone())
     }
     fn base(&self) -> Value {
-        match self.section.as_str(){"general"=>self.data["settings"]["identity"].clone(),"models"=>json!({"standard":self.models["standard"],"deep":self.models["deep"]}),"connections"=>self.detail.as_ref().and_then(|id|self.connections().into_iter().find(|x|x["id"].as_str()==Some(id))).cloned().unwrap_or(json!({"name":"","type":"mcp","endpoint":"","permissions":["read"],"config":{}})),"identity"=>self.data["settings"]["identity"].clone(),"autonomy"=>self.data["settings"]["autonomy"].clone(),_=>json!({})}
+        match self.section.as_str(){"general"=>self.data["settings"]["identity"].clone(),"models"=>json!({"standard":self.models["standard"],"deep":self.models["deep"]}),"connections"=>self.detail.as_ref().and_then(|id|self.connections().into_iter().find(|x|x["id"].as_str()==Some(id))).cloned().unwrap_or(json!({"name":"","type":"mcp","endpoint":"","permissions":["read"],"config":{"authMethod":"none"}})),"identity"=>self.data["settings"]["identity"].clone(),"autonomy"=>self.data["settings"]["autonomy"].clone(),_=>json!({})}
     }
     fn draft(&self) -> Value {
         self.drafts
@@ -324,6 +406,10 @@ impl SettingsView {
         let mut v = self.draft();
         set_path(&mut v, path, value);
         self.drafts[&key] = v;
+        if self.section == "connections" && path == "type" {
+            // Update the existing editor's hint without recreating it or clearing its value.
+            self.pending_fields = true;
+        }
         self.notice = None;
         self.persist();
         cx.notify();
@@ -352,7 +438,18 @@ impl SettingsView {
             ],
             "connections" if self.detail.is_some() => vec![
                 ("name", "应用名称", false),
-                ("endpoint", "服务器或桥接 URL", false),
+                (
+                    "endpoint",
+                    if d["type"]
+                        .as_str()
+                        .is_some_and(|v| v.eq_ignore_ascii_case("skill"))
+                    {
+                        "/path/to/SKILL.md"
+                    } else {
+                        "https://"
+                    },
+                    false,
+                ),
                 ("config.workFrom", "开始 HH:mm", false),
                 ("config.workUntil", "结束 HH:mm", false),
                 ("config.timezone", "时区", false),
@@ -475,6 +572,8 @@ impl SettingsView {
             self.wechat_generation += 1;
             self.wechat_loading = false;
             self.wechat_page = json!({});
+            self.wechat_exact = None;
+            self.wechat_image = None;
             self.wechat_messages = json!({});
             self.wechat_chat = None;
         }
@@ -526,6 +625,53 @@ impl SettingsView {
         }
         let key = self.group_key();
         let mut draft = self.draft();
+        if self.section == "connections"
+            && draft["config"]["authMethod"] == "api-key"
+            && !matches!(
+                draft["type"]
+                    .as_str()
+                    .unwrap_or("mcp")
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "rest" | "mcp"
+            )
+        {
+            self.error = Some(t(
+                "API Key 当前仅支持 REST/MCP；Skill 请选择无需认证，Webhook 尚无检测适配器。",
+            ));
+            cx.notify();
+            return;
+        }
+        let secret = if self.section == "connections" && draft["config"]["authMethod"] == "api-key"
+        {
+            self.secret_value(cx)
+        } else {
+            String::new()
+        };
+        let has_secret = !secret.is_empty();
+        let submitted_secret = self
+            .connection_secret
+            .as_ref()
+            .map(|(_, state)| (state.entity_id(), self.connection_secret_revision));
+        if self.section == "connections"
+            && draft["config"]["authMethod"] == "api-key"
+            && !has_secret
+            && draft["config"]["credentialReady"] != true
+        {
+            self.error = Some(t("请输入 API Key；服务端尚未确认此连接的已有密钥"));
+            cx.notify();
+            return;
+        }
+        if self.section == "connections" && self.detail.as_deref() == Some("new") {
+            // Older local drafts predate the selector; preserve their original MCP behavior.
+            if !draft["type"].is_string() {
+                draft["type"] = json!("mcp");
+            }
+            if !draft["config"]["authMethod"].is_string() {
+                draft["config"]["authMethod"] = json!("none");
+            }
+            self.drafts[&key] = draft.clone();
+        }
         if self.detail.as_deref() == Some("new") && !draft["createId"].is_string() {
             draft["createId"] = json!(format!("connection-{}", opstwin_api::new_request_id()));
             self.drafts[&key] = draft.clone();
@@ -568,7 +714,7 @@ impl SettingsView {
                 } else {
                     (
                         format!("/api/connections/{id}"),
-                        json!({"name":draft["name"],"endpoint":draft["endpoint"],"permissions":draft["permissions"],"config":draft["config"],"baseUpdatedAt":draft["updatedAt"]}),
+                        json!({"name":draft["name"],"type":draft["type"],"endpoint":draft["endpoint"],"permissions":draft["permissions"],"config":draft["config"],"baseUpdatedAt":draft["updatedAt"]}),
                     )
                 }
             }
@@ -578,6 +724,12 @@ impl SettingsView {
         let create = self.detail.as_deref() == Some("new") || request;
         let saved_section = self.section.clone();
         let submitted_draft = self.drafts.get(&key).cloned();
+        let secret_connection = self.section == "connections"
+            && self
+                .detail
+                .as_deref()
+                .is_some_and(|id| id != "new" && id != "request")
+            && has_secret;
         self.busy = true;
         self.error = None;
         let c = self.client.clone();
@@ -602,19 +754,38 @@ impl SettingsView {
                     let id=body["createId"].as_str().ok_or_else(||opstwin_api::ApiError::Decode("Missing durable connection ID".into()))?.to_string();
                     let mut input=body.clone();input["id"]=json!(id);
                     if let Some(m)=input.as_object_mut(){m.remove("createId");}
-                    match c.product_get(&format!("/api/connections/{id}")).await {
+                    let saved = match c.product_get(&format!("/api/connections/{id}")).await {
                         Ok(saved) => {
-                            if ["name","endpoint","type","permissions","config"].iter().any(|key|input.get(*key).is_some_and(|v|*v!=saved[*key])) {
+                            if !connection_public_matches(&input, &saved) {
                                 return Err(opstwin_api::ApiError::Api{status:409,code:"connection_create_changed".into(),message:t("原连接已创建，请读取原连接后继续编辑；不会创建重复连接"),detail:None});
                             }
                             if saved["status"]=="connected" {return Ok(json!({"ok":true,"connection":saved}));}
+                            saved
                         },
-                        Err(e) if e.status()==Some(404) => {c.product_post("/api/connections",input.clone()).await?;},
+                        Err(e) if e.status()==Some(404) => c.product_post("/api/connections",input.clone()).await?,
                         Err(e) => return Err(e),
+                    };
+                    let exact=c.product_get(&format!("/api/connections/{id}")).await?;
+                    if exact["id"].as_str()!=Some(id.as_str()) || exact["updatedAt"]!=saved["updatedAt"] || !connection_public_matches(&input,&exact) {
+                        return Err(opstwin_api::ApiError::Api{status:409,code:"connection_changed".into(),message:t("连接配置已变更，请先读取原连接"),detail:None});
                     }
-                    c.product_post(&format!("/api/connections/{id}/test"),input).await
+                    input["baseUpdatedAt"]=exact["updatedAt"].clone();
+                    // Only this transient request carries the key; durable intent and GET comparison above remain public.
+                    if has_secret {input["config"]["apiKey"]=json!(secret);}
+                    let mut result=c.product_post(&format!("/api/connections/{id}/test"),input).await?;
+                    result["_nativeSecretAccepted"]=json!(has_secret && result["ok"]==true);
+                    Ok(result)
                 } else {
-                    c.product_patch(&path, body).await
+                    let saved=c.product_patch(&path, body).await?;
+                    if secret_connection {
+                        let exact=c.product_get(&path).await?;
+                        if exact["id"]!=saved["id"] || exact["updatedAt"]!=saved["updatedAt"] || !connection_public_matches(&saved,&exact) {
+                            return Err(opstwin_api::ApiError::Api{status:409,code:"connection_changed".into(),message:t("连接配置已变更，请先读取原连接"),detail:None});
+                        }
+                        let mut result=c.product_post(&format!("{path}/test"),json!({"baseUpdatedAt":exact["updatedAt"],"config":{"apiKey":secret}})).await?;
+                        result["_nativeSecretAccepted"]=json!(result["ok"]==true);
+                        Ok(result)
+                    } else {Ok(saved)}
                 }
             })
             .await;
@@ -622,16 +793,19 @@ impl SettingsView {
                 this.busy = false;
                 match result {
                     Ok(v) => {
-                        if create && !request && v["ok"].as_bool() == Some(false) {
+                        if saved_section == "connections" && !request && v["ok"].as_bool() == Some(false) {
                             let active_group = this.group_key() == key;
                             if let Some(id) = v["connection"]["id"].as_str().map(str::to_string) {
-                                let mut retained = this.drafts[&key].clone();
+                                let mut retained = this.drafts.get(&key).cloned().unwrap_or_else(||v["connection"].clone());
                                 retained["updatedAt"] = v["connection"]["updatedAt"].clone();
                                 if let Some(map) = this.drafts.as_object_mut() {
                                     map.remove(&key);
                                 }
                                 this.drafts[format!("connection:{id}")] = retained;
                                 if active_group {
+                                    if let Some((secret_key, _)) = this.connection_secret.as_mut().filter(|(secret_key, _)| *secret_key == key) {
+                                        *secret_key = format!("connection:{id}");
+                                    }
                                     this.detail = Some(id);
                                 }
                                 this.persist();
@@ -668,6 +842,9 @@ impl SettingsView {
                         }
                         let unchanged = this.drafts.get(&key) == submitted_draft.as_ref();
                         let active_group = this.group_key() == key;
+                        if v["_nativeSecretAccepted"] == true && active_group && this.connection_secret.as_ref().map(|(_, state)| (state.entity_id(), this.connection_secret_revision)) == submitted_secret {
+                            this.drop_connection_secret();
+                        }
                         if unchanged {
                             if let Some(map) = this.drafts.as_object_mut() {
                                 map.remove(&key);
@@ -690,6 +867,9 @@ impl SettingsView {
                                     this.drafts[format!("connection:{id}")] = retained;
                                 }
                                 if active_group {
+                                    if let Some((secret_key, _)) = this.connection_secret.as_mut().filter(|(secret_key, _)| *secret_key == key) {
+                                        *secret_key = format!("connection:{id}");
+                                    }
                                     this.detail = Some(id.to_string());
                                 }
                             }
@@ -700,7 +880,9 @@ impl SettingsView {
                         }
                         this.persist();
                         this.notice = Some(
-                            if unchanged {
+                            if has_secret && v["_nativeSecretAccepted"] != true && active_group {
+                                "原连接已读取，新密钥尚未提交；请在原连接保存并检测"
+                            } else if unchanged {
                                 "已保存"
                             } else {
                                 "提交的版本已保存，当前修改仍未保存"
@@ -732,6 +914,107 @@ impl SettingsView {
             }
         }
     }
+    fn test_saved_connection(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        let draft = self.draft();
+        let saved = self.base();
+        if draft["config"]["authMethod"] == "api-key"
+            && !matches!(
+                draft["type"]
+                    .as_str()
+                    .unwrap_or("mcp")
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "rest" | "mcp"
+            )
+        {
+            self.error = Some(t(
+                "API Key 当前仅支持 REST/MCP；Skill 请选择无需认证，Webhook 尚无检测适配器。",
+            ));
+            cx.notify();
+            return;
+        }
+        if draft["type"] != saved["type"]
+            || draft["endpoint"] != saved["endpoint"]
+            || draft["config"]["authMethod"] != saved["config"]["authMethod"]
+        {
+            self.error = Some(t("请先保存连接配置，再检测连接"));
+            cx.notify();
+            return;
+        }
+        if !self.secret_value(cx).is_empty() {
+            self.save(cx);
+            return;
+        }
+        let key = self.group_key();
+        let c = self.client.clone();
+        self.busy = true;
+        self.error = None;
+        let task = cx.spawn(async move |this, cx| {
+            let result = io(async move {
+                let exact = c.product_get(&format!("/api/connections/{id}")).await?;
+                if exact["id"].as_str() != Some(id.as_str())
+                    || exact["updatedAt"] != saved["updatedAt"]
+                    || !connection_public_matches(&saved, &exact)
+                {
+                    return Err(opstwin_api::ApiError::Api {
+                        status: 409,
+                        code: "connection_changed".into(),
+                        message: t("连接配置已变更，请先读取原连接"),
+                        detail: None,
+                    });
+                }
+                if exact["config"]["authMethod"] == "api-key"
+                    && exact["config"]["credentialReady"] != true
+                {
+                    return Err(opstwin_api::ApiError::Api {
+                        status: 400,
+                        code: "api_key_required".into(),
+                        message: t("请输入 API Key；服务端尚未确认此连接的已有密钥"),
+                        detail: None,
+                    });
+                }
+                c.product_post(
+                    &format!("/api/connections/{id}/test"),
+                    json!({"baseUpdatedAt":exact["updatedAt"]}),
+                )
+                .await
+            })
+            .await;
+            _ = this.update(cx, |this, cx| {
+                this.busy = false;
+                match result {
+                    Ok(value) => {
+                        this.merge_saved_connection(&value["connection"]);
+                        if this.group_key() == key {
+                            if let Some(draft) = this.drafts.get_mut(&key) {
+                                draft["updatedAt"] = value["connection"]["updatedAt"].clone();
+                                this.persist();
+                            }
+                            if value["ok"] == true {
+                                this.notice = Some(t("连接实际检测成功"));
+                            } else {
+                                this.error = Some(
+                                    value["message"]
+                                        .as_str()
+                                        .map(t)
+                                        .unwrap_or_else(|| t("无法验证连接，输入已保留")),
+                                );
+                            }
+                        }
+                        this.reload(cx);
+                    }
+                    Err(error) if this.group_key() == key => this.error = Some(error.user_text()),
+                    Err(_) => {}
+                }
+                cx.notify();
+            });
+        });
+        self._tasks.push(task);
+        cx.notify();
+    }
     fn recover_created_connection(&mut self, id: String, cx: &mut Context<Self>) {
         if self.busy {
             return;
@@ -762,8 +1045,19 @@ impl SettingsView {
                             }
                             this.drafts[format!("connection:{id}")] = retained;
                             this.persist();
+                        } else if retained.is_object() {
+                            retained["updatedAt"] = saved["updatedAt"].clone();
+                            this.drafts[&original_key] = retained;
+                            this.persist();
                         }
                         if active_group {
+                            if let Some((secret_key, _)) = this
+                                .connection_secret
+                                .as_mut()
+                                .filter(|(secret_key, _)| *secret_key == original_key)
+                            {
+                                *secret_key = format!("connection:{id}");
+                            }
                             this.detail = Some(id);
                             this.fields.clear();
                             this.pending_fields = true;
@@ -1072,6 +1366,8 @@ impl SettingsView {
             _ => at(&d, path).as_str().unwrap_or(match path {
                 "dictation.handsfree" => "none",
                 "add.personRole" => "VIP",
+                "type" => "mcp",
+                "config.authMethod" => "none",
                 _ => "",
             }),
         };
@@ -1097,7 +1393,7 @@ impl SettingsView {
             let business_choice = path.ends_with(".providerId") || path.ends_with(".model");
             let label = values
                 .iter()
-                .find(|x| x.0 == val)
+                .find(|x| x.0 == val || (path == "type" && x.0.eq_ignore_ascii_case(val)))
                 .map(|x| {
                     if business_choice {
                         x.1.to_string()
@@ -1137,7 +1433,11 @@ impl SettingsView {
                             let v = value.clone();
                             menu = menu.item(
                                 PopupMenuItem::new(label.clone())
-                                    .checked(selected == *value)
+                                    .checked(
+                                        selected == *value
+                                            || (path == "type"
+                                                && selected.eq_ignore_ascii_case(value)),
+                                    )
                                     .on_click(move |_, window, cx| {
                                         _ = view.update(cx, |this, cx| {
                                             if p == "native.syncScope" {
@@ -1249,7 +1549,8 @@ impl SettingsView {
             .into_any_element()
     }
     fn footer(&self, cx: &mut Context<Self>) -> Div {
-        let dirty = self.drafts.get(self.group_key()).is_some();
+        let dirty =
+            self.drafts.get(self.group_key()).is_some() || !self.secret_value(cx).is_empty();
         h_flex()
             .gap_2()
             .py_3()
@@ -1268,6 +1569,7 @@ impl SettingsView {
                     .label(t("取消"))
                     .disabled(self.busy || !dirty)
                     .on_click(cx.listener(|this, _, _, cx| {
+                        this.drop_connection_secret();
                         let key = this.group_key();
                         if let Some(m) = this.drafts.as_object_mut() {
                             m.remove(&key);
@@ -1325,6 +1627,8 @@ impl SettingsView {
         });
         if !connected {
             self.wechat_page = json!({});
+            self.wechat_exact = None;
+            self.wechat_image = None;
             self.wechat_messages = json!({});
             self.error = Some(t("请先连接本机微信"));
             cx.notify();
@@ -1348,9 +1652,15 @@ impl SettingsView {
                 opstwin_api::product::query_value(&cursor)
             )
         };
+        let applied_query = self.wechat_applied_query.clone();
+        let conversation = self.wechat_chat.as_ref().map(|c| c.0.clone());
         let client = self.client.clone();
         let task = cx.spawn(async move |this, cx| {
-            let result = io(async move { client.product_get(&path).await }).await;
+            let result = io(async move {
+                if applied_query.is_empty() { client.product_get(&path).await }
+                else if let Some(id) = conversation { client.wechat_search(json!({"conversation":id,"query":applied_query,"cursor":cursor})).await }
+                else { client.wechat_contacts(json!({"query":applied_query,"cursor":cursor})).await }
+            }).await;
             _ = this.update(cx, |this, cx| {
                 if this.wechat_generation != generation {
                     return;
@@ -1374,14 +1684,60 @@ impl SettingsView {
                     Err(error) => {
                         if matches!(
                             error.code(),
-                            Some("wechat_not_connected" | "connection_changed")
+                            Some("wechat_not_connected" | "connection_changed" | "wechat_source_changed")
                         ) {
                             this.wechat_page = json!({});
+                            this.wechat_exact = None;
+                            this.wechat_image = None;
                             this.wechat_messages = json!({});
                             this.wechat_chat = None;
                         }
                         this.error = Some(error.user_text());
                     }
+                }
+                cx.notify();
+            });
+        });
+        self._tasks.push(task);
+        cx.notify();
+    }
+    fn read_wechat_image(&mut self, message: String, cx: &mut Context<Self>) {
+        if self.wechat_loading { return; }
+        let Some((conversation,_))=self.wechat_chat.clone() else {return;};
+        self.wechat_generation+=1;let generation=self.wechat_generation;
+        self.wechat_loading=true;self.error=None;
+        let client=self.client.clone();
+        let task=cx.spawn(async move |this,cx| {
+            let result=io(async move {
+                let meta=client.wechat_attachment(&conversation,&message).await?;
+                let token=meta["attachmentId"].as_str().ok_or_else(||opstwin_api::ApiError::Decode("missing attachment token".into()))?;
+                let file=client.wechat_attachment_bytes(token).await?;
+                use sha2::Digest;
+                let hash=format!("{:x}",sha2::Sha256::digest(&file.bytes));
+                if meta["sha256"].as_str()!=Some(hash.as_str())||meta["bytes"].as_u64()!=Some(file.bytes.len() as u64)||meta["mime"].as_str()!=file.content_type.as_deref(){return Err(opstwin_api::ApiError::Decode("attachment integrity mismatch".into()));}
+                let format=match file.content_type.as_deref(){Some("image/png")=>ImageFormat::Png,Some("image/jpeg")=>ImageFormat::Jpeg,Some("image/webp")=>ImageFormat::Webp,_=>return Err(opstwin_api::ApiError::Decode("unsupported image format".into()))};
+                Ok(std::sync::Arc::new(Image::from_bytes(format,file.bytes)))
+            }).await;
+            _=this.update(cx,|this,cx| {if this.wechat_generation!=generation{return;}this.wechat_loading=false;match result{Ok(image) if this.provider_connection("wechat-sync").is_some_and(|c|c["status"]=="connected")=>this.wechat_image=Some(image),Ok(_)=>{},Err(e)=>this.error=Some(e.user_text())}cx.notify();});
+        });self._tasks.push(task);cx.notify();
+    }
+    fn read_wechat_exact(&mut self, message: String, cx: &mut Context<Self>) {
+        if self.wechat_loading { return; }
+        let Some((conversation, _)) = self.wechat_chat.clone() else { return; };
+        self.wechat_generation += 1;
+        let generation = self.wechat_generation;
+        self.wechat_loading = true;
+        self.error = None;
+        let client = self.client.clone();
+        let task = cx.spawn(async move |this, cx| {
+            let result = io(async move { client.wechat_message(&conversation, &message).await }).await;
+            _ = this.update(cx, |this, cx| {
+                if this.wechat_generation != generation { return; }
+                this.wechat_loading = false;
+                match result {
+                    Ok(value) if this.provider_connection("wechat-sync").is_some_and(|c| c["status"] == "connected") => this.wechat_exact = Some(value),
+                    Ok(_) => {},
+                    Err(error) => this.error = Some(error.user_text()),
                 }
                 cx.notify();
             });
@@ -1476,6 +1832,37 @@ impl SettingsView {
         if !connected {
             return out;
         }
+        out = out.child(h_flex().gap_2()
+            .child(div().flex_1().child(Input::new(&self.wechat_query).small()))
+            .child(Button::new("wechat-context-search").small().h(px(32.)).outline()
+                .label(t(if self.wechat_chat.is_some() { "搜索当前会话" } else { "查找联系人" }))
+                .disabled(self.wechat_loading)
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.wechat_applied_query = this.wechat_query.read(cx).value().trim().to_string();
+                    this.wechat_exact = None;
+                            this.wechat_image = None;
+                    this.read_wechat(String::new(), vec![String::new()], cx);
+                })))
+            .child(Button::new("wechat-context-all").small().h(px(32.)).ghost().label(t("全部"))
+                .disabled(self.wechat_loading).on_click(cx.listener(|this, _, _, cx| {
+                    this.wechat_applied_query.clear();this.wechat_exact=None;this.wechat_image=None;
+                    this.read_wechat(String::new(),vec![String::new()],cx);
+                }))));
+        out = out.child(note("查找只过滤当前联系人页；无结果时仍可继续下一页，不代表整个档案无匹配。", cx));
+        if let Some(image)=&self.wechat_image {
+            out=out.child(document_card(cx)
+                .child(Button::new("wechat-close-image").small().ghost().label(t("关闭图片"))
+                    .on_click(cx.listener(|this,_,_,cx|{this.wechat_image=None;cx.notify();})))
+                .child(img(image.clone()).max_w(px(580.)).max_h(px(480.)).object_fit(ObjectFit::Contain)));
+        }
+        if let Some(value) = &self.wechat_exact {
+            let item = &value["item"];
+            out = out.child(document_card(cx)
+                .child(Button::new("wechat-close-exact").small().ghost().label(t("关闭全文"))
+                    .on_click(cx.listener(|this,_,_,cx| {this.wechat_exact=None;this.wechat_image=None;cx.notify();})))
+                .child(div().text_size(body_px(13.,cx)).line_height(relative(1.65)).child(item["text"].as_str().unwrap_or("").to_string()))
+                .when(item["contentTruncated"]==true,|v|v.child(note("此来源正文仍有截断，不能视为完整消息",cx))));
+        }
         out = out.child(
             h_flex()
                 .gap_2()
@@ -1489,6 +1876,10 @@ impl SettingsView {
                             .disabled(self.wechat_loading)
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.wechat_chat = None;
+                                this.wechat_applied_query.clear();
+                                this.wechat_exact = None;
+                            this.wechat_image = None;
+                                this.wechat_generation += 1;
                                 this.wechat_messages = json!({});
                                 cx.notify();
                             })),
@@ -1526,8 +1917,17 @@ impl SettingsView {
         if page["hasWarnings"].as_bool() == Some(true) {
             list = list.child(note("本机数据存在读取提醒，请检查 GreenBubbles", cx));
         }
+        if page["ambiguous"]==true {list=list.child(note("多个匹配，请选择精确联系人后再读取；不会按名字猜测会话。",cx));}
+        for warning in page["warnings"].as_array().into_iter().flatten() {
+            let label=warning.as_str().map(str::to_string).unwrap_or_else(||format!("{} {}",warning["code"].as_str().unwrap_or(""),warning["message"].as_str().unwrap_or("")));
+            if !label.trim().is_empty() {list=list.child(note_raw(&label,cx));}
+        }
+
         for item in page["items"].as_array().into_iter().flatten() {
             if self.wechat_chat.is_some() {
+                let message_id = item["id"].as_str().unwrap_or("").to_string();
+                let image_id = message_id.clone();
+                let direction = match item["self"].as_bool() { Some(true)=>"本人",Some(false)=>"对方",None=>"方向未知" };
                 list = list.child(
                     v_flex()
                         .gap_1()
@@ -1561,6 +1961,12 @@ impl SettingsView {
                                         ),
                                 ),
                         )
+                        .child(div().text_size(px(11.)).text_color(theme.muted_foreground).child(t(direction)))
+                        .when(item["contentTruncated"]==true,|v|v.child(note("正文有截断，请精确读取；来源截断可能仍无法恢复全文",cx)))
+                        .when(item["messageTypeLabel"]=="image", |v| v.child(Button::new(ElementId::Name(format!("wechat-image-{image_id}").into())).small().ghost().label(t("查看来源图片"))
+                            .disabled(self.wechat_loading).on_click(cx.listener(move |this,_,_,cx|{this.read_wechat_image(image_id.clone(),cx);}))))
+                        .child(Button::new(ElementId::Name(format!("wechat-exact-{message_id}").into())).small().ghost().label(t("精确读取全文"))
+                            .disabled(self.wechat_loading).on_click(cx.listener(move |this,_,_,cx| {this.read_wechat_exact(message_id.clone(),cx);})))
                         .child(
                             div()
                                 .text_size(body_px(13., cx))
@@ -1582,6 +1988,9 @@ impl SettingsView {
                         .disabled(self.wechat_loading)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.wechat_chat = Some((id.clone(), name.clone()));
+                            this.wechat_applied_query.clear();
+                            this.wechat_exact = None;
+                            this.wechat_image = None;
                             this.wechat_messages = json!({});
                             this.read_wechat(String::new(), vec![String::new()], cx);
                         })),
@@ -2493,8 +2902,90 @@ impl SettingsView {
                     );
                     let status = d["status"].as_str().unwrap_or("not_connected");
                     out = out.child(note(status_label(status), cx));
-                    for (path, label) in [("name", "应用名称"), ("endpoint", "服务器或桥接 URL")]
+                    let custom = self.is_custom_connection(&d);
+                    if custom {
+                        let saved = self.base();
+                        if id != "new"
+                            && (d["type"] != saved["type"]
+                                || d["endpoint"] != saved["endpoint"]
+                                || d["config"]["authMethod"] != saved["config"]["authMethod"])
+                        {
+                            out = out.child(note(
+                                "连接状态属于已保存配置；当前修改仍需保存并检测。",
+                                cx,
+                            ));
+                        }
+                        out = out.child(
+                            card("连接方式", cx)
+                                .child(self.row(
+                                    "连接方式",
+                                    self.choices(
+                                        "type",
+                                        &[
+                                            ("mcp", "MCP 服务器"),
+                                            ("rest", "REST API"),
+                                            ("webhook", "Webhook"),
+                                            ("skill", "Skill"),
+                                        ],
+                                        false,
+                                        false,
+                                        cx,
+                                    ),
+                                    cx,
+                                ))
+                                .child(self.row(
+                                    "认证",
+                                    self.choices(
+                                        "config.authMethod",
+                                        &[
+                                            ("none", "无需认证"),
+                                            ("oauth", "OAuth"),
+                                            ("api-key", "API Key"),
+                                        ],
+                                        false,
+                                        false,
+                                        cx,
+                                    ),
+                                    cx,
+                                )),
+                        );
+                        if d["type"]
+                            .as_str()
+                            .is_some_and(|v| v.eq_ignore_ascii_case("webhook"))
+                        {
+                            out = out.child(note(
+                                "Webhook 尚无可验证适配器；保存配置不代表已连接。",
+                                cx,
+                            ));
+                        }
+                        if d["config"]["authMethod"] == "oauth" {
+                            out = out.child(note(
+                                "自定义 OAuth 尚无授权适配器；选择 OAuth 不代表已授权。",
+                                cx,
+                            ));
+                        } else if d["config"]["authMethod"] == "api-key" {
+                            if let Some((_, state)) = &self.connection_secret {
+                                out =
+                                    out.child(card("API Key", cx).child(Input::new(state).small()));
+                            }
+                            out = out.child(note(if d["config"]["credentialReady"] == true {
+                                "服务端已有此连接的密钥。留空复用，输入新密钥后保存并检测；密钥不写入本机草稿。"
+                            } else {
+                                "请输入密钥后保存并检测。输入仅保留在内存，切换页面或退出会清除。"
+                            }, cx));
+                        }
+                    }
+                    let endpoint_label = if d["type"]
+                        .as_str()
+                        .is_some_and(|v| v.eq_ignore_ascii_case("skill"))
                     {
+                        "Skill 路径"
+                    } else if custom {
+                        "服务器 URL"
+                    } else {
+                        "服务器或桥接 URL"
+                    };
+                    for (path, label) in [("name", "应用名称"), ("endpoint", endpoint_label)] {
                         out = out.child(card(label, cx).child(self.field(path)));
                     }
                     out = out.child(self.connection_collections(cx));
@@ -2584,12 +3075,7 @@ impl SettingsView {
                                         .label(t("检测连接"))
                                         .disabled(self.busy)
                                         .on_click(cx.listener(move |this, _, _, cx| {
-                                            this.mutate(
-                                                "POST",
-                                                format!("/api/connections/{test}/test"),
-                                                json!({}),
-                                                cx,
-                                            )
+                                            this.test_saved_connection(test.clone(), cx)
                                         })),
                                 )
                                 .child(
@@ -2608,6 +3094,18 @@ impl SettingsView {
                                             )
                                         })),
                                 ),
+                        );
+                        let recover = id.clone();
+                        out = out.child(
+                            Button::new("read-saved-connection")
+                                .small()
+                                .h(px(32.))
+                                .ghost()
+                                .label(t("读取原连接"))
+                                .disabled(self.busy)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.recover_created_connection(recover.clone(), cx)
+                                })),
                         );
                     }
                     if !matches!(
@@ -4161,6 +4659,7 @@ impl Render for SettingsView {
             window.set_window_title(&title);
         }
         self.setup_fields(window, cx);
+        self.setup_connection_secret(window, cx);
         let theme = cx.theme().clone();
         let mut nav = v_flex()
             .w(px(190.))
@@ -4448,6 +4947,35 @@ fn status_label(s: &str) -> &str {
         "unbound" => "未绑定",
         _ => s,
     }
+}
+
+fn connection_public_config(value: &Value) -> Value {
+    let mut config = value.clone();
+    if let Some(object) = config.as_object_mut() {
+        object.remove("credentialReady");
+    }
+    config
+}
+
+fn connection_public_matches(submitted: &Value, saved: &Value) -> bool {
+    [
+        "name",
+        "type",
+        "provider",
+        "endpoint",
+        "permissions",
+        "config",
+    ]
+    .iter()
+    .all(|key| {
+        submitted.get(*key).is_none_or(|value| {
+            if *key == "config" {
+                connection_public_config(value) == connection_public_config(&saved[*key])
+            } else {
+                *value == saved[*key]
+            }
+        })
+    })
 }
 
 static LOCALE_EN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -4769,6 +5297,25 @@ pub fn t(s: &str) -> String {
         "消息过滤" => "Message Filter",
         "应用名称" => "App Name",
         "服务器或桥接 URL" => "Server or Bridge URL",
+        "服务器 URL" => "Server URL",
+        "Skill 路径" => "Skill Path",
+        "连接方式" => "Connection Type",
+        "MCP 服务器" => "MCP Server",
+        "认证" => "Authentication",
+        "API Key 当前仅支持 REST/MCP；Skill 请选择无需认证，Webhook 尚无检测适配器。" => "API keys currently support REST/MCP only. Choose No Authentication for Skill; a Webhook test adapter is not available yet.",
+        "无需认证" => "No Authentication",
+        "输入 API Key（仅内存保存）" => "Enter API Key (Memory Only)",
+        "请输入 API Key；服务端尚未确认此连接的已有密钥" => "Enter an API key. The server has not confirmed a saved key for this connection.",
+        "请先保存连接配置，再检测连接" => "Save the connection configuration before testing it.",
+        "连接配置已变更，请先读取原连接" => "Connection configuration changed. Read the original connection first.",
+        "连接实际检测成功" => "Connection Test Succeeded",
+        "无法验证连接，输入已保留" => "Connection could not be verified. Your input is preserved.",
+        "原连接已读取，新密钥尚未提交；请在原连接保存并检测" => "The original connection was read. The new key has not been submitted; save and test it on this connection.",
+        "连接状态属于已保存配置；当前修改仍需保存并检测。" => "Connection status applies to the saved configuration. Current changes still need to be saved and tested.",
+        "Webhook 尚无可验证适配器；保存配置不代表已连接。" => "A verifiable Webhook adapter is not available yet. Saving configuration does not establish a connection.",
+        "自定义 OAuth 尚无授权适配器；选择 OAuth 不代表已授权。" => "A custom OAuth authorization adapter is not available yet. Selecting OAuth does not authorize a connection.",
+        "服务端已有此连接的密钥。留空复用，输入新密钥后保存并检测；密钥不写入本机草稿。" => "The server has a saved key for this connection. Leave blank to reuse it, or enter a new key to save and test. Keys are not stored in local drafts.",
+        "请输入密钥后保存并检测。输入仅保留在内存，切换页面或退出会清除。" => "Enter a key, then save and test. Input stays in memory and is cleared when changing pages or quitting.",
         "分身可以做什么" => "What Your Twin May Do",
         "读取消息" => "Read Messages",
         "起草回复" => "Draft Replies",
@@ -5020,6 +5567,19 @@ pub fn t(s: &str) -> String {
         "延迟分析（分钟）" => "Analysis Delay (min)",
         "当前读取范围可能不完整" => "The current reading coverage may be incomplete",
         "微信会话" => "WeChat Conversations",
+        "多个匹配，请选择精确联系人后再读取；不会按名字猜测会话。" => "Multiple matches. Select the exact contact; a name does not identify a unique conversation.",
+        "查看来源图片" => "View Source Image",
+        "关闭图片" => "Close Image",
+        "正文有截断，请精确读取；来源截断可能仍无法恢复全文" => "The body is truncated. Read the exact message; source truncation may remain.",
+        "精确读取全文" => "Read Exact Message",
+        "方向未知" => "Direction Unknown",
+        "本人" => "Account Holder",
+        "查找只过滤当前联系人页；无结果时仍可继续下一页，不代表整个档案无匹配。" => "Contact lookup filters this bounded page. An empty page can have more results; it does not cover the whole archive.",
+        "此来源正文仍有截断，不能视为完整消息" => "The source is still truncated and cannot be treated as the full message",
+        "关闭全文" => "Close Full Text",
+        "查找联系人" => "Find Contacts",
+        "搜索当前会话" => "Search Conversation",
+        "查找联系人或当前会话消息" => "Find contacts or messages in this conversation",
         "手动或已暂停" => "Manual or Paused",
         "授权到期" => "Authorization Expires",
         "操作已完成" => "Action Completed",
