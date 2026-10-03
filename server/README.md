@@ -42,3 +42,5 @@ npm run e2e:api           # 隔离数据库，端口 46111，无外部动作
 Inbox 草稿只生成正文，已移除关键词／偏好触发的自动 PDF 与图表；历史未发送自动附件由启动迁移解除关联。回归命令：`node --import tsx scripts/remove-automatic-files-e2e.mjs`，见 [旅程与证据](../docs/journeys/remove-automatic-reply-files.md)。
 
 HTML Chat 接入：`chat-status.ts` 只读请求回查，`scripts/macos-study-chat-bridge.mjs` 固定46114、私有capability、限定路径；API Origin 白名单保持。参见[执行契约](../docs/design/idea-chat-judgment-contract.md)。
+
+HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 桥接提供限定 sessions 路由；主会话指针保持逻辑见 [Backend](../docs/spec/backend.md)。面板管理数据仍保存在设计稿浏览器中。

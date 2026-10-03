@@ -12,7 +12,7 @@
   let result;try{result=await response.json()}catch{throw Error('invalid_response')}
   return {ok:response.ok,code:response.status,result};
  }
- function payload(row){return {message:row.message,requestId:row.requestId,...(row.conversationId?{conversationId:row.conversationId}:{}),...(row.contextIds?.length?{contextIds:row.contextIds}:{}),...(row.readOnly?{readOnly:true}:{})}}
+ function payload(row){return {message:row.message,requestId:row.requestId,preservePrimary:true,...(row.conversationId?{conversationId:row.conversationId}:{}),...(row.contextIds?.length?{contextIds:row.contextIds}:{}),...(row.readOnly?{readOnly:true}:{})}}
  function settle(row,result){
   const state=result.status;
   if(state==='succeeded'&&result.result?.assistantMessage?.content){update(row,{status:'succeeded',result:result.result,conversationId:result.conversationId,error:undefined});return true}
@@ -40,6 +40,10 @@
   if(!persist()){row.status='failed';row.error='无法保存请求，请允许本机存储后重试';changed();return}
   active.add(row.requestId);update(row,{status:'running',error:undefined});
   try{
+   if(row.conversationId?.startsWith('ui-side-')){
+    const created=await transport('/sessions',{id:row.conversationId,title:row.sessionTitle||'新会话'});
+    if(!created.ok){update(row,{status:'failed',error:'侧会话创建失败，请重试'});return}
+   }
    const response=await transport('/chat',payload(row)),r=response.result;
    if(response.ok&&r.assistantMessage?.content)update(row,{status:'succeeded',result:r,conversationId:r.conversationId,error:undefined});
    else if(r.error==='partial_run_requires_review')update(row,{status:'partial',error:'已有部分操作完成，请检查结果后继续',runId:r.detail?.run?.id});
