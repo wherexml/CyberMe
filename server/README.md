@@ -38,3 +38,5 @@ npm run e2e:api           # 隔离数据库，端口 46111，无外部动作
 | Inbox 显式来源规则 | `inbox-source-rules.ts`，写规则需直接用户请求证据 |
 | 消息展示适配 | `message-presentation.ts` 只读适配姊妹库资料 |
 | 原生客户端兼容 | `native-api.ts` 新增版本、消息分页与 revision SSE；`node scripts/native-api-e2e.mjs` 对真实 API 验证，见 [GUI 验收与限制](../docs/acceptance/native-gpui-20261003.md) |
+
+Inbox 草稿只生成正文，已移除关键词／偏好触发的自动 PDF 与图表；历史未发送自动附件由启动迁移解除关联。回归命令：`node --import tsx scripts/remove-automatic-files-e2e.mjs`，见 [旅程与证据](../docs/journeys/remove-automatic-reply-files.md)。

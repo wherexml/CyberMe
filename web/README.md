@@ -22,3 +22,5 @@ npm run build        # tsc --noEmit + vite build → ../dist
 - 连接品牌图标在 `public/brands/`，仅作来源标识；不支持渠道明确显示暂不支持，不伪装授权成功（见 [连接与品牌旅程](../docs/journeys/connections-branding.md)）。
 - 收件箱消息展示复用 InboxMessages 与 `message-presentation` 只读适配，不覆盖已保存草稿/判断/审批。
 - 浏览器验收使用 ego-browser 单 TaskSpace 独立 Page；并行 Agent 的浏览器动作用 `node scripts/ego-locked.mjs nodejs`。
+
+Inbox 草稿不再自动生成 Summary.pdf／图表，Autonomy 不再提供自动文件设置；手动附件和原有下载能力保留。行为见 [移除回复自动文件](../docs/journeys/remove-automatic-reply-files.md)。

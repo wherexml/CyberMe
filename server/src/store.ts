@@ -76,7 +76,7 @@ function withInboxTriage(item:any){
 
 const defaultSettings:Settings={
  identity:{name:'许茂林',role:'企业经营管理者',about:'',instructions:'优先使用真实数据，清晰标明未知事项。外发内容先草拟并经我确认。',language:'en'},
- autonomy:{holdSending:false,levels:{ack:'draft',meet:'draft',docs:'draft',commit:'draft',boss:'draft',sensitive:'observe'},deepThink:['vip','stakes'],files:['pdf','charts','show_before_send'],quietFrom:'23:00',quietUntil:'07:00',alerts:'urgent_digest',transparency:true},
+ autonomy:{holdSending:false,levels:{ack:'draft',meet:'draft',docs:'draft',commit:'draft',boss:'draft',sensitive:'observe'},deepThink:['vip','stakes'],files:[],quietFrom:'23:00',quietUntil:'07:00',alerts:'urgent_digest',transparency:true},
  channels:{feishu:{enabled:true},email:{enabled:false}},
 };
 export function settings():Settings {return meta('settings',defaultSettings);}

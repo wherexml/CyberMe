@@ -19,7 +19,6 @@ export const applicationActions:Action[]=[
  a('inbox_policy','GET','/api/inbox/:id/policy','读取草稿及处理政策'),
  a('inbox_draft','POST','/api/inbox/:id/draft','生成真实回复草稿',['mode','requestId','conversationId','retryOfRunId']),
  a('inbox_apply_candidate','POST','/api/inbox/:id/draft-candidate/apply','应用已审阅候选草稿',['requestId','baseUpdatedAt']),
- a('inbox_files_retry','POST','/api/inbox/:id/automatic-files/retry','重试当前草稿自动附件'),
  a('inbox_semantic_read','GET','/api/inbox/:id/semantic-check','读取语义证据'),
  a('inbox_semantic_check','POST','/api/inbox/:id/semantic-check','收集真实语义证据；不批准或发送'),
  a('inbox_semantic_revalidate','POST','/api/inbox/:id/semantic-check/revalidate','重新核验来源证据'),
