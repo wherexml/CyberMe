@@ -1,0 +1,30 @@
+// Run: ego-browser nodejs < scripts/verify-connections-browser.mjs
+const task=await taskSpace('OpsTwin connection polish');
+const page=task.page('p1');
+const fs=await import('node:fs/promises');
+const out='/Users/steve/Projects/opstwin-advance/output/connections-20261003';
+const checks=[];
+function check(name,ok){checks.push({name,status:ok?'PASS':'FAIL'});if(!ok)throw new Error(name);}
+await page.goto('http://127.0.0.1:46100/settings/connections');
+await page.waitForSelector('[data-provider="gmail"] img');
+await page.waitForFunction(()=>[...document.querySelectorAll('[data-provider] img')].every(img=>img.complete&&img.naturalWidth>0));
+check('Four local product logos load',await page.evaluate(()=>document.querySelectorAll('[data-provider] img').length===4));
+check('Unsupported integrations have no actions',await page.evaluate(()=>['slack','teams'].every(id=>{const c=document.querySelector(`[data-provider="${id}"]`);return !c;})));
+await page.click('loc=role:button[name="设置 Gmail 连接"]');
+check('Gmail explains missing native OAuth',await page.evaluate(()=>document.querySelector('[role="dialog"]').textContent.includes('尚未提供 Google')));
+await page.screenshot({path:out+'/gmail-setup.png'});
+await page.click('loc=role:button[name="配置邮件适配器"]');
+await page.waitForFunction(()=>document.activeElement===document.querySelector('.settings-custom-card input'));
+check('Adapter handoff prefills name and focuses form',await page.evaluate(()=>document.querySelector('.settings-custom-card input').value==='Gmail adapter'&&!document.querySelector('[role="dialog"]')));
+await page.goto('http://127.0.0.1:46100/settings/connections');
+check('Refresh preserves honest Gmail setup state',await page.evaluate(()=>document.querySelector('[data-provider="gmail"]').textContent.includes('设置 Gmail 连接')));
+await page.screenshot({path:out+'/connections.png'});
+await page.goto('http://127.0.0.1:46100/settings/channels');
+check('Unsupported channels have no switches or actions',await page.evaluate(()=>['slack','teams'].every(id=>!document.querySelector(`[data-channel="${id}"]`))));
+await page.goto('http://127.0.0.1:46100/settings/connections');
+await page.cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+check('Mobile has no horizontal overflow',await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+await page.screenshot({path:out+'/mobile.png'});
+await page.cdp('Emulation.clearDeviceMetricsOverride');
+await fs.writeFile(out+'/browser-checks.json',JSON.stringify(checks,null,2));
+console.log(checks);

@@ -1,0 +1,22 @@
+// Repeat: EGO_ATTENTION_SPACE=67 ego-browser nodejs < scripts/inbox-attention-e2e.mjs
+const {writeFile,mkdir}=await import('node:fs/promises');
+const task=await taskSpace(Number(process.env.EGO_ATTENTION_SPACE||67)),page=task.page('p1');
+const root='/Users/steve/Projects/opstwin-advance/output/inbox-attention-20261002/';await mkdir(root,{recursive:true});
+await page.goto('http://127.0.0.1:46100/inbox');await page.waitForSelector('.op-attention');
+await page.hover('.op-inbox-heading');
+const inspect=()=>{const rows=[...document.querySelectorAll('.op-message-row')];return {rows:rows.length,singleSignal:rows.every(r=>r.querySelectorAll('.op-attention').length===1),noDuplicateBadges:rows.every(r=>!r.querySelector('.op-message-badges,.op-message-assessment,.op-message-channel')),fourBars:rows.every(r=>r.querySelectorAll('.op-attention-bars i').length===4),sourceHidden:rows.every(r=>getComputedStyle(r.querySelector('.op-message-source')).opacity==='0'),noOverflow:document.documentElement.scrollWidth<=innerWidth,levels:[...new Set(rows.map(r=>r.querySelector('.op-attention').dataset.level))]};};
+const desktop=await page.evaluate(inspect);await page.screenshot({path:root+'desktop.png'});
+await page.hover('.op-message-row >> nth=0');
+const hover=await page.evaluate(()=>getComputedStyle(document.querySelector('.op-message-source')).opacity==='1');
+await page.hover('.op-attention >> nth=0');
+const tooltip=await page.evaluate(()=>getComputedStyle(document.querySelector('.op-attention-tip')).display!=='none');await page.screenshot({path:root+'hover.png'});
+await page.focus('.op-message-row >> nth=0');await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');
+const keyboard=await page.evaluate(()=>{const row=document.activeElement;return row.matches('.op-message-row')&&getComputedStyle(row.querySelector('.op-message-source')).opacity==='1'&&getComputedStyle(row.querySelector('.op-attention-tip')).display!=='none'});
+await page.reload();await page.waitForSelector('.op-attention');await page.hover('.op-inbox-heading');const refreshed=await page.evaluate(inspect);
+await page.cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+const mobile=await page.evaluate(inspect);await page.screenshot({path:root+'mobile.png'});
+await page.click('.op-message-row >> nth=0');await page.waitForSelector('.op-inbox-show-detail');
+const opensDetail=await page.evaluate(()=>!!document.querySelector('.op-triage-card'));
+await page.cdp('Emulation.clearDeviceMetricsOverride');
+const evidence={desktop,hover,tooltip,keyboard,refreshed,mobile,opensDetail,status:[desktop,refreshed,mobile].every(v=>v.rows>0&&v.singleSignal&&v.noDuplicateBadges&&v.fourBars&&v.noOverflow)&&desktop.sourceHidden&&hover&&tooltip&&keyboard&&opensDetail?'PASS':'FAIL'};
+await writeFile(root+'browser-e2e.json',JSON.stringify(evidence,null,2));console.log(evidence);if(evidence.status!=='PASS')throw Error('Inbox attention E2E failed');

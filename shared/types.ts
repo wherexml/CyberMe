@@ -1,0 +1,16 @@
+export type Json = null | boolean | number | string | Json[] | {[key:string]:Json};
+export interface Entity {id:string;title?:string;createdAt?:string;updatedAt?:string;[key:string]:any}
+export interface Task extends Entity {title:string;status:string;projectId?:string;notes?:string;dueDate?:string}
+export interface InboxTriage {method?:'rule'|'jev';status:'running'|'succeeded'|'failed';route?:'no_reply'|'quick_reply'|'deep_reply'|'review';needsReply?:number;needsOwner?:number;needsDeepThink?:number;missingContext?:number;risk?:number;reason?:string;reasonConfidence?:number;model?:string;sourceVersion:string;policyVersion:string;completedAt?:string;error?:string;answers?:Record<string,any>;elapsedMs?:number;usage?:Record<string,number>}
+export interface InboxItem extends Entity {sourceRule?:{id:string;name:string;active:boolean};title:string;sender:string;channel:string;body:string;origin:'human'|'ai';status:string;draft?:string;sourceId?:string;recipientId?:string;sensitive?:boolean;category?:string;attachments?:string[];sourceAttachments?:{id?:string;filename?:string;[key:string]:any}[];context?:string[]}
+export interface Idea extends Entity {title:string;description:string;category:string;status:string;action?:string}
+export interface Activity extends Entity {title:string;kind:string;status:string;detail?:string;entityId?:string;receipt?:any}
+export interface Message extends Entity {conversationId:string;role:'user'|'assistant'|'system';content:string;attachments?:string[];runId?:string}
+export interface Artifact extends Entity {name:string;mime:string;url:string;size:number;sourceIds?:string[];conversationId?:string}
+export interface Connection extends Entity {name:string;provider:string;type:string;status:string;endpoint?:string;permissions?:string[];config?:Record<string,any>}
+export interface Automation extends Entity {title:string;prompt:string;schedule:string;enabled:boolean;nextRun?:string;lastRun?:string;status?:string}
+export interface Settings {identity:{name:string;role:string;about:string;instructions:string;language:string};autonomy:{holdSending:boolean;levels:Record<string,string>;deepThink:string[];files:string[];quietFrom:string;quietUntil:string;alerts:string;transparency:boolean};channels:Record<string,any>;[key:string]:any}
+export interface Bootstrap {tasks:Task[];projects:Entity[];inbox:InboxItem[];ideas:Idea[];activities:Activity[];conversations:Entity[];messages:Message[];artifacts:Artifact[];connections:Connection[];automations:Automation[];memories:Entity[];settings:Settings;sources:Record<string,any>;revision:number}
+export interface UIContext {state:Bootstrap;applySettings:(settings:Settings)=>void;refresh:()=>Promise<void>;navigate:(path:string)=>void;notify:(message:string,tone?:'error'|'success')=>void;openTwin:()=>void}
+export interface Lineage {itemId?:string;conversationId?:string;runId?:string;sourceIds:string[];artifactIds:string[];taskId?:string;ideaId?:string;automationId?:string;messageId?:string}
+export interface Run extends Entity {kind:string;status:'running'|'succeeded'|'failed'|'cancelled'|'unknown';engine:string;model?:string;provider?:string;conversationId?:string;tools:{id:string;name:string;input:unknown;output:unknown;status:string;at:string}[];lineage?:Lineage;startedAt:string;finishedAt?:string;error?:string;usage?:Record<string,number>}

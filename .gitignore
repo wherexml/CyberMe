@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env*
+!.env.example
+.local/
+data/
+output/
+.tmp/
+.DS_Store
+docs/sprint*
+doocs/sprint*

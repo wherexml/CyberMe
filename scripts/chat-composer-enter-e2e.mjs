@@ -1,0 +1,15 @@
+const fs=await import('node:fs/promises');const task=await taskSpace(Number(process.env.OPSADV_QA_SPACE||54)),page=task.page(process.env.OPSADV_QA_PAGE||'p1');const out='/Users/steve/Projects/opstwin-advance/output/chat-composer-20261002';
+const marker=`OPSADV-QA-ENTER-${Date.now()}`;const req=async(path,body,method=body?'POST':'GET')=>{const r=await fetch('http://127.0.0.1:46110/api'+path,{method,headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json()}};
+const conv=(await req('/conversations',{title:marker,mode:'chat'})).data;
+await page.goto(`http://localhost:46100/chat?conversation=${conv.id}`);await page.waitForSelector('.chat-composer>textarea');
+await page.fill('.chat-composer>textarea',`${marker} 请输出150条软件设计原则，每条60字，不调用工具，不修改数据。`);await page.press('.chat-composer>textarea','Enter');
+await page.waitForFunction(()=>!!document.querySelector('button[aria-label="插入当前任务"]'));
+const q=(await req('/chat/continuation',{conversationId:conv.id,message:'ATTACHMENT_GUARD_ONLY',attachmentIds:['missing-qa-file'],delivery:'queue',requestId:marker+'-file'})).data;
+const guard=await req(`/chat/continuation/${q.id}`,{action:'insert',updatedAt:q.updatedAt},'PATCH');if(guard.status!==400||guard.data.error!=='queue_required')throw Error('Attachment insert not guarded');
+await req(`/chat/continuation/${q.id}`,undefined,'DELETE');
+await page.fill('.chat-composer>textarea',`${marker}-ENTER 更正：停止长文，只回复 ENTER_OK。不要调用工具或修改数据。`);await page.press('.chat-composer>textarea','Enter');
+await page.waitForFunction(()=>document.querySelector('.chat-composer>textarea').value==='');
+await page.fill('.chat-composer>textarea','PRESERVED');await page.press('.chat-composer>textarea','Shift+Enter');
+const v=await page.evaluate(()=>document.querySelector('.chat-composer>textarea').value);if(v!=='PRESERVED\n')throw Error('Shift+Enter did not insert newline');
+const messages=(await req('/bootstrap')).data.messages.filter(m=>m.conversationId===conv.id);const inserted=messages.find(m=>m.role==='user'&&m.content.includes('-ENTER '));if(!inserted?.runId)throw Error('Enter did not steer active run');
+await fs.writeFile(`${out}/enter.json`,JSON.stringify({marker,conversationId:conv.id,runId:inserted.runId,attachmentGuard:guard.status,enterSteered:true,shiftEnterNewline:true},null,2));console.log({marker,conversationId:conv.id,enterSteered:true,attachmentGuard:guard.status});

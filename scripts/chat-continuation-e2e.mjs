@@ -1,0 +1,33 @@
+// Run: ego-browser nodejs < scripts/chat-continuation-e2e.mjs
+// Uses this goal's existing TaskSpace; produces real HTTP + browser evidence.
+const fs=await import('node:fs/promises');
+const task=await taskSpace(52),page=task.page('p1');
+const root='/Users/steve/Projects/opstwin-advance/output/chat-continuation';
+const marker=`OPSADV-CONT-${Date.now()}`;
+const call=async(path,body)=>{const r=await fetch(`http://127.0.0.1:46110/api${path}`,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});const data=await r.json();if(!r.ok)throw Error(JSON.stringify(data));return data;};
+const conversation=await call('/conversations',{title:marker,mode:'chat',status:'active'});
+await page.goto(`http://localhost:46100/chat?conversation=${conversation.id}`);
+await page.waitForSelector('textarea');
+await page.fill('textarea',`${marker} 分60条解释软件设计，每条两句；不要调用工具，不写数据。`);
+await page.click('button[aria-label="发送"]');
+await page.fill('textarea',`${marker}-INSERT 更正：停止长篇回答，最后仅回复「蓝色海洋」。不要调用工具。`);
+const writable=await page.evaluate(()=>!document.querySelector('textarea').disabled);
+if(!writable)throw Error('Input disabled during run');
+await page.click('text="插入当前运行"');
+await page.fill('textarea',`${marker}-QUEUE 仅回复「绿色森林」，不要调用工具。`);
+await page.click('text="等待完成后发送"');
+await page.fill('textarea',`${marker}-DRAFT`);
+await page.screenshot({path:`${root}/e2e-queued.png`});
+await page.reload();await page.waitForSelector('textarea');
+const restored=await page.evaluate(()=>({draft:document.querySelector('textarea').value,queued:document.querySelector('.continuation-item')?.innerText}));
+if(restored.draft!==`${marker}-DRAFT`)throw Error('Draft lost on reload');
+await page.waitForFunction(()=>!document.querySelector('.continuation-bar')&&!document.querySelector('.continuation-item'),undefined,{timeout:180000});
+const state=await call('/bootstrap');const messages=state.messages.filter(m=>m.conversationId===conversation.id);
+const retained=await page.evaluate(()=>document.querySelector('textarea').value);
+if(retained!==`${marker}-DRAFT`)throw Error('Draft overwritten after completion');
+if(messages.filter(m=>m.role==='user').length!==3)throw Error('Missing or duplicate messages');
+if(!messages.some(m=>m.role==='assistant'&&m.content.trim()==='蓝色海洋')||!messages.some(m=>m.role==='assistant'&&m.content.trim()==='绿色森林'))throw Error('Missing real agent responses');
+const runs=await Promise.all(messages.filter(m=>m.role==='assistant').map(m=>call(`/runs/${m.runId}`)));
+await page.screenshot({path:`${root}/e2e-completed.png`});
+await fs.writeFile(`${root}/e2e-result.json`,JSON.stringify({marker,conversationId:conversation.id,writable,restored,retained,messages,runs,result:'PASS'},null,2));
+console.log({result:'PASS',conversationId:conversation.id,writable,retained,messageCount:messages.length});

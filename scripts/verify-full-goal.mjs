@@ -1,0 +1,20 @@
+/** Read-only full-scope acceptance gate. Never assigns reviewer scores or updates a goal. */
+import {readFile,readdir,stat,writeFile,mkdir} from 'node:fs/promises';
+import {resolve,join,relative,sep} from 'node:path';import {createHash} from 'node:crypto';
+const root=resolve(import.meta.dirname,'..'),base='output/full-journeys-20261002',failures=[];
+const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+const local=p=>{const full=resolve(root,p);if(!full.startsWith(root+sep))throw Error('Evidence must remain in the project');return full};
+const readJson=async p=>JSON.parse(await readFile(local(p),'utf8'));
+const inventoryPath=base+'/coverage-inventory.json',inventoryBytes=await readFile(local(inventoryPath)),inventory=JSON.parse(inventoryBytes);
+const initial=await readJson(base+'/coverage-inventory-initial.json');const required=[...initial.features.map(f=>f.id),...Array.from({length:6},(_,i)=>'SET-LANG-'+String(i+1).padStart(2,'0'))];
+const features=inventory.features||[],ids=new Set(features.map(f=>f.id));if(ids.size!==features.length)failures.push('Duplicate feature IDs');for(const id of required)if(!ids.has(id))failures.push('Missing required feature '+id);
+const unresolved=features.filter(f=>f.status!=='PASS');if(unresolved.length)failures.push(`${unresolved.length} features are not PASS`);
+for(const feature of features){if(feature.status==='PASS'&&(!feature.evidence?.length||feature.remainingBranches?.length))failures.push('Incomplete PASS evidence '+feature.id);for(const ref of feature.evidence||[])try{await stat(local(ref))}catch{failures.push('Missing evidence '+feature.id+': '+ref)}}
+if(inventory.allRequiredComplete!==true)failures.push('Full inventory does not attest completion');
+const files=[];async function walk(dir){for(const entry of await readdir(local(dir),{withFileTypes:true})){const path=join(dir,entry.name);if(entry.isDirectory())await walk(path);else if(/\.(ts|tsx|css|mjs|html)$/.test(path))files.push(path)}}
+for(const dir of ['server/src','web/src','shared'])await walk(dir);files.push('package.json','package-lock.json','scripts/verify-full-goal.mjs');files.sort();const fileHashes={};for(const file of files)fileHashes[file]=sha(await readFile(local(file)));const sourceFingerprint=sha(JSON.stringify(fileHashes));
+// Ignore timestamp-only inventory regeneration while binding all requirements and evidence entries.
+const coverageFingerprint=sha(JSON.stringify({features,scope:inventory.scope}));
+const reviewPath=process.argv[2]||base+'/full-goal-opus-review.json';let review;
+try{review=await readJson(reviewPath);if(review.model!=='claude-opus-5-5'||review.scope!=='all_features')failures.push('Review is not the requested model and full scope');if(!(review.uiScore>95&&review.journeyScore>95))failures.push('Independent scores must both exceed 95');if(review.sourceFingerprint!==sourceFingerprint||review.coverageFingerprint!==coverageFingerprint)failures.push('Review does not match current source and coverage');if(review.requiredWorkRemaining!==false)failures.push('Reviewer has not confirmed zero remaining required work');for(const path of [review.reportPath,review.rawLogPath]){if(!path)throw Error('Original review report/log required');await stat(local(path))}}catch(e){failures.push('Independent final review unavailable: '+String(e))}
+const out=join(root,base,'full-goal-gate.json');await mkdir(join(root,base),{recursive:true});const result={at:new Date().toISOString(),status:failures.length?'NOT_PASSED':'PASS',scope:'all_features',requiredFeatureCount:new Set(required).size,featureCount:features.length,summary:Object.fromEntries(['PASS','FAIL','BLOCKED','NOT_RUN'].map(s=>[s,features.filter(f=>f.status===s).length])),unresolved:unresolved.map(f=>({id:f.id,status:f.status})),failures,sourceFingerprint,coverageFingerprint,fileHashes,reviewPath,externalWrites:0,goalStatusChanged:false};await writeFile(out,JSON.stringify(result,null,2));console.log(JSON.stringify({status:result.status,summary:result.summary,failures:result.failures,artifact:relative(root,out)}));if(failures.length)process.exitCode=1;
