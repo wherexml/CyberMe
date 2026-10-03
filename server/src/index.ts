@@ -140,6 +140,9 @@ app.post('/api/inbox/:id/process-source',c=>json(c,{jobs:enqueueSourceProcessing
 app.post('/api/inbox/:id/process-source/retry',c=>json(c,retrySourceProcessing(c.req.param('id'))));
 app.get('/api/runs',c=>json(c,listResponse(c,list('runs'),100)));
 app.get('/api/runs/:id',c=>json(c,need('runs',c.req.param('id'))));
+// Native message actions resolve the exact associated run, independently of
+// entity CRUD (messages are deliberately not a writable generic resource).
+app.get('/api/messages/:id',c=>json(c,need('messages',c.req.param('id'))));
 app.get('/api/activities',c=>json(c,listResponse(c,list('activities'))));
 app.get('/api/artifacts',c=>json(c,listResponse(c,list('artifacts'))));
 app.get('/api/artifacts/:id',c=>json(c,need('artifacts',c.req.param('id'))));

@@ -101,7 +101,7 @@ cargo build --release --locked  # 产物 target/release/opstwin
 ## 文件
 
 - 上传：Chat 输入框左侧「+」→ 系统文件选择器（可多选）→ 读取前检查 1 字节–25MB → `POST /api/files` multipart（`file` + 已有会话时 `conversationId`）→ 显示附件 chip（可移除）→ 随消息发送 `attachmentIds`。附件为空时请求不带该字段（服务端指纹 `attachmentIds||[]`，二者等价）。
-- 下载：消息 `attachments`（artifact id）显示为 chip；元数据来自上传结果、Chat 响应 `artifacts` 或分页 `GET /api/artifacts`（服务端无单个 artifact GET）。点击 → `GET /files/:id` 流式下载，大小超过记录即中止；校验字节数、Content-Length、Content-Type（与记录 mime 比较主类型）、必须有64位 SHA-256；缺少时刷新服务端元数据，仍缺失则拒绝打开；同大小缓存也校验 SHA-256 → 原子写入 `~/Library/Caches/OpsTwin/files/<id>-<name>` → `cx.open_with_system` 用默认应用打开。缓存命中需大小与哈希仍一致。
+- 下载：消息 `attachments` 使用真实 artifact id；元数据按精确 `GET /api/artifacts/:id` 读取，返回脱敏记录，不受旧列表5000条上限限制。点击预览／打开 → `GET /files/:id` 流式下载，大小超过记录即中止；校验字节数、Content-Length、Content-Type（与记录 mime 比较主类型）、必须有64位 SHA-256；缺少时刷新服务端元数据，仍缺失则拒绝打开。同大小缓存也校验 SHA-256，再原子写入客户端状态目录的 `cache/files`；明确打开使用 `cx.open_with_system`。正文图片通过相同验证链延迟加载，失败保留重试，预览不丢当前输入草稿。
 
 ## 同步
 
@@ -113,7 +113,7 @@ cargo build --release --locked  # 产物 target/release/opstwin
 
 组合期回车不会发送的原因：GPUI macOS 后端（gpui-pre-macos 0.3.7 `window.rs` `handle_key_event`）在 `input_handler.marked_text_range()` 为 `Some` 时，先把按键交给 `NSTextInputContext handleEvent:`，输入法消费回车用于确认候选，不再派发到键位绑定，因此 `Enter` 动作与 `PressEnter` 均不会产生。作为第二道保护，发送前再调用 `EntityInputHandler::marked_text_range`（`TextareaState` 实现该 trait，内部读取 `ime_marked_range`），非空则不发送。
 
-2026-10-03 已通过真实 macOS 简体拼音输入法界面验收：按物理拼音键进入组合期，Return 只上屏、不提交，Space 可选择中文候选；粘贴、Emoji、选区替换和 Shift+Return 正常。不得用直接设置文本替代组合期验收。
+2026-10-03 第一阶段包曾通过真实 macOS 简体拼音输入法界面验收：按物理拼音键进入组合期，Return 只上屏、不提交，Space 可选择中文候选；粘贴、Emoji、选区替换和 Shift+Return 正常。当前完整产品 v11 包须重新复验，第一阶段证据不自动转为当前版本 PASS；不得用直接设置文本替代组合期验收。
 
 ## 界面验收与恢复
 
