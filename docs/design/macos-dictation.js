@@ -4,12 +4,13 @@
  const samples=[];let stamp=0;
  const errors={voice_no_speech:'未检测到人声',voice_empty_text:'未识别到文字',voice_timeout:'转写超时',voice_busy:'语音服务繁忙',voice_setup_required:'语音服务未配置',voice_auth:'语音服务鉴权失败',voice_unavailable:'转写失败',voice_cancelled:'已取消',voice_size:'录音过大',voice_duration:'录音过长'};
  function draw(){
-  const canvas=$('voice-waveform'),width=canvas.clientWidth,height=40,dpr=devicePixelRatio||1;
+  const canvas=$('voice-waveform'),width=canvas.clientWidth,height=canvas.clientHeight,dpr=devicePixelRatio||1;
   if(!width)return;
   if(canvas.width!==Math.round(width*dpr)||canvas.height!==Math.round(height*dpr)){canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr)}
   const c=canvas.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,width,height);
-  const count=Math.max(1,Math.floor(width/12)),visible=samples.slice(-count),empty=count-visible.length;
-  for(let i=0;i<count;i++){const level=i<empty?0:visible[i-empty],h=Math.max(5,Math.min(34,Math.sqrt(level)*65)),x=i*12+(width-(count-1)*12)/2;c.fillStyle=i<empty?'#666':'#a6a6a6';c.beginPath();c.roundRect(x-2.5,(height-h)/2,5,h,2.5);c.fill()}
+  const count=Math.max(1,Math.floor(width/10)),visible=samples.slice(-count),empty=count-visible.length;
+  c.fillStyle=getComputedStyle(canvas).color;
+  for(let i=0;i<count;i++){const level=i<empty?0:visible[i-empty],h=Math.max(3,Math.min(height-6,Math.sqrt(level)*65)),x=i*10+(width-(count-1)*10)/2;c.globalAlpha=i<empty?.45:.85;c.beginPath();c.roundRect(x-1.5,(height-h)/2,3,h,1.5);c.fill()}
  }
  function tick(now){
   if(phase!=='recording')return;
@@ -18,7 +19,10 @@
  }
  function release(){clearTimeout(timer);cancelAnimationFrame(frame);stream?.getTracks().forEach(t=>t.stop());stream=null;analyser=null;if(context){void context.close().catch(()=>{});context=null}}
  function paint(){
-  const active=phase!=='idle',form=$('composer');form.dataset.voiceState=phase;form.classList.toggle('voice-active',active);$('voice-controls').hidden=!active;
+  const active=phase!=='idle',form=$('composer');
+  if(active&&!form.classList.contains('voice-active'))form.style.setProperty('--dictation-height',form.getBoundingClientRect().height+'px');
+  if(!active)form.style.removeProperty('--dictation-height');
+  form.dataset.voiceState=phase;form.classList.toggle('voice-active',active);$('voice-controls').hidden=!active;
   for(const id of ['attachment-info','input','dictation-info','send'])$(id).hidden=active;
   const stop=$('voice-stop'),send=$('voice-send'),error=$('voice-error');stop.disabled=!['recording','failed'].includes(phase);send.disabled=phase!=='recording';
   stop.setAttribute('aria-label',phase==='failed'?'重试转写':'停止听写');stop.title=phase==='failed'?'重试转写':'停止听写';stop.querySelector('use').setAttribute('href',phase==='failed'?'#voice-retry-symbol':'#voice-stop-symbol');
