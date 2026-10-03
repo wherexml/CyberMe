@@ -1,0 +1,38 @@
+// Contract written before the timestamp adapter implementation.
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const context={window:{}};
+vm.runInNewContext(fs.readFileSync('docs/design/macos-message-time.js','utf8'),context);
+const time=context.window.OpsTwinsMessageTime;
+const at=(y,m,d,h=0,min=0,sec=0)=>new Date(y,m-1,d,h,min,sec).getTime();
+const checks=[];
+function check(name,actual,expected){checks.push({name,actual,expected,pass:actual===expected});assert.equal(actual,expected,name)}
+const now=at(2026,10,3,12);
+check('today',time.label(at(2026,10,3,17,31),now),'17:31');
+check('yesterday',time.label(at(2026,10,2,22,56),now),'昨天 22:56');
+check('same Monday-week',time.label(at(2026,9,30,18,22),now),'星期三 18:22');
+check('earlier this year',time.label(at(2026,8,20,18,13),now),'8 月 20 日 18:13');
+check('different year',time.label(at(2025,8,20,18,13),now),'2025 年 8 月 20 日 18:13');
+check('Monday excludes previous Sunday',time.label(at(2026,10,4,18),at(2026,10,5,12)),'昨天 18:00');
+check('new week excludes previous Saturday',time.label(at(2026,10,3,18),at(2026,10,5,12)),'10 月 3 日 18:00');
+check('future same-week date uses calendar date',time.label(at(2026,10,4,18),now),'10 月 4 日 18:00');
+check('midnight h23',time.label(at(2026,10,3),now),'00:00');
+check('first valid timestamp',time.showsSeparator(at(2026,10,3,10),null),true);
+check('missing current',time.showsSeparator(null,at(2026,10,3,10)),false);
+check('invalid current',time.showsSeparator('not a date',null),false);
+check('missing previous',time.showsSeparator(at(2026,10,3,10),null),true);
+check('same second',time.showsSeparator(at(2026,10,3,10),at(2026,10,3,10)),false);
+check('14m59s',time.showsSeparator(at(2026,10,3,10,14,59),at(2026,10,3,10)),false);
+check('15m00s',time.showsSeparator(at(2026,10,3,10,15),at(2026,10,3,10)),true);
+check('adjacent 10:10',time.showsSeparator(at(2026,10,3,10,10),at(2026,10,3,10)),false);
+check('adjacent 10:20',time.showsSeparator(at(2026,10,3,10,20),at(2026,10,3,10,10)),false);
+check('cross-day 1s',time.showsSeparator(at(2026,10,4),at(2026,10,3,23,59,59)),true);
+check('numeric seconds',time.label(String(at(2026,10,3,17,31)/1000),now),'17:31');
+check('midnight refresh yesterday',time.label(at(2026,10,3,23,58),at(2026,10,4)),'昨天 23:58');
+check('spring DST calendar yesterday',time.label(at(2026,3,8,0,30),at(2026,3,9,0,15)),'昨天 00:30');
+check('fall DST calendar yesterday',time.label(at(2026,11,1,0,30),at(2026,11,2,0,15)),'昨天 00:30');
+const report={kind:'isolated reference contract, not UI E2E',timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,checks};
+fs.mkdirSync('output/macos-ui-study-20261003',{recursive:true});
+fs.writeFileSync('output/macos-ui-study-20261003/time-'+report.timeZone.replaceAll('/','-')+'.json',JSON.stringify(report,null,2)+'\n');
+console.log(JSON.stringify({timeZone:report.timeZone,pass:checks.length,failed:0}));
