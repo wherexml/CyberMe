@@ -144,6 +144,7 @@ app.get('/api/runs/:id',c=>json(c,need('runs',c.req.param('id'))));
 // entity CRUD (messages are deliberately not a writable generic resource).
 app.get('/api/messages/:id',c=>json(c,need('messages',c.req.param('id'))));
 app.get('/api/activities',c=>json(c,listResponse(c,list('activities'))));
+app.get('/api/activities/:id',c=>json(c,need('activities',c.req.param('id'))));
 app.get('/api/artifacts',c=>json(c,listResponse(c,list('artifacts'))));
 app.get('/api/artifacts/:id',c=>json(c,need('artifacts',c.req.param('id'))));
 

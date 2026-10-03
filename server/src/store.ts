@@ -49,7 +49,7 @@ export function updateRun(id:string,patch:Record<string,any>) {const run=get('ru
 export function toolEvidence(runId:string,name:string,input:unknown,output:unknown,status='succeeded',metadata:Record<string,unknown>={}) {const run=get('runs',runId);if(!run)return;updateRun(runId,{tools:[...(run.tools||[]),{id:uid('tool'),name,input,output,status,at:now(),...metadata}]});}
 
 // Judgment lives independently so background analysis cannot invalidate draft edit leases.
-export const TRIAGE_POLICY_VERSION='inbox-triage-v6';
+export const TRIAGE_POLICY_VERSION='inbox-triage-v7-selected-notes';
 export function inboxFeedback(item:any){
  const key=item.senderId||item.sender;
  return list('inbox_feedback').filter(f=>f.active&&f.itemId!==item.id&&f.channel===item.channel&&f.senderKey===key).slice(0,8).map(f=>({id:f.id,itemId:f.itemId,title:f.title,body:f.body,action:'dismiss',createdAt:f.createdAt}));
@@ -62,7 +62,17 @@ export function recordInboxFeedback(old:any,saved:any){
 export function inboxTriageState(item:any){
  const owner=settings().identity;
  const linked=list('tasks').filter(task=>(item.context||[]).includes(task.id)||task.inboxId===item.id||task.sourceInboxId===item.id).map(task=>({id:task.id,title:task.title,status:task.status,dueDate:task.dueDate,notes:task.notes}));
- const state={dismissalFeedback:inboxFeedback(item),owner:{name:owner.name,aliases:owner.name==='许茂林'?['Steve','许茂林']:[],role:owner.role,instructions:owner.instructions},message:{title:item.title,body:item.body,sender:item.sender,senderId:item.senderId,isMine:item.isMine,direction:item.direction,isSelfTest:item.isSelfTest===true,recipientId:item.recipientId,channel:item.channel,origin:item.origin,sensitive:!!item.sensitive,sourceId:item.sourceId},recentMessages:(item.messages||[]).slice(-20).map((m:any)=>({text:m.text||m.content||m.body,isMine:m.isMine,direction:m.direction,senderId:m.senderId,sender:m.senderName,sentAt:m.sentAt,createdAt:m.createdAt})),linkedTasks:linked,sourceAttachments:item.sourceAttachments||[]};
+ // Read only explicitly selected notes; never add the user's whole memory
+ // corpus to judgment. Coverage remains explicit when provider bounds apply.
+ const selectedIds=[...new Set([...(Array.isArray(item.context)?item.context:[]),...(Array.isArray(item.contextIds)?item.contextIds:[])].filter((id):id is string=>typeof id==='string'))];
+ const notes=selectedIds.slice(0,64).flatMap(id=>{const note=get('memories',id);return note?[note]:[];});
+ let remaining=32000;
+ const linkedNotes=notes.slice(0,8).map(note=>{
+  const text=String(note.body||note.content||note.notes||note.summary||''),limit=Math.min(12000,remaining),excerpt=text.slice(0,limit);remaining-=excerpt.length;
+  return {id:note.id,title:note.title,kind:note.kind,text:excerpt,truncated:excerpt.length<text.length,contentHash:hash({body:note.body,content:note.content,notes:note.notes,summary:note.summary,updatedAt:note.updatedAt})};
+ });
+ const noteCoverage={selectedReferenceIds:selectedIds,selectionTruncated:selectedIds.length>64,matchedNotes:notes.length,loadedNotes:linkedNotes.length,notesTruncated:notes.length>linkedNotes.length,contentTruncated:linkedNotes.some(note=>note.truncated),selectedNotesFingerprint:hash(notes.map(note=>({id:note.id,title:note.title,body:note.body,content:note.content,notes:note.notes,summary:note.summary,updatedAt:note.updatedAt})))};
+ const state={dismissalFeedback:inboxFeedback(item),owner:{name:owner.name,aliases:owner.name==='许茂林'?['Steve','许茂林']:[],role:owner.role,instructions:owner.instructions},message:{title:item.title,body:item.body,sender:item.sender,senderId:item.senderId,isMine:item.isMine,direction:item.direction,isSelfTest:item.isSelfTest===true,recipientId:item.recipientId,channel:item.channel,origin:item.origin,sensitive:!!item.sensitive,sourceId:item.sourceId},recentMessages:(item.messages||[]).slice(-20).map((m:any)=>({text:m.text||m.content||m.body,isMine:m.isMine,direction:m.direction,senderId:m.senderId,sender:m.senderName,sentAt:m.sentAt,createdAt:m.createdAt})),linkedTasks:linked,linkedNotes,noteCoverage,sourceAttachments:item.sourceAttachments||[]};
  return state;
 }
 export function inboxTriageVersion(item:any){return hash({state:inboxTriageState(item),policyVersion:TRIAGE_POLICY_VERSION});}

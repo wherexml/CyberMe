@@ -10,6 +10,10 @@ const marker='OPSADV-QA-SEARCH-'+randomUUID(),port=Number(process.env.OPSTWIN_SE
 if(!Number.isInteger(port)||port<10000||port>65535)throw Error('five-digit port required');
 const dir=root+'.local/acceptance/native-workspace-search/'+new Date().toISOString().replaceAll(':','-');
 await mkdir(dir,{recursive:true});
+const isolation=new DatabaseSync(dir+'/opstwin-advance.db');
+isolation.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+isolation.prepare('INSERT INTO meta(key,value) VALUES(?,?)').run('initialized','true');
+isolation.close();
 const api=`http://127.0.0.1:${port}`,checks=[];
 const child=spawn(process.execPath,['--import','tsx','server/src/index.ts'],{cwd:root,env:{...process.env,OPSTWIN_API_PORT:String(port),OPSTWIN_DATA_DIR:dir,OPSTWIN_NO_BACKGROUND:'1'},stdio:['ignore','ignore','ignore']});
 const req=async path=>{const r=await fetch(api+path,{signal:AbortSignal.timeout(15000)});return {status:r.status,data:await r.json()};};
@@ -51,6 +55,13 @@ try{
  for(const field of searchFields){r=await search(marker+'-FIELD-'+field);check('known full text field '+field,r.status===200&&r.data.items.some(i=>i.id===marker+'-field-'+field));}
  r=await search(marker+'-STEP-OBJECT');check('object step description searchable',r.status===200&&r.data.total===1);r=await search(marker+'-STEP-TEXT');check('plain step searchable',r.status===200&&r.data.total===1);
  r=await search(marker,'&limit=100');check('all ten allowed workspace kinds searchable',r.status===200&&new Set(r.data.items.map(i=>i.kind)).size===10);
+ const details={inbox:'inbox',memories:'memory',conversations:'conv',messages:'msg-000',tasks:'tasks',ideas:'ideas',artifacts:'artifacts',projects:'projects',automations:'automations',activities:'activities'};
+ for(const [kind,suffix] of Object.entries(details)){
+  const id=marker+'-'+suffix,detail=await req('/api/'+kind+'/'+encodeURIComponent(id));
+  check('exact searchable '+kind+' detail can open',detail.status===200&&detail.data.id===id,{httpStatus:detail.status});
+ }
+ const missing=await req('/api/activities/'+encodeURIComponent(marker+'-missing'));
+ check('missing activity detail is object not_found',missing.status===404&&missing.data.error==='not_found');
  let page=await search(marker,'&limit=3'),seen=new Set(),offset=0;check('pagination first page bounded',page.status===200&&page.data.items.length===3&&page.data.hasMore===true);
  const total=page.data.total,revision=page.data.revision;
  while(true){for(const item of page.data.items){check('page record unique '+seen.size,!seen.has(item.kind+':'+item.id));seen.add(item.kind+':'+item.id);check('response item shape excludes raw content '+seen.size,Object.keys(item).sort().join(',')==='id,kind,snippet,targetId,time,title');}if(!page.data.hasMore)break;offset=page.data.nextOffset;page=await search(marker,`&limit=3&offset=${offset}&revision=${revision}`);check('subsequent stable page '+offset,page.status===200&&page.data.total===total);}
