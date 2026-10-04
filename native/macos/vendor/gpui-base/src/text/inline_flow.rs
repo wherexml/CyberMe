@@ -1242,7 +1242,85 @@ fn line_ranges(
         }
     }
 
-    ranges
+    // The wrapper estimates body glyphs individually. CJK punctuation,
+    // bold runs and mixed fonts can shape wider when painted as a full run.
+    // Recheck candidates with the exact paint segmentation before clipping.
+    let mut stops = Vec::new();
+    let mut offset = 0;
+    for item in items {
+        match item {
+            MeasureItem::Text { text, .. } => stops.extend(
+                text.grapheme_indices(true).map(|(i, g)| offset + i + g.len()),
+            ),
+            _ => stops.push(offset + item.len()),
+        }
+        offset += item.len();
+    }
+    let mut fitted = Vec::new();
+    let mut ranges = ranges.into_iter().peekable();
+    let mut carry = None;
+    while let Some(range) = ranges.next() {
+        let mut start = carry.take().unwrap_or(range.start);
+        if range.is_empty() { fitted.push(range); continue; }
+        while start < range.end {
+            if painted_range_width(items, image_sizes, objects, text_style, start..range.end, window) <= wrap_width {
+                fitted.push(start..range.end);
+                break;
+            }
+            let candidates = stops.iter().copied().filter(|i| *i > start && *i <= range.end).collect::<Vec<_>>();
+            let mut low = 0;
+            let mut high = candidates.len();
+            while low < high {
+                let mid = (low + high) / 2;
+                if painted_range_width(items, image_sizes, objects, text_style, start..candidates[mid], window) <= wrap_width {
+                    low = mid + 1;
+                } else { high = mid; }
+            }
+            // An indivisible grapheme/object must still make progress.
+            let end = candidates[low.saturating_sub(1)];
+            fitted.push(start..end);
+            start = end;
+            if ranges.peek().is_some_and(|next| next.start == range.end) {
+                carry = Some(start);
+                break;
+            }
+        }
+    }
+    fitted
+}
+
+fn painted_range_width(
+    items: &[MeasureItem], image_sizes: &[Option<Size<Pixels>>],
+    objects: &[Option<MeasuredInlineObject>], text_style: &TextStyle,
+    range: Range<usize>, window: &mut Window,
+) -> Pixels {
+    let font_size = text_style.font_size.to_pixels(window.rem_size());
+    let mut offset = 0;
+    let mut width = Pixels::ZERO;
+    for (ix, item) in items.iter().enumerate() {
+        let end = offset + item.len();
+        if end > range.start && offset < range.end {
+            match item {
+                MeasureItem::Text { text, highlights, .. } => {
+                    for (segment, scale) in text_size_ranges(text.len(), highlights) {
+                        let start = range.start.saturating_sub(offset).max(segment.start);
+                        let end = (range.end - offset).min(item.len()).min(segment.end);
+                        if start >= end { continue; }
+                        let highlights = slice_ranges(highlights, start, end, |r, h| (r, h.clone()));
+                        let runs = text_runs(end - start, text_style, &highlights);
+                        width += shape_line(text[start..end].to_string().into(), font_size * scale, &runs, window).width();
+                        if highlights.iter().any(|(_, h)| h.font_size_scale.is_some()) {
+                            width += px(INLINE_CODE_PADDING * 2.);
+                        }
+                    }
+                }
+                MeasureItem::Object { .. } => width += objects[ix].as_ref().unwrap().metrics.size.width,
+                MeasureItem::Image { .. } => width += image_sizes[ix].unwrap().width,
+            }
+        }
+        offset = end;
+    }
+    width
 }
 
 /// Appends the wrap fragments for `range` of `text`. The line wrapper
