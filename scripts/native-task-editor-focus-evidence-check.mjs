@@ -15,7 +15,7 @@ for (const item of manifest.files) {
   check(file.startsWith(dir + '/') && fs.realpathSync(file) === file, 'evidence path');
   check(hash(file) === item.sha256, item.path + ' hash');
 }
-for (const [file, digest] of Object.entries(manifest.source)) check(hash(path.join(root, file)) === digest, file + ' source');
+for (const [file, digest] of Object.entries(manifest.source)) check(hash(path.join(dir, 'frozen-source', file)) === digest, file + ' frozen source');
 check(hash(path.join(root, '.local/apps/OpsTwins-Acceptance-Resume-v45.app/Contents/MacOS/opstwin')) === manifest.binarySHA256, 'frozen binary');
 const restored = JSON.parse(fs.readFileSync(path.join(dir, 'task-baseline-restored.json')));
 check(Object.values(restored.fieldMatches).every(value => value === true), 'six canonical baseline fields');

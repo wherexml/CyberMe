@@ -461,6 +461,7 @@ impl TasksView {
                 return;
             }
         }
+        self.action_error = None;
         self.open_generation += 1;
         let (title, notes, due) = match &task {
             Some(t) => (
