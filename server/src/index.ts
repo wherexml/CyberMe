@@ -34,6 +34,7 @@ import { nextScheduled, runAutomation, startScheduler } from './automations';
 import { normalizeFollowup, createCalendarFromInbox, knownCalendarEvents, readCalendarEvent, deleteCalendarEvent, primaryCalendar } from './calendar';
 import {voiceStatus,transcribeVoice} from './voice';
 import {modelSettings,saveModelSettings,saveModelProvider} from './model-settings';
+import {modelProbe,startModelProbe} from './model-probes';
 import {capabilityCatalog,installAgentOperations} from './agent-capabilities';
 import {queryInbox,bulkInboxStatus} from './inbox-operations';
 import {completedAgentWrites} from './agent-effects';
@@ -111,8 +112,10 @@ app.get('/api/settings',c=>json(c,settings()));
 app.get('/api/settings/models',c=>{c.header('Cache-Control','no-store');return json(c,modelSettings());});
 app.patch('/api/settings/models/providers',async c=>json(c,saveModelProvider(await body(c))));
 app.patch('/api/settings/models',async c=>json(c,saveModelSettings(await body(c))));
+app.get('/api/settings/models/tests/:id',c=>{c.header('Cache-Control','no-store');return json(c,modelProbe(c.req.param('id')));});
 app.post('/api/settings/models/test',async c=>{
  const input=await body(c);
+ if(input.requestId!==undefined)return json(c,await startModelProbe(input));
  if(!['standard','deep'].includes(input.role))throw new ApiError(400,'invalid_model_role','请选择普通任务或深度思考。 / Choose a model role.');
  if(input.version!==modelSettings().version)throw new ApiError(409,'model_settings_changed','配置已变更，请先重新读取。 / Configuration changed. Reload first.');
  return json(c,await runAgent('Reply with exactly OK.',{kind:'model_probe',title:'Model connection test: '+input.role,mode:input.role==='deep'?'deep':'chat',readOnly:true}));

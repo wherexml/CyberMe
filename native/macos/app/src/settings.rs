@@ -88,6 +88,10 @@ pub struct SettingsView {
     connection_secret_subscription: Option<Subscription>,
     connection_secret_revision: u64,
     saver: Option<Saver<Value>>,
+    model_probe: Value,
+    model_probe_retry: bool,
+    model_probe_status: Option<String>,
+    model_probe_saver: Option<Saver<Value>>,
     loading: bool,
     busy: bool,
     error: Option<String>,
@@ -148,6 +152,8 @@ impl SettingsView {
             .as_ref()
             .map(|s| s.load("settings-drafts.json"))
             .unwrap_or_default();
+        let model_probe = store.as_ref().map(|s| s.load("model-probe.json")).unwrap_or_default();
+        let model_probe_saver = store.as_ref().map(|s| Saver::new(s.clone(), "model-probe.json"));
         let saver = store.map(|s| Saver::new(s, "settings-drafts.json"));
         let closing_view = cx.weak_entity();
         _window.on_window_should_close(cx, move |_, cx| {
@@ -173,9 +179,10 @@ impl SettingsView {
             }),
         ];
         let wechat_query = cx.new(|cx| InputState::new(_window, cx).placeholder(t("查找联系人或当前会话消息")));
-        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_capabilities:json!({}),wechat_media:None,wechat_saved:None,wechat_save_busy:false,wechat_save_cancel:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
+        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,model_probe,model_probe_retry:false,model_probe_status:None,model_probe_saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_capabilities:json!({}),wechat_media:None,wechat_saved:None,wechat_save_busy:false,wechat_save_cancel:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
         this.visible = _window.is_owner_visible();
         this.reload(cx);
+        if this.model_probe["requestId"].is_string() { this.test_model("standard", true, cx); }
         this
     }
     pub fn set_visible(&mut self, v: bool, cx: &mut Context<Self>) {
@@ -605,6 +612,76 @@ impl SettingsView {
             }
         }
     }
+    fn test_model(&mut self, role: &str, recovery_only: bool, cx: &mut Context<Self>) {
+        if self.busy { return; }
+        let recovering = self.model_probe["requestId"].is_string();
+        if !recovering {
+            if recovery_only { return; }
+            self.model_probe = json!({"requestId":opstwin_api::new_request_id(),"role":role,"version":self.models["version"]});
+        }
+        let resubmit = recovering && self.model_probe_retry && !recovery_only;
+        self.model_probe_retry = false;
+        self.model_probe_status = None;
+        let request = self.model_probe.clone();
+        let id = request["requestId"].as_str().unwrap_or("").to_string();
+        let saver = self.model_probe_saver.clone();
+        let c = self.client.clone();
+        self.busy = true;
+        self.error = None;
+        self.notice = None;
+        let task = cx.spawn(async move |this, cx| {
+            // Fresh requests must reach durable local storage before network I/O.
+            if !recovering {
+                let saved = if let Some(s) = saver { s.save_now(request.clone()).await }
+                    else { Err("Local storage is unavailable".into()) };
+                if let Err(e) = saved {
+                    _ = this.update(cx, |this, cx| {
+                        if this.model_probe["requestId"] != id { return; }
+                        this.busy = false;
+                        this.model_probe = Value::Null;
+                        this.error = Some(format!("Unable to persist test; nothing submitted: {e}"));
+                        cx.notify();
+                    });
+                    return;
+                }
+            }
+            let network_id = id.clone();
+            let result = io(async move {
+                if recovering && !resubmit { c.product_get(&format!("/api/settings/models/tests/{network_id}")).await }
+                else { c.product_post("/api/settings/models/test",request).await }
+            }).await;
+            _ = this.update(cx, |this, cx| {
+                if this.model_probe["requestId"] != id { return; }
+                this.busy = false;
+                match result {
+                    Ok(v) => {
+                        let status = v["status"].as_str().unwrap_or("unknown");
+                        match status {
+                            "succeeded" => { this.model_probe_status = Some(t("模型实际调用成功")); this.model_probe = Value::Null; }
+                            "failed" => { this.model_probe_status = Some(t("模型测试失败")); this.error = Some(t("模型测试失败")); this.model_probe = Value::Null; }
+                            "running" => { this.model_probe_status = Some(t("测试仍在运行，请回查原请求")); }
+                            _ => { this.model_probe_status = Some(t("测试结果未知，请回查原请求")); this.error = Some(t("测试结果未知，请回查原请求")); }
+                        }
+                    }
+                    Err(e) => {
+                        // GET 404 can race a delayed original POST. Preserve its ID;
+                        // the next explicit click may submit that exact payload/ID.
+                        if recovering && !resubmit && e.status() == Some(404) {
+                            this.model_probe_retry = true;
+                            this.model_probe_status = Some(t("未收到测试请求，可重试原测试"));
+                        } else if (!recovering || resubmit) && matches!(e.status(),Some(400 | 409)) {
+                            this.model_probe = Value::Null;
+                        }
+                        this.error = Some(e.user_text());
+                    }
+                }
+                if let Some(s) = &this.model_probe_saver { s.save(this.model_probe.clone()); }
+                cx.notify();
+            });
+        });
+        self._tasks.push(task);
+        cx.notify();
+    }
     fn mutate(&mut self, method: &str, path: String, body: Value, cx: &mut Context<Self>) {
         if self.busy {
             return;
@@ -614,7 +691,6 @@ impl SettingsView {
             self.invalidate_wechat_reader(true, true);
         }
         self.error = None;
-        let model_test = path == "/api/settings/models/test";
         let c = self.client.clone();
         let method = method.to_string();
         let t = cx.spawn(async move |this, cx| {
@@ -630,9 +706,7 @@ impl SettingsView {
                 this.busy = false;
                 match result {
                     Ok(v) => {
-                        this.notice = Some(if model_test {
-                            t("模型实际调用成功")
-                        } else if v["ok"].as_bool() == Some(false) {
+                        this.notice = Some(if v["ok"].as_bool() == Some(false) {
                             v["message"].as_str().unwrap_or("操作需要处理").to_string()
                         } else {
                             "操作已完成".into()
@@ -2875,6 +2949,7 @@ impl SettingsView {
                     });
             }
             "models" => {
+                if let Some(status) = &self.model_probe_status { out = out.child(note(status, cx)); }
                 if self.detail.is_some() { return self.render_model_provider(cx); }
                 if self.models["version"].is_null() {
                     out = out.child(
@@ -2969,20 +3044,15 @@ impl SettingsView {
                                 .small()
                                 .h(px(32.))
                                 .outline()
-                                .label(t("测试连接"))
+                                .label(if self.model_probe["requestId"].is_string() { if self.model_probe_retry { t("重试原测试") } else { t("回查测试") } } else { t("测试连接") })
                                 .disabled(self.busy)
                                 .on_click(cx.listener(move |this, _, _, cx| {
-                                    if this.draft()[&r] != this.models[&r] {
+                                    if !this.model_probe["requestId"].is_string() && this.draft()[&r] != this.models[&r] {
                                         this.error = Some(t("请先保存模型选择，再测试连接"));
                                         cx.notify();
                                         return;
                                     }
-                                    this.mutate(
-                                        "POST",
-                                        "/api/settings/models/test".into(),
-                                        json!({"role":r,"version":this.models["version"]}),
-                                        cx,
-                                    )
+                                    this.test_model(&r, false, cx)
                                 })),
                         );
                         roles = roles.child(c);
@@ -6314,6 +6384,12 @@ pub fn t(s: &str) -> String {
         "请选择已配置渠道并填写有效模型 ID" => "Choose a configured channel and enter a valid model ID",
         "请先保存模型选择，再测试连接" => "Save the model selection before testing its connection",
         "模型实际调用成功" => "Model invocation succeeded",
+        "模型测试失败" => "Model test failed",
+        "重试原测试" => "Retry original test",
+        "未收到测试请求，可重试原测试" => "Test request not received. Retry the original test.",
+        "回查测试" => "Check original test",
+        "测试仍在运行，请回查原请求" => "Test is running. Check the original request.",
+        "测试结果未知，请回查原请求" => "Test outcome is unknown. Check the original request.",
         "附件记录与请求不一致" => "The attachment record does not match the request",
         "读取范围完整" => "Complete Coverage",
         "读取这台 Mac 上的个人微信" => "Read Personal WeChat on This Mac",

@@ -203,3 +203,5 @@ v19候选将微信语音、视频、文件接入现有exact-message附件API：�
 恢复设置验收从仓库根执行 `python3 scripts/native-settings-resume-readback-e2e.py`，只读既有46214真实probe/模型角色/连接/公开Idea及本机blocked策略，原生18图与失败原件见[恢复旅程](../../docs/journeys/native-final-resume-20261004.md)。不会重新调用模型或重复写入，不计完整评分。
 
 Search→Inbox精确跳转的v35原错跳与v36修复回归保留在 `output/native-parity-20261003/search-keyboard-v35-20261004/`，新包/472源码输入绑定，仍不计全产品评分。
+
+- [模型测试原请求恢复](../../docs/journeys/native-model-probe-recovery.md)：持久 ID、事务 receipt、GET 回查、重启 unknown 与新包丢响应恢复；完整设置/产品评分仍未完成。
