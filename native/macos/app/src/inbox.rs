@@ -148,6 +148,8 @@ pub struct InboxView {
     list_gen: u64,
 
     selected: Option<String>,
+    /// An exact search/deep-link target can be outside the current list page.
+    external_selection: Option<String>,
     detail: Option<InboxItem>,
     detail_loading: bool,
     detail_error: Option<String>,
@@ -224,6 +226,7 @@ impl InboxView {
             ),
             cx.subscribe_in(&search, window, |this, _, ev: &InputEvent, window, cx| {
                 if matches!(ev, InputEvent::Change | InputEvent::PressEnter { .. }) {
+                    this.external_selection = None;
                     this._search_debounce = Some(cx.spawn_in(window, async move |this, cx| {
                         sleep(300).await;
                         _ = this.update_in(cx, |this, window, cx| this.reload(window, cx));
@@ -274,6 +277,7 @@ impl InboxView {
             load_error: None,
             list_gen: 0,
             selected: None,
+            external_selection: None,
             detail: None,
             detail_loading: false,
             detail_error: None,
@@ -434,7 +438,9 @@ impl InboxView {
                         }
                         this.next_offset = off;
                         this.load_error = None;
-                        if this.selected.as_ref().is_none_or(|id|!this.items.iter().any(|item|&item.id==id)) {
+                        let exact_target = this.selected.is_some()
+                            && this.external_selection == this.selected;
+                        if !exact_target && this.selected.as_ref().is_none_or(|id|!this.items.iter().any(|item|&item.id==id)) {
                             if let Some(id) = this.items.first().map(|item|item.id.clone()) {this.select(id,window,cx);} else {this.selected=None;this.detail=None;this.product=None;}
                         }
                         eprintln!(
@@ -458,6 +464,7 @@ impl InboxView {
 
     fn set_filter(&mut self, f: Filter, window: &mut Window, cx: &mut Context<Self>) {
         if self.busy.is_none() && self.filter != f {
+            self.external_selection = None;
             self.filter = f;
             self.items.clear();
             self.reload(window, cx);
@@ -475,6 +482,7 @@ impl InboxView {
             cx.notify();
             return;
         }
+        self.external_selection = None;
         self.draft_request = self
             .draft_requests
             .get(&id)
@@ -760,7 +768,19 @@ impl InboxView {
     }
 
     pub fn open_item(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.select(id, window, cx);
+        self.select(id.clone(), window, cx);
+        if self.selected.as_deref() != Some(id.as_str()) {
+            return;
+        }
+        // A pending-only reload started when the page became visible must not
+        // replace a completed search target with the first pending item. Use
+        // the unfiltered list, supersede its older generation, and retain the
+        // exact detail owner even when the target is beyond the first page.
+        self.filter = Filter::All;
+        self.search.update(cx, |s, cx| s.set_value("", window, cx));
+        self._search_debounce = None;
+        self.external_selection = Some(id);
+        self.reload(window, cx);
     }
 
     fn apply_candidate(&mut self, window: &mut Window, cx: &mut Context<Self>) {
