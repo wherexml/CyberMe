@@ -8,6 +8,9 @@ import { Transform, pipeline } from 'node:stream';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SCOPE = 'b8bd7f05-ab31-4efe-b0be-599ade946ee3';
+if (process.argv.slice(2).some(a => a !== '--qualified-v43')) throw Error('unknown_qualification');
+const currentQualification = process.argv.includes('--qualified-v43');
+const qualificationDir = currentQualification ? 'gui-v43-recovery' : 'gui-v25';
 const PORT = 46229;
 const UPSTREAM_PORT = 46228;
 const MAX_RAM = 64 * 1024 * 1024;
@@ -15,7 +18,7 @@ const MAX_METADATA = 64 * 1024;
 const TTL = 10 * 60 * 1000;
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 let publicReady, qualified;
-const entry = path.join(ROOT, '.local/acceptance/wechat-valid-media', SCOPE, 'public-api-entry.mjs');
+const entry = path.join(ROOT, '.local/acceptance/wechat-valid-media', SCOPE, currentQualification ? 'public-api-entry-v43.mjs' : 'public-api-entry.mjs');
 const sourceHashes = () => Object.fromEntries(Object.keys(qualified.sourceHashes).map(p => [p, sha(fs.readFileSync(path.join(ROOT, p)))]));
 let mode = 'pass', holdMs = 5000, sequence = 0, activeOwner = null, reserved = 0;
 const receipts = [], events = [];
@@ -41,15 +44,20 @@ function safeFile(file) {
 }
 async function startupGate() {
   publicReady = JSON.parse(fs.readFileSync(path.join(ROOT, 'output/native-parity-20261003/wechat-valid-media/ready.json')));
-  qualified = JSON.parse(fs.readFileSync(path.join(ROOT, 'output/native-parity-20261003/wechat-valid-media/gui-v25/ready.json')));
+  qualified = JSON.parse(fs.readFileSync(path.join(ROOT, 'output/native-parity-20261003/wechat-valid-media', qualificationDir, 'ready.json')));
+  if (currentQualification) {
+    const preflight = JSON.parse(fs.readFileSync(path.join(ROOT, 'output/native-parity-20261003/wechat-valid-media/gui-v43-recovery/http-preflight.json')));
+    if (qualified.status !== 'READY' || qualified.entry !== entry || preflight.status !== 'PASS' || preflight.scope !== SCOPE || preflight.records.length !== 3 || preflight.apiPID !== qualified.apiPID || preflight.entrySHA256 !== qualified.runtimeHashes.entrySHA256 || JSON.stringify(preflight.sourceHashes) !== JSON.stringify(qualified.sourceHashes)) throw Error('fresh_public_preflight_not_ready');
+  }
   if (publicReady.scope !== SCOPE || qualified.scope !== SCOPE || qualified.api !== 'http://127.0.0.1:46228') throw Error('public_scope_mismatch');
   safeFile(entry);
   if (sha(fs.readFileSync(entry)) !== qualified.runtimeHashes.entrySHA256) throw Error('public_entry_drift');
   if (JSON.stringify(sourceHashes()) !== JSON.stringify(qualified.sourceHashes)) throw Error('qualified_source_drift');
   const listeners = execFileSync('/usr/sbin/lsof', ['-nP', '-iTCP:46228', '-sTCP:LISTEN', '-Fp'], { encoding: 'utf8' }).split('\n').filter(s => /^p\d+$/.test(s)).map(s => Number(s.slice(1)));
   if (listeners.length !== 1) throw Error('public_listener_not_unique');
+  if (currentQualification && qualified.apiPID !== listeners[0]) throw Error('qualified_pid_changed');
   const args = execFileSync('/bin/ps', ['-p', String(listeners[0]), '-o', 'args='], { encoding: 'utf8' }).trim();
-  if (!args.endsWith(`node --import tsx .local/acceptance/wechat-valid-media/${SCOPE}/public-api-entry.mjs`) && !args.endsWith(`node --import tsx ${entry}`)) throw Error('public_listener_wrong_scope');
+  if (!( !currentQualification && args.endsWith(`node --import tsx .local/acceptance/wechat-valid-media/${SCOPE}/public-api-entry.mjs`)) && !args.endsWith(`node --import tsx ${entry}`)) throw Error('public_listener_wrong_scope');
   const response = await fetch('http://127.0.0.1:46228/api/health', { signal: AbortSignal.timeout(5000) });
   const body = Buffer.from(await response.arrayBuffer());
   if (body.length > MAX_METADATA) throw Error('health_oversized');
