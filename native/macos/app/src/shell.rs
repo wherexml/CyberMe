@@ -569,6 +569,7 @@ impl Render for Shell {
                 div()
                     .absolute()
                     .inset_0()
+                    .occlude()
                     .bg(rgb(0x172235).opacity(0.16))
                     .flex()
                     // Center in the content below the 24px traffic-light area,
@@ -587,6 +588,7 @@ impl Render for Shell {
                             .max_w(relative(0.92))
                             .max_h(relative(0.76))
                             .rounded(px(22.))
+                            .overflow_hidden()
                             .bg(theme.background)
                             .border_1()
                             .border_color(theme.border)

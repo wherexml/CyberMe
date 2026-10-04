@@ -31,3 +31,6 @@ objc2 = "=0.6.4"
 objc2-core-foundation = "=0.3.2"
 objc2-foundation = { version = "=0.3.2", features = ["NSArray", "NSGeometry", "NSString", "NSValue"] }
 raw-window-handle = "=0.6.2"
+
+# Existing locked version; Ideas preview cuts only extended grapheme clusters.
+unicode-segmentation = "=1.13.3"

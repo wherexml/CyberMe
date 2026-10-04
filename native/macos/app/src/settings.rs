@@ -155,8 +155,8 @@ impl SettingsView {
             true
         });
         let subs = vec![
-            cx.observe_window_visibility(_window, |this, visibility, _, cx| {
-                this.set_visible(visibility.is_visible(), cx);
+            cx.observe_window_owner_visibility(_window, |this, visible, _, cx| {
+                this.set_visible(visible, cx);
                 cx.notify();
             }),
             cx.subscribe(&hub, |this: &mut Self, _, ev: &SyncEvent, cx| {
@@ -174,11 +174,14 @@ impl SettingsView {
         ];
         let wechat_query = cx.new(|cx| InputState::new(_window, cx).placeholder(t("查找联系人或当前会话消息")));
         let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_capabilities:json!({}),wechat_media:None,wechat_saved:None,wechat_save_busy:false,wechat_save_cancel:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
-        this.visible = _window.is_visible();
+        this.visible = _window.is_owner_visible();
         this.reload(cx);
         this
     }
     pub fn set_visible(&mut self, v: bool, cx: &mut Context<Self>) {
+        if std::env::var("OPSTWIN_QA_OWNER_TRACE").as_deref() == Ok("1") {
+            eprintln!("ops_settings_owner visible={v} changed={} generation={}", self.visible != v, self.wechat_generation);
+        }
         self.visible = v;
         if !v {
             self.drop_connection_secret();
@@ -4032,29 +4035,50 @@ impl SettingsView {
                                     .enumerate()
                                     .map(|(index, path)| {
                                         let path = path.as_str().unwrap_or("").to_string();
-                                        self.row_raw(
-                                            &path.clone(),
-                                            Button::new(ElementId::Name(
-                                                format!("blocked-{index}").into(),
-                                            ))
-                                            .small()
-                                            .h(px(32.))
-                                            .ghost()
-                                            .label(t("移除"))
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                let mut list = this.local["filesystem"]["blocked"]
-                                                    .as_array()
-                                                    .cloned()
-                                                    .unwrap_or_default();
-                                                list.retain(|v| v.as_str() != Some(path.as_str()));
-                                                this.save_local(
-                                                    "filesystem.blocked",
-                                                    json!(list),
-                                                    cx,
-                                                );
-                                            })),
-                                            cx,
-                                        )
+                                        h_flex()
+                                            .w_full()
+                                            .min_w_0()
+                                            .min_h(px(52.))
+                                            .py_3()
+                                            .gap_3()
+                                            .border_b_1()
+                                            .border_color(cx.theme().border)
+                                            .child(
+                                                div().flex_1().min_w_0().child(
+                                                    div()
+                                                        .w_full()
+                                                        .min_w_0()
+                                                        .whitespace_normal()
+                                                        .text_size(px(13.))
+                                                        .child(path.clone()),
+                                                ),
+                                            )
+                                            .child(
+                                                div().flex_shrink_0().child(
+                                                    Button::new(ElementId::Name(
+                                                        format!("blocked-{index}").into(),
+                                                    ))
+                                                    .small()
+                                                    .h(px(32.))
+                                                    .ghost()
+                                                    .label(t("移除"))
+                                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                                        let mut list =
+                                                            this.local["filesystem"]["blocked"]
+                                                                .as_array()
+                                                                .cloned()
+                                                                .unwrap_or_default();
+                                                        list.retain(|v| {
+                                                            v.as_str() != Some(path.as_str())
+                                                        });
+                                                        this.save_local(
+                                                            "filesystem.blocked",
+                                                            json!(list),
+                                                            cx,
+                                                        );
+                                                    })),
+                                                ),
+                                            )
                                     }),
                             )
                             .child(

@@ -72,6 +72,7 @@ pub struct SearchView {
     generation: u64,
     recent: Vec<String>,
     detail: Option<Record>,
+    detail_scroll: ScrollHandle,
     saver: Option<Saver<Value>>,
     _subscriptions: Vec<Subscription>,
     _tasks: Vec<Task<()>>,
@@ -149,6 +150,7 @@ impl SearchView {
             generation: 0,
             recent,
             detail: None,
+            detail_scroll: ScrollHandle::new(),
             saver,
             _subscriptions: subs,
             _tasks: vec![],
@@ -427,6 +429,7 @@ impl SearchView {
             });
         } else {
             self.detail = Some(r.clone());
+            self.detail_scroll.set_offset(point(px(0.), px(0.)));
             self.detail_generation += 1;
             let generation = self.detail_generation;
             self.detail_loading = true;
@@ -491,6 +494,9 @@ impl Render for SearchView {
         let theme = cx.theme().clone();
         if let Some(record) = self.detail.clone() {
             let mut body = v_flex()
+                .w_full()
+                .min_w_0()
+                .min_h_0()
                 .gap_4()
                 .p_5()
                 .child(
@@ -505,6 +511,9 @@ impl Render for SearchView {
                 )
                 .child(
                     div()
+                        .w_full()
+                        .min_w_0()
+                        .whitespace_normal()
                         .text_size(px(20.))
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(if record.fallback_title {
@@ -513,9 +522,27 @@ impl Render for SearchView {
                             record.title.clone()
                         }),
                 )
-                .child(div().max_h(px(450.)).overflow_y_scrollbar().child(
-                    crate::util::markdown("search-record", record.text.clone()).selectable(true),
-                ));
+                .child(
+                    div()
+                        .id("search-detail-viewport")
+                        .w_full()
+                        .min_w_0()
+                        .min_h_0()
+                        .max_h(px(
+                            (f32::from(_window.bounds().size.height) * 0.8 - 140.).clamp(80., 450.)
+                        ))
+                        .overflow_y_scroll()
+                        .track_scroll(&self.detail_scroll)
+                        .restrict_scroll_to_axis()
+                        .relative()
+                        .vertical_scrollbar(&self.detail_scroll)
+                        .child(
+                            div().w_full().min_w_0().child(
+                                crate::util::markdown("search-record", record.text.clone())
+                                    .selectable(true),
+                            ),
+                        ),
+                );
             if self.detail_loading {
                 body = body.child(
                     div()
@@ -554,13 +581,22 @@ impl Render for SearchView {
                 );
             }
             return v_flex()
+                .key_context("OpsTwinSearch")
+                .track_focus(&self.query.focus_handle(cx))
+                .on_key_down(cx.listener(|_, event: &KeyDownEvent, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        cx.emit(SearchEvent::Close);
+                        cx.stop_propagation();
+                    }
+                }))
                 .w_full()
                 .max_w(px(640.))
-                .bg(theme.background)
-                .rounded(px(14.))
-                .border_1()
-                .border_color(theme.border)
-                .shadow_lg()
+                .max_h(px(f32::from(_window.bounds().size.height) * 0.76))
+                .overflow_hidden()
+                .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                // The shell owns the one painted surface and backdrop hole.
+                // A second rounded background/shadow here left a white face
+                // below the detail in actual v31 captures.
                 .child(body)
                 .into_any_element();
         }
@@ -621,9 +657,13 @@ impl Render for SearchView {
             let preview = search_plain(&r.text);
             // Bound the plain-text excerpt before shaping: Chinese glyphs must
             // not be cut in half when GPUI clips a nowrap flex child.
-            let budget = (((f32::from(_window.bounds().size.width) * 0.92).min(640.) - 170.).max(110.) / 11.) as usize;
+            let budget = (((f32::from(_window.bounds().size.width) * 0.92).min(640.) - 170.)
+                .max(110.)
+                / 11.) as usize;
             let mut excerpt: String = preview.chars().take(budget).collect();
-            if preview.chars().count() > budget { excerpt.push('…'); }
+            if preview.chars().count() > budget {
+                excerpt.push('…');
+            }
             let preview = excerpt;
             list = list.child(
                 h_flex()
@@ -712,8 +752,6 @@ impl Render for SearchView {
             .key_context("OpsTwinSearch")
             .w_full()
             .max_w(px(640.))
-            .bg(theme.background)
-            .rounded(px(22.))
             .px(px(14.))
             .pt(px(12.))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {

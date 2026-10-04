@@ -485,6 +485,13 @@ unsafe fn build_window_class(name: &'static str, superclass: &Class) -> *const C
         );
 
         decl.add_method(sel!(close), close_window as extern "C" fn(&Object, Sel));
+        decl.add_method(
+            sel!(orderOut:),
+            order_out_window as extern "C" fn(&Object, Sel, id),
+        );
+        for selector in [sel!(windowDidMiniaturize:), sel!(windowDidDeminiaturize:), sel!(ownerVisibilityDidChange:)] {
+            decl.add_method(selector, owner_visibility_did_change as extern "C" fn(&Object, Sel, id));
+        }
 
         decl.add_method(
             sel!(draggingEntered:),
@@ -673,6 +680,8 @@ struct MacWindowState {
     // `None` until a callback is registered, so notifications during
     // construction are not queued for delivery to a callback registered later.
     last_visibility: Option<WindowVisibility>,
+    owner_visibility_callback: Option<Box<dyn FnMut(bool)>>,
+    last_owner_visibility: Option<bool>,
     resize_callback: Option<Box<dyn FnMut(Size<Pixels>, f32)>>,
     moved_callback: Option<Box<dyn FnMut()>>,
     should_close_callback: Option<Box<dyn FnMut() -> bool>>,
@@ -1110,6 +1119,8 @@ impl MacWindow {
                 activate_callback: None,
                 visibility_callback: None,
                 last_visibility: None,
+                owner_visibility_callback: None,
+                last_owner_visibility: None,
                 resize_callback: None,
                 moved_callback: None,
                 should_close_callback: None,
@@ -1153,6 +1164,13 @@ impl MacWindow {
                 Arc::into_raw(window.0.clone()) as *const c_void,
             );
             native_window.setDelegate_(native_window);
+            let center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
+            for name in ["NSApplicationDidHideNotification", "NSApplicationDidUnhideNotification"] {
+                let _: () = msg_send![center, addObserver: native_window
+                    selector: sel!(ownerVisibilityDidChange:)
+                    name: ns_string(name)
+                    object: NSApplication::sharedApplication(nil)];
+            }
             (*native_view).set_ivar(
                 WINDOW_STATE_IVAR,
                 Arc::into_raw(window.0.clone()) as *const c_void,
@@ -1395,6 +1413,9 @@ impl Drop for MacWindow {
         // A delivery task queued by `report_visibility` may still run after the
         // GPUI window is gone; without a callback it has nothing to notify.
         this.visibility_callback.take();
+        this.owner_visibility_callback.take();
+        this.last_owner_visibility = None;
+        unsafe { remove_owner_visibility_observers(window); }
         this.foreground_executor
             .spawn(async move {
                 unsafe {
@@ -1840,6 +1861,10 @@ impl PlatformWindow for MacWindow {
         visibility(&self.0.lock())
     }
 
+    fn is_owner_visible(&self) -> bool {
+        owner_visibility(&self.0.lock())
+    }
+
     // is_hovered is unused on macOS. See Window::is_window_hovered.
     fn is_hovered(&self) -> bool {
         false
@@ -2042,6 +2067,12 @@ impl PlatformWindow for MacWindow {
         let mut state = self.0.lock();
         state.last_visibility = Some(visibility(&state));
         state.visibility_callback = Some(callback);
+    }
+
+    fn on_owner_visibility_change(&self, callback: Box<dyn FnMut(bool)>) {
+        let mut state = self.0.lock();
+        state.last_owner_visibility = Some(owner_visibility(&state));
+        state.owner_visibility_callback = Some(callback);
     }
 
     fn on_hover_status_change(&self, _: Box<dyn FnMut(bool)>) {}
@@ -2976,6 +3007,83 @@ extern "C" fn handle_view_event(this: &Object, _: Sel, native_event: id) {
     }
 }
 
+// The operation owner may remain shown while a save panel covers its pixels.
+// Do not substitute this predicate for renderer/frame occlusion.
+fn owner_visibility(state: &MacWindowState) -> bool {
+    if state.closed.load(Ordering::Acquire) { return false; }
+    unsafe {
+        let shown: BOOL = msg_send![state.native_window, isVisible];
+        let minimized: BOOL = msg_send![state.native_window, isMiniaturized];
+        let app = NSApplication::sharedApplication(nil);
+        let hidden: BOOL = msg_send![app, isHidden];
+        shown == YES && minimized == NO && hidden == NO
+    }
+}
+
+fn report_owner_visibility(window_state: &Arc<Mutex<MacWindowState>>) {
+    let state = window_state.lock();
+    if state.last_owner_visibility.is_none() { return; }
+    // Preserve actual hidden events across a rapid Hide -> Unhide. Only true
+    // events may be collapsed by rechecking the current native owner below.
+    let reported_visible = owner_visibility(&state);
+    let executor = state.foreground_executor.clone();
+    let state = Arc::downgrade(window_state);
+    executor.spawn(async move {
+        let Some(state) = state.upgrade() else { return; };
+        let mut lock = state.lock();
+        // Drop/close removes the callback before destroying the native window.
+        if lock.owner_visibility_callback.is_none() { return; }
+        let visible = reported_visible && owner_visibility(&lock);
+        if std::env::var("OPSTWIN_QA_OWNER_TRACE").as_deref() == Ok("1") {
+            let frame_visible = !lock.closed.load(Ordering::Acquire) && visibility(&lock).is_visible();
+            eprintln!("ops_owner_visibility check visible={visible} frame_visible={frame_visible} changed={}", lock.last_owner_visibility != Some(visible));
+        }
+        // False may occur before the initial map/show notification was
+        // delivered; always forward it. Window-level observers deduplicate.
+        if visible && lock.last_owner_visibility == Some(visible) { return; }
+        lock.last_owner_visibility = Some(visible);
+        if std::env::var("OPSTWIN_QA_OWNER_TRACE").as_deref() == Ok("1") {
+            eprintln!("ops_owner_visibility transition visible={visible}");
+        }
+        if let Some(mut callback) = lock.owner_visibility_callback.take() {
+            drop(lock);
+            callback(visible);
+            let mut lock = state.lock();
+            if !lock.closed.load(Ordering::Acquire) && lock.last_owner_visibility.is_some() {
+                lock.owner_visibility_callback = Some(callback);
+            }
+        }
+    }).detach();
+}
+
+extern "C" fn owner_visibility_did_change(this: &Object, _: Sel, _: id) {
+    let state = unsafe { get_window_state(this) };
+    report_owner_visibility(&state);
+}
+
+extern "C" fn order_out_window(this: &Object, _: Sel, sender: id) {
+    unsafe {
+        // This method is registered on both GPUIWindow and GPUIPanel. Preserve
+        // NSPanel's own behavior; a dynamic AccessKit subclass is not the base.
+        let is_panel: BOOL = msg_send![this, isKindOfClass: class!(NSPanel)];
+        let parent = if is_panel == YES { class!(NSPanel) } else { class!(NSWindow) };
+        let _: () = msg_send![super(this, parent), orderOut: sender];
+        // AppKit may call orderOut during construction before the ivar is set.
+        let raw: *mut c_void = *this.get_ivar(WINDOW_STATE_IVAR);
+        if !raw.is_null() { report_owner_visibility(&get_window_state(this)); }
+    }
+}
+
+unsafe fn remove_owner_visibility_observers(window: id) {
+    unsafe {
+        let center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
+        for name in ["NSApplicationDidHideNotification", "NSApplicationDidUnhideNotification"] {
+            let _: () = msg_send![center, removeObserver: window
+                name: ns_string(name) object: NSApplication::sharedApplication(nil)];
+        }
+    }
+}
+
 fn visibility(state: &MacWindowState) -> WindowVisibility {
     let is_visible = unsafe {
         state
@@ -3041,6 +3149,9 @@ extern "C" fn window_did_change_occlusion_state(this: &Object, _: Sel, _: id) {
     // The only visibility source: AppKit posts this for covering, minimizing,
     // hiding, Space switches, and display sleep alike.
     report_visibility(&window_state);
+    // Recheck shown-owner state even when the frame visibility value did not
+    // change (e.g. app Hide while a file panel already covers this window).
+    report_owner_visibility(&window_state);
 }
 
 extern "C" fn window_did_resize(this: &Object, _: Sel, _: id) {
@@ -3264,6 +3375,8 @@ extern "C" fn close_window(this: &Object, _: Sel) {
                 lock.simple_fullscreen_state.take(),
             )
         };
+
+        remove_owner_visibility_observers(this as *const Object as id);
 
         if simple_fullscreen_state.is_some() {
             pop_simple_fullscreen_presentation_options();

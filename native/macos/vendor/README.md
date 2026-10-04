@@ -1,5 +1,9 @@
 # GPUI macOS 帧唤醒修复
 
+## v31 shown-window owner（候选）
+
+`gpui-pre`0.3.7的当前锁定active源码完整快照置于本项目`vendor/gpui-pre`，保留Apache许可、原有布局/文字行为；其platform/window/context新增shown-owner API。Mac后端用`isVisible && !isMiniaturized && !NSApp.isHidden && !closed`，独立于像素遮挡信号，Settings改用此订阅。原renderer occlusion/displaylink/demandwake、Chat和Inbox不改。mini/demini、apphide/unhide通知与orderOut触发主线程owner重查，销毁清理观察者；其他平台保留默认visibility谓词，不新增其事件实现。条件`OPSTWIN_QA_OWNER_TRACE=1`仅boolean与generation，默认无诊断输出。原317文件与新增core来源/hash逐项归档；Cargo.lock仅0.3.7同版source转换，registry不写。实际NSSavePanelCancel/RAM及Hide安全边界待GUI复验，详见`docs/spec/native-product-pages.md`。
+
 `gpui-pre-macos` 来自 crates.io `0.3.7`（GPUI snapshot zed `1a28cff4b409169bac058bca40dfbfeb7621d19b`），原 `.crate` SHA-256 为 `5a43af845b260b09393e923c4f1e1a67a10fcfc847b4815192bbfd02ed9fe725`。保留归档中的 Apache-2.0 许可；未修改本机 cargo registry。工作区通过 `[patch.crates-io]` 显式引用本目录，使其他机器能够复现。
 
 原生独立截图验收发现：异步数据与 AX 状态已更新，画面仍停首帧；只有系统 zoom/restore 触发重绘。Mac backend 没有实现 `PlatformWindow::frame_waker` / `schedule_frame`，只依靠 CoreVideo tick，tick 未到达时应用变化没有唤醒途径。

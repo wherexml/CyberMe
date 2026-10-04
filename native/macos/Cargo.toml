@@ -26,5 +26,6 @@ debug = false
 # macOS must wake a dirty window even when CoreVideo does not emit a tick.
 # Source/version and minimal demand-driven patch are documented in vendor/README.md.
 [patch.crates-io]
+gpui-pre = { path = "vendor/gpui-pre" }
 gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
 gpui-base = { path = "vendor/gpui-base" }
