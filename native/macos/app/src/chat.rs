@@ -201,6 +201,7 @@ pub struct ChatView {
     switching: bool,
     placeholder_locale: String,
     copied_messages: HashMap<String, std::time::Instant>,
+    expanded_messages: HashSet<String>,
     keep_panel_visible: bool,
     show_archived: bool,
     last_deleted: Option<String>,
@@ -344,6 +345,7 @@ impl ChatView {
             switching: false,
             placeholder_locale: t("输入消息…"),
             copied_messages: HashMap::new(),
+            expanded_messages: HashSet::new(),
             keep_panel_visible: saved.keep_panel_visible,
             show_archived: false,
             last_deleted: None,
@@ -2857,13 +2859,26 @@ impl ChatView {
                 table
             })
             .with_table_cell(StyleRefinement::default().px(px(10.)).py(px(6.)));
+        let preview = crate::chat_presentation::collapsed_preview(content.as_ref(), is_user);
+        let expanded = view.upgrade().is_some_and(|v| v.read(cx).expanded_messages.contains(id.as_ref()));
+        let displayed: SharedString = if expanded { content.clone() } else { preview.clone().map(Into::into).unwrap_or_else(|| content.clone()) };
         let body =
-            crate::util::markdown(ElementId::Name(format!("md-{id}").into()), content.clone())
+            crate::util::markdown(ElementId::Name(format!("md-{id}").into()), if is_user { displayed.to_string() } else { crate::chat_presentation::markdown_sections(displayed.as_ref()) })
                 .style(markdown_style)
                 .text_size(crate::settings::body_px(15., cx))
                 .font_weight(FontWeight::NORMAL)
                 .selectable(true);
         let mut inner = v_flex().gap_2().child(body);
+        if preview.is_some() {
+            let toggle_view = view.clone();
+            let toggle_id = id.to_string();
+            inner = inner.child(Button::new(ElementId::Name(format!("chat-disclosure-{id}").into()))
+                .ghost().small().label(t(if expanded { "收起资料" } else { "展开完整内容" }))
+                .on_click(move |_, _, cx| { _ = toggle_view.update(cx, |this, cx| {
+                    if !this.expanded_messages.remove(&toggle_id) { this.expanded_messages.insert(toggle_id.clone()); }
+                    cx.notify();
+                }); }));
+        }
         if !attachments.is_empty() {
             let mut chips = h_flex().flex_wrap().gap_1p5();
             for aid in attachments {

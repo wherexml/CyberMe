@@ -76,3 +76,5 @@ HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 
 默认空草稿队列由 `default-drafts.ts` 启动（遵循OPSTWIN_NO_BACKGROUND），按事项持久准备状态/串行只读模型调用，已有人工草稿不覆盖、失败/重启未知不自动重跑；协议和复验见 [Inbox自动保存旅程](../docs/journeys/native-inbox-autosave.md)。
 
 - 聊天灵感结构化结果只作内部数据：新回复保存可读正文，历史assistant按精确ideas结构只读投影；执行记录呈现确认状态/操作摘要，业务taskOutcome优先，不展示原始JSON。Ideas移除审核占位；见 `docs/journeys/native-chat-readable-results.md`。
+
+- 灵感资料默认折叠且可全文展开，旧长回答显示带时效声明的建议摘录；新生成最多三项，Markdown结论/行动/缺口并优先核最新状态，不把未查到后续判为逾期。折叠不改原请求或授权。见 `docs/journeys/native-idea-decision-reading.md`。
