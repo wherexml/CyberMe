@@ -374,6 +374,8 @@ impl Shell {
             is_minimizable: false,
             titlebar: Some(TitlebarOptions {
                 title: Some(crate::settings::t("设置").into()),
+                appears_transparent: true,
+                traffic_light_position: Some(point(px(12.), px(10.))),
                 ..Default::default()
             }),
             ..Default::default()

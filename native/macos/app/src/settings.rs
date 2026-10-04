@@ -5223,34 +5223,24 @@ impl Render for SettingsView {
         self.setup_connection_secret(window, cx);
         let theme = cx.theme().clone();
         let mut nav = v_flex()
-            .w(px(190.))
+            .w(px(225.))
             .flex_shrink_0()
             .h_full()
-            .px(px(10.))
-            .py(px(14.))
-            .gap(px(5.))
-            .bg(rgb(if theme.is_dark() { 0x1b1e24 } else { 0xf4f5f7 }))
+            .px(px(16.))
+            .pt(px(40.))
+            .pb(px(14.))
+            .gap(px(4.))
+            .bg(theme.sidebar)
             .border_r_1()
             .border_color(theme.border)
             .overflow_y_scrollbar();
-        for (index, (key, label, group)) in SECTIONS.into_iter().enumerate() {
-            if !group.is_empty() {
-                nav = nav.child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(theme.muted_foreground)
-                        .px(px(10.))
-                        .pt(px(if index == 0 { 0. } else { 14. }))
-                        .pb_1()
-                        .child(t(group)),
-                );
-            }
+        for (key, label, _) in SECTIONS {
             nav = nav.child(
                 Button::new(ElementId::Name(format!("setting-{key}").into()))
                     .ghost()
                     .w_full()
-                    .h(px(32.))
-                    .px(px(11.))
+                    .h(px(34.))
+                    .px(px(12.))
                     .accessibility_label(t(label))
                     .child(
                         h_flex()
@@ -5258,16 +5248,16 @@ impl Render for SettingsView {
                             .gap(px(10.))
                             .items_center()
                             .child(
-                                img(setting_art(key, theme.is_dark(), self.section == key))
+                                img(setting_art(key, theme.is_dark(), false))
                                     .size(px(18.))
                                     .flex_shrink_0(),
                             )
-                            .child(div().flex_1().text_size(px(13.)).child(t(label))),
+                            .child(div().flex_1().text_size(px(14.)).font_weight(FontWeight::NORMAL).child(t(label))),
                     )
                     .selected(self.section == key)
                     .disabled(self.section=="models" && self.model_add)
                     .when(self.section == key, |button| {
-                        button.bg(theme.accent).text_color(theme.primary)
+                        button.bg(theme.sidebar_accent).text_color(theme.foreground)
                     })
                     .on_click(cx.listener(move |this, _, _, cx| this.section(key, cx))),
             );
@@ -5282,12 +5272,13 @@ impl Render for SettingsView {
             .min_w_0()
             .h_full()
             .overflow_y_scrollbar()
-            .px(px(32.))
-            .py(px(22.))
+            .px(px(24.))
+            .pt(px(18.))
+            .pb(px(24.))
             .gap_4()
             .child(
                 div()
-                    .text_size(px(21.))
+                    .text_size(px(20.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .mb_2()
                     .child(t(title)),
@@ -5326,8 +5317,8 @@ impl Render for SettingsView {
         } else {
             content = content.child(self.render_body(cx));
         }
-        div().relative().size_full()
-            .child(h_flex().size_full().bg(theme.background).child(nav).child(content))
+        div().relative().size_full().text_size(px(14.))
+            .child(h_flex().size_full().bg(theme.sidebar).child(nav).child(content))
             .when(self.section=="models" && self.detail.is_some() && self.model_add, |root| {
                 root.child(div().absolute().inset_0().size_full().bg(rgba(0x00000066)).flex().items_center().justify_center()
                     .on_mouse_down(MouseButton::Left,|_,_,cx|cx.stop_propagation())
