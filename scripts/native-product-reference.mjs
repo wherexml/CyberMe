@@ -79,8 +79,10 @@ async function designInputs(){
 }
 const storageScript='<script>const qaLocal=new Map(),qaSession=new Map();for(const [name,map] of [["localStorage",qaLocal],["sessionStorage",qaSession]])Object.defineProperty(window,name,{value:{getItem:key=>map.has(String(key))?map.get(String(key)):null,setItem:(key,value)=>map.set(String(key),String(value)),removeItem:key=>map.delete(String(key)),clear:()=>map.clear(),key:index=>[...map.keys()][index]??null,get length(){return map.size}}});</script>';
 function htmlCopy(source){
- return source.replace(/(?:href|src)="([^"\n]+)"/g,(m,url)=>{
-  if(url==='../../.local/design/macos-study-data.js')return 'src="visual-data.js"';
+ const base='<base href="'+STATIC_ORIGIN+'/design/">';
+ const withBase=source.includes('<head>')?source.replace('<head>','<head>'+base):source.replace(/<html\b[^>]*>/,m=>m+base);
+ return withBase.replace(/(?:href|src)="([^"\n]+)"/g,(m,url)=>{
+  if(url==='../../.local/design/macos-study-data.js')return 'src="'+STATIC_ORIGIN+'/visual-data.js"';
   if(url==='../../.local/design/chat-capability.js')return 'src="data:text/javascript,void%200"';
   if(url.startsWith('#')||/^(https?:|data:)/.test(url))return m;
   return m.replace(url,STATIC_ORIGIN+'/design/'+url.split('/').map(encodeURIComponent).join('/'));
