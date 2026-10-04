@@ -4042,7 +4042,10 @@ impl ChatView {
                         canvas(
                             move |bounds, _, _| {
                                 if let Ok(mut height) = measured_height.lock() {
-                                    *height = f32::from(bounds.size.height);
+                                    // This absolute canvas fills the frame inside its
+                                    // 1pt border. min_h sizes the outer border box, so
+                                    // retain both borders when replacing the textarea.
+                                    *height = f32::from(bounds.size.height) + 2.;
                                 }
                             },
                             |_, _, _, _| {},
