@@ -243,3 +243,5 @@ v44最小断开诊断修复已构建/签名并实际回归；v43自然TTL与v43�
 - v46原生Chat来源规则屏蔽/恢复与引用否定、Inbox未知例外的真实模型/GUI绑定见[来源授权旅程](../../docs/journeys/native-agent-source-rules.md)；不把模型未调用当dispatcher拒绝，不升级完整85评分。
 
 2026-10-04 v48：新建201后输入原v47重复Save Decode FAIL保留；同原ID只读GET迁稿→明确PATCH、正常重启、末尾换行及fresh visible/切General迟到回包保护实际通过。冻结99项回查只核原E2E，不是完整设置/85评分；历史Restore仍待验。见 docs/journeys/native-memory-recovery.md。
+
+Inbox 后台生成与图标/提示回归见 [验收旅程](../../docs/journeys/native-inbox-background.md)：生成状态按事项隔离，公开fixture实际GUI不代表真实模型或完整产品评分。

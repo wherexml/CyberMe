@@ -164,6 +164,8 @@ pub struct InboxView {
     conflict: Option<InboxItem>,
 
     busy: Option<Busy>,
+    generating: BTreeMap<String, String>,
+    generation_errors: BTreeMap<String, String>,
     progress: Option<String>,
     action_error: Option<String>,
     notice: Option<String>,
@@ -288,6 +290,8 @@ impl InboxView {
             server_changed: false,
             conflict: None,
             busy: None,
+            generating: BTreeMap::new(),
+            generation_errors: BTreeMap::new(),
             progress: None,
             action_error: None,
             notice: None,
@@ -463,7 +467,7 @@ impl InboxView {
     }
 
     fn set_filter(&mut self, f: Filter, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy.is_none() && self.filter != f {
+        if !self.navigation_blocked() && self.filter != f {
             self.external_selection = None;
             self.filter = f;
             self.items.clear();
@@ -473,12 +477,16 @@ impl InboxView {
 
     // ----------------------------------------------------------------- detail
 
+    fn navigation_blocked(&self) -> bool {
+        self.busy.is_some() && self.busy != Some(Busy::Generate)
+    }
+
     fn select(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         if self.selected.as_deref() == Some(id.as_str()) {
             return;
         }
-        if self.busy.is_some() {
-            self.action_error = Some(crate::settings::t("请等待当前操作完成"));
+        if self.navigation_blocked() {
+            self.notice = Some(crate::settings::t("请等待当前操作完成"));
             cx.notify();
             return;
         }
@@ -488,6 +496,7 @@ impl InboxView {
             .get(&id)
             .cloned()
             .map(|rid| (id.clone(), rid));
+        self.busy = self.generating.contains_key(&id).then_some(Busy::Generate);
         self.selected = Some(id);
         self.source_scroll.set_offset(point(px(0.), px(0.)));
         self.product = None;
@@ -508,7 +517,16 @@ impl InboxView {
         self.server_changed = false;
         self.action_error = None;
         self.notice = None;
-        self.progress = None;
+        self.progress = self
+            .selected
+            .as_ref()
+            .and_then(|id| self.generating.get(id))
+            .cloned();
+        self.action_error = self
+            .selected
+            .as_ref()
+            .and_then(|id| self.generation_errors.get(id))
+            .cloned();
         self.send_needs_new_key = false;
         self.sensitive_ok = false;
         self.editor.update(cx, |s, cx| s.set_value("", window, cx));
@@ -1130,45 +1148,60 @@ impl InboxView {
         self.progress = Some(crate::settings::t(
             "正在生成草稿…（模型运行可能需要几分钟）",
         ));
+        self.generating
+            .insert(item.id.clone(), self.progress.clone().unwrap_or_default());
+        self.generation_errors.remove(&item.id);
         cx.notify();
         let client = self.client.clone();
         let id = item.id.clone();
         eprintln!("[opstwin] inbox {id} generate draft request={request_id}");
         let durable = self.request_saver.save_now(self.draft_requests.clone());
-        let task = cx.spawn_in(window, async move |this, cx| {
-            if let Err(e) = io(durable).await {
-                _ = this.update_in(cx, |this, _, cx| {
-                    this.busy = None;
-                    this.progress = None;
-                    this.action_error = Some(
-                        crate::settings::t("无法保存生成请求，未运行：{error}")
-                            .replace("{error}", &e),
-                    );
-                    cx.notify();
-                });
-                return;
-            }
-            let mut waits = 0u32;
-            loop {
-                let (c, i, r) = (client.clone(), id.clone(), request_id.clone());
-                let result = io(async move { c.inbox_generate_draft(&i, &r).await }).await;
-                match result {
-                    Err(e) if e.is_in_progress() && waits < 400 => {
-                        waits += 1;
-                        _ = this.update_in(cx, |this, _, cx| {
-                            this.progress = Some(
-                                crate::settings::t("草稿仍在生成，等待原运行结束…（{seconds}s）")
-                                    .replace("{seconds}", &(waits * 3).to_string()),
-                            );
-                            cx.notify();
-                        });
-                        sleep(3000).await;
-                        continue;
-                    }
-                    other => {
-                        _ = this.update_in(cx, |this, window, cx| {
+        let task =
+            cx.spawn_in(window, async move |this, cx| {
+                if let Err(e) = io(durable).await {
+                    _ = this.update_in(cx, |this, _, cx| {
+                        this.generating.remove(&id);
+                        let message = crate::settings::t("无法保存生成请求，未运行：{error}")
+                            .replace("{error}", &e);
+                        this.generation_errors.insert(id.clone(), message.clone());
+                        if this.selected.as_deref() == Some(id.as_str()) {
                             this.busy = None;
                             this.progress = None;
+                            this.action_error = Some(message);
+                        }
+                        cx.notify();
+                    });
+                    return;
+                }
+                let mut waits = 0u32;
+                loop {
+                    let (c, i, r) = (client.clone(), id.clone(), request_id.clone());
+                    let result = io(async move { c.inbox_generate_draft(&i, &r).await }).await;
+                    match result {
+                        Err(e) if e.is_in_progress() && waits < 400 => {
+                            waits += 1;
+                            _ = this.update_in(cx, |this, _, cx| {
+                                let progress = crate::settings::t(
+                                    "草稿仍在生成，等待原运行结束…（{seconds}s）",
+                                )
+                                .replace("{seconds}", &(waits * 3).to_string());
+                                this.generating.insert(id.clone(), progress.clone());
+                                if this.selected.as_deref() == Some(id.as_str()) {
+                                    this.progress = Some(progress);
+                                }
+                                cx.notify();
+                            });
+                            sleep(3000).await;
+                            continue;
+                        }
+                        other => {
+                            _ = this.update_in(cx, |this, window, cx| {
+                            this.generating.remove(&id);
+                            let current = this.selected.as_deref() == Some(id.as_str());
+                            if current {
+                                this.busy = None;
+                                this.progress = None;
+                            }
                             match other {
                                 Ok(res) => {
                                     eprintln!(
@@ -1177,7 +1210,7 @@ impl InboxView {
                                         res.replayed,
                                         res.run.as_ref().map(|r| r.id.as_str()).unwrap_or("-")
                                     );
-                                    this.draft_request = None;
+                                    if current { this.draft_request = None; }
                                     this.draft_requests.remove(&res.item.id);
                                     this.request_saver.save(this.draft_requests.clone());
                                     if this.selected.as_deref() == Some(res.item.id.as_str()) {
@@ -1190,7 +1223,7 @@ impl InboxView {
                                 Err(e) => {
                                     eprintln!("[opstwin] inbox draft generation failed: {e}");
                                     if !e.outcome_unknown() {
-                                        this.draft_request = None;
+                                        if current { this.draft_request = None; }
                                         this.draft_requests.remove(&id);
                                         this.request_saver.save(this.draft_requests.clone());
                                     }
@@ -1199,8 +1232,7 @@ impl InboxView {
                                     } else {
                                         String::new()
                                     };
-                                    this.action_error =
-                                        Some(if e.code() == Some("draft_review_required") {
+                                    let message = if e.code() == Some("draft_review_required") {
                                             crate::settings::t(
                                                 "并发修改已保留。新候选在下方，审阅后可明确采用",
                                             )
@@ -1210,17 +1242,21 @@ impl InboxView {
                                                 crate::settings::t("生成失败："),
                                                 e.user_text()
                                             )
-                                        });
-                                    this.reload_detail(window, cx);
+                                        };
+                                    this.generation_errors.insert(id.clone(), message.clone());
+                                    if current {
+                                        this.action_error = Some(message);
+                                        this.reload_detail(window, cx);
+                                    }
                                 }
                             }
                             cx.notify();
                         });
-                        return;
+                            return;
+                        }
                     }
                 }
-            }
-        });
+            });
         self._tasks.push(task);
     }
 
@@ -1598,7 +1634,7 @@ impl InboxView {
                 .px(px(8.))
                 .rounded(px(6.))
                 .accessibility_label(label.clone())
-                .disabled(self.busy.is_some())
+                .disabled(self.navigation_blocked())
                 .when(self.filter == f, |b| {
                     b.bg(theme.accent).text_color(theme.primary)
                 })
@@ -1651,11 +1687,12 @@ impl InboxView {
                 v_flex()
                     .p_3()
                     .gap_2()
-                    .child(div().text_sm().text_color(theme.danger).child(format!(
-                        "{}{}",
-                        crate::settings::t("加载失败："),
-                        err
-                    )))
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child(format!("{}{}", crate::settings::t("加载失败："), err)),
+                    )
                     .child(
                         Button::new("inbox-retry")
                             .xsmall()
@@ -1790,7 +1827,12 @@ impl InboxView {
                         .min_w_0()
                         .child(crate::clamped_text::ClampedText {
                             id: ElementId::Name(format!("inbox-preview-{}", s.id).into()),
-                            text: s.body.split_whitespace().collect::<Vec<_>>().join(" ").into(),
+                            text: s
+                                .body
+                                .split_whitespace()
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                                .into(),
                         }),
                 );
             if has_edit || s.sensitive || opstwin_api::is_done_status(&s.status) {
@@ -1812,7 +1854,7 @@ impl InboxView {
                         .when(s.sensitive, |d| {
                             d.child(
                                 div()
-                                    .text_color(theme.danger)
+                                    .text_color(theme.muted_foreground)
                                     .child(crate::settings::t("敏感")),
                             )
                         }),
@@ -1925,7 +1967,7 @@ impl InboxView {
                 .text_color(if self.source_preview_loading {
                     theme.muted_foreground
                 } else {
-                    theme.danger
+                    theme.muted_foreground
                 })
                 .child(error.clone())
                 .into_any_element(),
@@ -2125,7 +2167,7 @@ impl InboxView {
             body = body.child(
                 div()
                     .text_xs()
-                    .text_color(theme.danger)
+                    .text_color(theme.muted_foreground)
                     .child(error.clone()),
             );
         }
@@ -2335,11 +2377,16 @@ impl InboxView {
             messages = messages.child(
                 v_flex()
                     .gap_2()
-                    .child(div().text_xs().text_color(theme.danger).child(format!(
-                        "{} {}",
-                        crate::settings::t("读取失败，已保存内容仍可查看。"),
-                        error
-                    )))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(format!(
+                                "{} {}",
+                                crate::settings::t("读取失败，已保存内容仍可查看。"),
+                                error
+                            )),
+                    )
                     .child(
                         Button::new("source-history-retry")
                             .ghost()
@@ -2847,7 +2894,12 @@ impl InboxView {
             draft = draft.child(panel);
         }
         if let Some(err) = item.draft_error.as_ref().filter(|e| !e.is_empty()) {
-            draft = draft.child(div().text_xs().text_color(theme.danger).child(err.clone()));
+            draft = draft.child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(err.clone()),
+            );
         }
         if self.server_changed && self.conflict.is_none() {
             draft = draft.child(
@@ -3031,7 +3083,12 @@ impl InboxView {
             )));
         }
         if let Some(err) = item.send_error.as_ref().filter(|e| !e.is_empty()) {
-            send = send.child(div().text_xs().text_color(theme.danger).child(err.clone()));
+            send = send.child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(err.clone()),
+            );
         }
         let send_label =
             if locked && !matches!(item.status.as_str(), "sent" | "delivered" | "recalled") {
@@ -3050,6 +3107,7 @@ impl InboxView {
             .when(!done, |d| {
                 d.child(
                     Button::new("inbox-dismiss")
+                        .icon(IconName::Close)
                         .small()
                         .h(px(32.))
                         .px(px(11.))
@@ -3069,6 +3127,7 @@ impl InboxView {
                 )
                 .child(
                     Button::new("inbox-done")
+                        .icon(IconName::Check)
                         .small()
                         .h(px(32.))
                         .px(px(11.))
@@ -3091,6 +3150,7 @@ impl InboxView {
             .when(done && !locked, |d| {
                 d.child(
                     Button::new("inbox-reopen")
+                        .icon(IconName::Undo2)
                         .small()
                         .h(px(32.))
                         .px(px(11.))
@@ -3111,6 +3171,7 @@ impl InboxView {
             })
             .child(
                 Button::new("inbox-inspiration")
+                    .icon(gpui_kit::assets::IconName::Lightbulb)
                     .ghost()
                     .small()
                     .h(px(32.))
@@ -3135,6 +3196,7 @@ impl InboxView {
             .child(div().flex_1())
             .child(
                 Button::new("inbox-send")
+                    .icon(gpui_kit::assets::IconName::Send)
                     .small()
                     .h(px(32.))
                     .px(px(11.))
@@ -3195,7 +3257,7 @@ impl InboxView {
                 d.child(div().text_xs().text_color(theme.success).child(n))
             })
             .when_some(self.action_error.clone(), |d, e| {
-                d.child(div().text_xs().text_color(theme.danger).child(e))
+                d.child(div().text_xs().text_color(theme.muted_foreground).child(e))
             })
             .child(send);
 
@@ -3486,7 +3548,7 @@ impl Render for InboxView {
                                         .ghost()
                                         .xsmall()
                                         .label(crate::settings::t("撤销"))
-                                        .disabled(self.busy.is_some())
+                                        .disabled(self.navigation_blocked())
                                         .on_click(cx.listener(|this, _, window, cx| {
                                             this.reopen_previous(window, cx)
                                         })),
