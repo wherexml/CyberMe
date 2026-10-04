@@ -9,7 +9,7 @@ use crate::{
     search::{SearchEvent, SearchView},
     settings::{SettingsEvent, SettingsView},
     sync::{Conn, SyncHub},
-    tasks::TasksView,
+    tasks::{TasksEvent, TasksView},
 };
 use gpui_kit::component::{ActiveTheme as _, h_flex, tooltip::Tooltip, v_flex};
 use gpui_kit::*;
@@ -181,6 +181,19 @@ impl Shell {
                     this.chat.update(cx, |v, cx| {
                         v.open_conversation(conversation_id.clone(), window, cx)
                     });
+                }
+            }),
+            cx.subscribe_in(&tasks, window, |this, _, event, window, cx| match event {
+                TasksEvent::EditorClosed { input_focus } => {
+                    if this.page == Page::Tasks
+                        && !this.search_open
+                        && window.is_owner_visible()
+                        && window.is_window_active()
+                        && (window.focused(cx).is_none()
+                            || input_focus.iter().any(|focus| focus.is_focused(window)))
+                    {
+                        this.focus.focus(window, cx);
+                    }
                 }
             }),
             cx.subscribe_in(&search, window, |this, _, event, window, cx| match event {

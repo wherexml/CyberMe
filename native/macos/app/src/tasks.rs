@@ -74,6 +74,11 @@ struct Editor {
     server_changed: bool,
 }
 
+pub enum TasksEvent {
+    EditorClosed { input_focus: Vec<FocusHandle> },
+}
+impl EventEmitter<TasksEvent> for TasksView {}
+
 pub struct TasksView {
     client: Client,
     filter: Filter,
@@ -93,6 +98,7 @@ pub struct TasksView {
     visible: bool,
     stale: bool,
     generation: u64,
+    open_generation: u64,
     _subscriptions: Vec<Subscription>,
     _tasks: Vec<Task<()>>,
     _debounce: Option<Task<()>>,
@@ -158,6 +164,7 @@ impl TasksView {
             visible: false,
             stale: false,
             generation: 0,
+            open_generation: 0,
             _subscriptions: subscriptions,
             _tasks: Vec::new(),
             _debounce: None,
@@ -193,6 +200,9 @@ impl TasksView {
     }
 
     pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
+        if self.visible != visible {
+            self.open_generation += 1;
+        }
         self.visible = visible;
         if visible && std::mem::take(&mut self.stale) {
             self.reload(cx);
@@ -451,6 +461,7 @@ impl TasksView {
                 return;
             }
         }
+        self.open_generation += 1;
         let (title, notes, due) = match &task {
             Some(t) => (
                 t.title.clone(),
@@ -522,10 +533,25 @@ impl TasksView {
         if self.busy.is_some() || self.editor.as_ref().is_some_and(|ed| ed.saving) {
             return;
         }
-        self.editor = None;
+        self.finish_editor(cx);
+        cx.notify();
+    }
+
+    /// Keep the closing inputs' handles alive until the shell can restore focus.
+    /// Replacing a conflict editor must not emit this event.
+    fn finish_editor(&mut self, cx: &mut Context<Self>) {
+        let Some(editor) = self.editor.take() else {
+            return;
+        };
+        self.open_generation += 1;
+        let input_focus = vec![
+            editor.title.focus_handle(cx),
+            editor.notes.focus_handle(cx),
+            editor.due.focus_handle(cx),
+        ];
         self._editor_subscriptions.clear();
         self.persist_editor(cx);
-        cx.notify();
+        cx.emit(TasksEvent::EditorClosed { input_focus });
     }
 
     fn editor_snapshot(&self, cx: &App) -> serde_json::Value {
@@ -622,9 +648,7 @@ impl TasksView {
                 match result {
                     Ok(t) => {
                         eprintln!("[opstwin] task {} saved", t.id);
-                        this.editor = None;
-                        this._editor_subscriptions.clear();
-                        this.persist_editor(cx);
+                        this.finish_editor(cx);
                         this.reload(cx);
                     }
                     Err(e) if e.is_edit_conflict() => {
@@ -667,6 +691,9 @@ impl TasksView {
 
     /// Conflict or server change: discard my edits and load the server version.
     fn take_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy.is_some() || self.editor.as_ref().is_some_and(|ed| ed.saving) {
+            return;
+        }
         let Some(ed) = self.editor.as_ref() else {
             return;
         };
@@ -807,14 +834,25 @@ impl TasksView {
     }
 
     pub fn open_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_generation += 1;
+        let generation = self.open_generation;
         if let Some(task) = self.items.iter().find(|task| task.id == id).cloned() {
             self.open_editor(Some(task), window, cx);
             return;
         }
         let client = self.client.clone();
+        let expected_focus = window.focused(cx);
         self._tasks.push(cx.spawn_in(window, async move |this, cx| {
             let result = io(async move { client.task_lookup(&id).await }).await;
             _ = this.update_in(cx, |this, window, cx| {
+                if this.open_generation != generation
+                    || !this.visible
+                    || !window.is_owner_visible()
+                    || !window.is_window_active()
+                    || window.focused(cx) != expected_focus
+                {
+                    return;
+                }
                 match result {
                     Ok(task) => this.open_editor(Some(task), window, cx),
                     Err(e) => this.action_error = Some(e.user_text()),
