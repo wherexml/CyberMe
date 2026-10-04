@@ -964,10 +964,11 @@ impl Render for IdeasView {
             if let Some(idea) = display_items.iter().find(|v| v["id"].as_str() == Some(id)) {
                 content = content
                     .child(
-                        Button::new("ideas-back")
+                        Button::new("ideas-back").self_start()
                             .small()
                             .ghost()
-                            .label(t("‹ 灵感"))
+                            .icon(gpui_kit::assets::IconName::ChevronLeft)
+                        .label(t("灵感"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.detail = None;
                                 cx.notify();

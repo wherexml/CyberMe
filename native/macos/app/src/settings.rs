@@ -439,6 +439,9 @@ impl SettingsView {
         let mut v = self.draft();
         if self.section=="models" && self.detail.is_some() && v["_version"].is_null() {v["_version"]=self.models["version"].clone();}
         set_path(&mut v, path, value);
+        if self.section == "models" && self.detail.is_none() && path.starts_with("standard.") {
+            v["deep"] = v["standard"].clone();
+        }
         if self.section=="models" && path=="api" && v["api"]!="anthropic-messages" {v["compatibility"]=json!("");}
         self.drafts[&key] = v;
         if self.section == "connections" && path == "type" {
@@ -724,7 +727,7 @@ impl SettingsView {
             }
             "models" => (
                 "/api/settings/models".into(),
-                json!({"version":self.models["version"],"standard":draft["standard"],"deep":draft["deep"]}),
+                json!({"version":self.models["version"],"standard":draft["standard"],"deep":draft["standard"]}),
             ),
             "connections" => {
                 let Some(id) = self.detail.as_ref() else {
@@ -1260,8 +1263,9 @@ impl SettingsView {
             Button::new("font-size-menu")
                 .small()
                 .h(px(32.))
-                .ghost()
-                .label(format!("{selected} pt  ⌄"))
+                .label(format!("{selected} pt"))
+                .dropdown_caret(true)
+                .outline()
                 .dropdown_menu(move |mut menu, _, _| {
                     for value in [14u64, 15, 16] {
                         let view = view.clone();
@@ -1404,7 +1408,7 @@ impl SettingsView {
                 _ => "",
             }),
         };
-        let mut r = h_flex().gap_1().flex_wrap();
+        let mut r = h_flex().gap_1().flex_wrap().min_w_0();
         if path == "alerts" {
             r = r.flex_col().items_start().gap(px(10.));
             for (value, label) in values {
@@ -1452,12 +1456,14 @@ impl SettingsView {
                 .collect();
             let view = cx.entity().downgrade();
             let path = path.to_string();
-            return r.child(
+            return r.when(business_choice, |row| row.w_full()).child(
                 Button::new(ElementId::Name(format!("select-{path}").into()))
                     .small()
                     .h(px(32.))
-                    .ghost()
-                    .label(format!("{label}  ⌄"))
+                    .label(label)
+                    .dropdown_caret(true)
+                    .outline()
+                    .when(business_choice, |button| button.w_full())
                     .disabled(locked || self.busy)
                     .dropdown_menu(move |mut menu, _, _| {
                         for (value, label) in &choices {
@@ -1950,7 +1956,8 @@ impl SettingsView {
                 .small()
                 .h(px(32.))
                 .ghost()
-                .label(t("‹ 连接"))
+                .icon(gpui_kit::assets::IconName::ChevronLeft)
+                .label(t("连接"))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.detail = None;
                     this.invalidate_wechat_reader(true, true);
@@ -2542,9 +2549,11 @@ impl SettingsView {
         let d = self.draft();
         let mut out = v_flex().gap_4().child(
             Button::new("model-provider-back").self_start()
+                .h(px(32.))
                 .small()
                 .ghost()
-                .label(t("‹ 模型"))
+                .icon(gpui_kit::assets::IconName::ChevronLeft)
+                .label(t("模型"))
                 .disabled(self.busy || self.model_add)
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.drop_connection_secret();
@@ -2798,6 +2807,7 @@ impl SettingsView {
                         .small()
                         .h(px(32.))
                         .ghost()
+                        .icon(gpui_kit::assets::IconName::ChevronLeft)
                         .label(t("返回连接"))
                         .disabled(self.busy)
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -2873,7 +2883,7 @@ impl SettingsView {
                     );
                 } else {
                     let mut roles = h_flex().gap_4().items_start();
-                    for (role, title) in [("standard", "普通任务"), ("deep", "深度思考")] {
+                    for (role, title) in [("standard", "当前模型")] {
                         let provider_path = format!("{role}.providerId");
                         let providers = self.models["providers"]
                             .as_array()
@@ -2920,7 +2930,7 @@ impl SettingsView {
                         let names: Vec<(String, String)> = names
                             .iter()
                             .filter_map(Value::as_str)
-                            .map(|s| (s.to_string(), s.to_string()))
+                            .map(|s| (s.to_string(), model_display_name(s)))
                             .collect();
                         let values: Vec<(&str, &str)> = names
                             .iter()
@@ -2981,7 +2991,7 @@ impl SettingsView {
                     out=out.child(h_flex().child(div().flex_1().child(t("供应商"))).child(Button::new("add-model-provider").small().outline().label(t("＋ 新供应商")).on_click(cx.listener(|this,_,_,cx|this.open_model_provider(format!("provider-{}",opstwin_api::new_request_id()),cx)))));
                     for provider in self.models["providers"].as_array().cloned().unwrap_or_default() {
                         let id=provider["id"].as_str().unwrap_or("").to_string();
-                        out=out.child(Button::new(ElementId::Name(format!("edit-provider-{id}").into())).small().h(px(44.)).outline().label(format!("{}  ·  {}",provider["name"].as_str().unwrap_or(""),provider["api"].as_str().unwrap_or(""))).on_click(cx.listener(move|this,_,_,cx|this.open_model_provider(id.clone(),cx))));
+                        out=out.child(Button::new(ElementId::Name(format!("edit-provider-{id}").into())).small().h(px(44.)).outline().label(provider["name"].as_str().unwrap_or("").to_string()).on_click(cx.listener(move|this,_,_,cx|this.open_model_provider(id.clone(),cx))));
                     }
                 }
             }
@@ -3454,7 +3464,8 @@ impl SettingsView {
                             .small()
                             .h(px(32.))
                             .ghost()
-                            .label(t("‹ 连接"))
+                            .icon(gpui_kit::assets::IconName::ChevronLeft)
+                            .label(t("连接"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.detail = None;
                                 this.delete_confirm = false;
@@ -5893,6 +5904,7 @@ pub fn t(s: &str) -> String {
         "取消" => "Cancel",
         "保存" => "Save",
         "重新读取" => "Reload",
+        "当前模型" => "Current Model",
         "普通任务" => "Standard Tasks",
         "深度思考" => "Deep Thinking",
         "服务渠道" => "Provider",
@@ -6642,6 +6654,15 @@ fn section_icon(key: &str) -> gpui_kit::assets::IconName {
         "channels" => IconName::MessageCircle,
         "devices" => IconName::MonitorSmartphone,
         _ => IconName::Info,
+    }
+}
+
+// Display labels never replace the exact provider model ID sent to the API.
+fn model_display_name(id: &str) -> String {
+    match id {
+        "deepseek-v4.1-flash" => "DeepSeek V4.1 Flash".into(),
+        "claude-opus-5-5" => "Claude Opus 5.5".into(),
+        _ => id.to_string(),
     }
 }
 

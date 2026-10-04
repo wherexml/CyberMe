@@ -500,10 +500,11 @@ impl Render for SearchView {
                 .gap_4()
                 .p_5()
                 .child(
-                    Button::new("search-detail-back")
+                    Button::new("search-detail-back").self_start()
                         .small()
                         .ghost()
-                        .label(t("‹ 搜索结果"))
+                        .icon(gpui_kit::assets::IconName::ChevronLeft)
+                        .label(t("搜索结果"))
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.detail = None;
                             cx.notify();
