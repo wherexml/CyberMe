@@ -6367,6 +6367,7 @@ pub fn t(s: &str) -> String {
         "原结果未知时先读取此连接；不会重复创建。" => "Read this connection first if the original outcome is unknown. It will not be created again.",
         "切换浅色/深色" => "Toggle Light / Dark",
         "退出 OpsTwins" => "Quit OpsTwins",
+        "隐藏 OpsTwins" => "Hide OpsTwins",
         "前往" => "Go",
         "AI 灵感" => "AI Ideas",
         "Jev 回复判断" => "Jev Reply Assessment",

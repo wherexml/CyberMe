@@ -20,7 +20,7 @@ mod wechat_media;
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::*;
 
-actions!(opstwin, [Quit, ToggleTheme]);
+actions!(opstwin, [Quit, ToggleTheme, HideApplication]);
 
 fn main() {
     // Start the I/O runtime before the UI so the first requests are not delayed.
@@ -48,9 +48,11 @@ fn main() {
             shell::bind_keys(cx);
             cx.bind_keys([
                 KeyBinding::new("cmd-q", Quit, None),
+                KeyBinding::new("cmd-h", HideApplication, None),
                 KeyBinding::new("cmd-shift-l", ToggleTheme, None),
             ]);
             cx.on_action(|_: &Quit, cx| cx.quit());
+            cx.on_action(|_: &HideApplication, cx| cx.hide());
             cx.on_action(|_: &ToggleTheme, cx| {
                 let mode = if cx.theme_is_dark() {
                     ThemeMode::Light
@@ -116,6 +118,8 @@ pub(crate) fn install_menus(cx: &mut App) {
     cx.set_menus(vec![
         Menu::new("OpsTwins").items([
             MenuItem::action(t("切换浅色/深色"), ToggleTheme),
+            MenuItem::separator(),
+            MenuItem::action(t("隐藏 OpsTwins"), HideApplication),
             MenuItem::separator(),
             MenuItem::action(t("退出 OpsTwins"), Quit),
         ]),
