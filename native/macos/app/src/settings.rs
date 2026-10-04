@@ -88,6 +88,9 @@ pub struct SettingsView {
     connection_secret_subscription: Option<Subscription>,
     connection_secret_revision: u64,
     saver: Option<Saver<Value>>,
+    local_save_generation: u64,
+    local_saving: bool,
+    local_save_error: Option<String>,
     model_probe: Value,
     model_probe_retry: bool,
     model_probe_status: Option<String>,
@@ -179,7 +182,7 @@ impl SettingsView {
             }),
         ];
         let wechat_query = cx.new(|cx| InputState::new(_window, cx).placeholder(t("查找联系人或当前会话消息")));
-        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,model_probe,model_probe_retry:false,model_probe_status:None,model_probe_saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_capabilities:json!({}),wechat_media:None,wechat_saved:None,wechat_save_busy:false,wechat_save_cancel:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
+        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,local_save_generation:0,local_saving:false,local_save_error:None,model_probe,model_probe_retry:false,model_probe_status:None,model_probe_saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_capabilities:json!({}),wechat_media:None,wechat_saved:None,wechat_save_busy:false,wechat_save_cancel:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
         this.visible = _window.is_owner_visible();
         this.reload(cx);
         if this.model_probe["requestId"].is_string() { this.test_model("standard", true, cx); }
@@ -1185,36 +1188,45 @@ impl SettingsView {
     }
     fn save_local(&mut self, path: &str, value: Value, cx: &mut Context<Self>) {
         set_path(&mut self.local, path, value);
+        self.write_local(path == "modelCatalog", cx);
+    }
+    fn write_local(&mut self, catalog: bool, cx: &mut Context<Self>) {
+        self.local_save_generation = self.local_save_generation.wrapping_add(1);
+        let generation = self.local_save_generation;
+        let group = self.group_key();
         let Some(s) = self.saver.clone() else {
-            self.error = Some("无法保存本机偏好".into());
+            self.local_saving = false;
+            self.local_save_error = Some("本机偏好未保存。当前修改仍保留，请重试保存后再退出。".into());
             cx.notify();
             return;
         };
+        self.local_saving = true;
         let snapshot = json!({"local":self.local,"drafts":self.drafts});
-        let catalog = path == "modelCatalog";
         let t = cx.spawn(async move |this, cx| {
             let r = s.save_now(snapshot).await;
             _ = this.update(cx, |this, cx| {
+                // Coalesced writes acknowledge newer snapshots. Only the latest
+                // requested local revision may update visible save state.
+                if this.local_save_generation != generation { return; }
+                this.local_saving = false;
                 match r {
                     Ok(()) => {
+                        this.local_save_error = None;
                         this.notice = if catalog {
                             Some(t("模型已添加到本机目录"))
                         } else {
                             None
                         };
-                        if catalog {
+                        if catalog && this.group_key() == group {
                             this.model_add = false;
                         }
                         cx.emit(SettingsEvent::Appearance {
-                            appearance: this.local["appearance"]
-                                .as_str()
-                                .unwrap_or("system")
-                                .into(),
+                            appearance: this.local["appearance"].as_str().unwrap_or("system").into(),
                             font_size: this.local["font"].as_u64().unwrap_or(15) as u32,
                             reduced_motion: this.local["reduced"].as_bool().unwrap_or(false),
                         });
                     }
-                    Err(e) => this.error = Some(format!("偏好未保存，请重试：{e}")),
+                    Err(_) => this.local_save_error = Some("本机偏好未保存。当前修改仍保留，请重试保存后再退出。".into()),
                 }
                 cx.notify();
             });
@@ -5394,6 +5406,13 @@ impl Render for SettingsView {
                     .mb_2()
                     .child(t(title)),
             );
+        if let Some(err) = &self.local_save_error {
+            content = content.child(h_flex().gap_2()
+                .child(div().flex_1().text_size(px(12.)).text_color(theme.danger).child(t(err)))
+                .child(Button::new("settings-local-retry").small().h(px(32.)).ghost()
+                    .label(t("重试保存")).disabled(self.local_saving)
+                    .on_click(cx.listener(|this, _, _, cx| this.write_local(false, cx)))));
+        }
         if let Some(err) = &self.error {
             content = content.child(
                 h_flex()
@@ -6383,6 +6402,8 @@ pub fn t(s: &str) -> String {
         "请先连接本机微信" => "Connect Local WeChat First",
         "请选择已配置渠道并填写有效模型 ID" => "Choose a configured channel and enter a valid model ID",
         "请先保存模型选择，再测试连接" => "Save the model selection before testing its connection",
+        "本机偏好未保存。当前修改仍保留，请重试保存后再退出。" => "Local preferences were not saved. Your changes remain in this window. Retry saving before quitting.",
+        "重试保存" => "Retry saving",
         "模型实际调用成功" => "Model invocation succeeded",
         "模型测试失败" => "Model test failed",
         "重试原测试" => "Retry original test",

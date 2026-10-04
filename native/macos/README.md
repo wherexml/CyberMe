@@ -205,3 +205,5 @@ v19候选将微信语音、视频、文件接入现有exact-message附件API：�
 Search→Inbox精确跳转的v35原错跳与v36修复回归保留在 `output/native-parity-20261003/search-keyboard-v35-20261004/`，新包/472源码输入绑定，仍不计全产品评分。
 
 - [模型测试原请求恢复](../../docs/journeys/native-model-probe-recovery.md)：持久 ID、事务 receipt、GET 回查、重启 unknown 与新包丢响应恢复；完整设置/产品评分仍未完成。
+
+- [本机设置Saver恢复](../../docs/journeys/native-settings-local-saver.md)：真实写入失败保值、明确重试与同state正常重启，HTTP和本机错误分开。
