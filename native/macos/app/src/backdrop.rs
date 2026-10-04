@@ -177,7 +177,7 @@ impl Drop for SearchBackdrop {
     }
 }
 
-/// Preferences retain resizing, but expose only the close traffic light.
+/// Preferences retain resizing; minimize and zoom stay visible but disabled.
 pub fn preferences_controls(window: &Window) {
     let Ok(handle) = HasWindowHandle::window_handle(window) else {
         return;
@@ -193,7 +193,8 @@ pub fn preferences_controls(window: &Window) {
                 let button: Option<Retained<AnyObject>> =
                     msg_send![&*native, standardWindowButton: kind];
                 if let Some(button) = button {
-                    let _: () = msg_send![&*button, setHidden: true];
+                    let _: () = msg_send![&*button, setHidden: false];
+                    let _: () = msg_send![&*button, setEnabled: false];
                 }
             }
         }
