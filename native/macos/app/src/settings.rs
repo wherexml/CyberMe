@@ -3553,15 +3553,12 @@ impl SettingsView {
                     let k = key.to_string();
                     deep = deep.child(
                         div()
-                            .min_h(px(36.))
-                            .py(px(7.))
                             .border_b_1()
                             .border_color(theme.border)
                             .when(key == "everyone", |row| row.border_b_0())
                             .child(
-                                Checkbox::new(ElementId::Name(format!("deep-{key}").into()))
+                                settings_checkbox(ElementId::Name(format!("deep-{key}").into()), label)
                                     .checked(checked)
-                                    .label(t(label))
                                     .on_click(cx.listener(move |this, value: &bool, _, cx| {
                                         let mut a = this.draft()["deepThink"]
                                             .as_array()
@@ -3733,9 +3730,8 @@ impl SettingsView {
                             .as_array()
                             .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(key)));
                         perms = perms.child(
-                            Checkbox::new(ElementId::Name(format!("permission-{key}").into()))
+                            settings_checkbox(ElementId::Name(format!("permission-{key}").into()), label)
                                 .checked(checked)
-                                .label(t(label))
                                 .disabled(id == "wechat-sync-local" && key != "read")
                                 .on_click(cx.listener(move |this, value: &bool, _, cx| {
                                     let mut a = this.draft()["permissions"]
@@ -5350,9 +5346,8 @@ impl SettingsView {
             ] {
                 let path = format!("sync.{key}");
                 configuration = configuration.child(
-                    Checkbox::new(ElementId::Name(path.clone().into()))
+                    settings_checkbox(ElementId::Name(path.clone().into()), label)
                         .checked(draft[key].as_bool().unwrap_or(false))
-                        .label(t(label))
                         .on_click(cx.listener(move |this, value: &bool, _, cx| {
                             this.change(&path, json!(*value), cx)
                         })),
@@ -5784,6 +5779,18 @@ fn model_setting_row(label: &str, control: impl IntoElement) -> Div {
     h_flex().w_full().min_h(px(48.)).gap(px(16.))
         .child(div().flex_1().min_w_0().text_size(px(13.)).child(t(label)))
         .child(div().w(px(240.)).flex_shrink_0().min_w_0().child(control))
+}
+// Explicit logical pixels keep settings independent of the chat rem scale.
+// Padding belongs to the control, so the whole spaced row remains clickable.
+fn settings_checkbox(id: ElementId, label: &str) -> Checkbox {
+    Checkbox::new(id)
+        .small()
+        .w_full()
+        .min_h(px(36.))
+        .py(px(7.))
+        .text_size(px(14.))
+        .font_weight(FontWeight::NORMAL)
+        .label(t(label))
 }
 fn card(title: &str, cx: &App) -> Div {
     card_heading(title, None, cx)
