@@ -30,7 +30,7 @@ export function saveSyncSettings(input:any){
 export function rows(e:any):any[]{const d=e?.data??e;return Array.isArray(d)?d:d?.items||d?.messages||d?.chats||d?.data?.items||[];}
 function pagination(e:any){const d=e?.data??e;return {more:!!(d?.has_more??d?.hasMore??e?.meta?.pagination?.has_more??(e?.meta?.pagination?.complete===false)),token:d?.page_token||d?.pageToken||e?.meta?.pagination?.next_token};}
 const check=()=>connectionPermission('read');
-function safeError(e:any){if(e instanceof ApiError&&Number(e.detail?.code)===3380003)return {code:'source_deleted',message:'飞书源文档已被删除，已保留本次同步的其他结果',upstreamCode:3380003};return {code:e instanceof ApiError?e.code:'sync_read_failed',message:e instanceof ApiError&&e.status===403?'连接权限或范围已变更':'读取失败，请检查授权、资源权限或连接后重试'};}
+function safeError(e:any){if(e instanceof ApiError&&Number(e.detail?.code)===3380003)return {code:'source_deleted',message:'飞书源文档已被删除，已保留本次同步的其他结果',upstreamCode:3380003};if(e instanceof ApiError&&['meeting_source_lookup_truncated','meeting_source_not_found','meeting_source_ambiguous','meeting_source_invalid'].includes(e.code))return {code:e.code,message:e.message};return {code:e instanceof ApiError?e.code:'sync_read_failed',message:e instanceof ApiError&&e.status===403?'连接权限或范围已变更':'读取失败，请检查授权、资源权限或连接后重试'};}
 function record(kind:string,id:string,payload:any){check();const key=kind+':'+id;const old=get('feishu_records',key),digest=hash(payload);if(old?.digest===digest)return false;put('feishu_records',{id:key,kind,sourceId:id,payload,digest,bytes:Buffer.byteLength(JSON.stringify(payload)),syncedAt:now()});return true;}
 export function syncStorage(){
  const counts:Record<string,number>={chats:0,messages:0,minutes:0,mail:0,attachments:0};let dataBytes=0,attachmentBytes=0;
@@ -40,6 +40,37 @@ export function syncStorage(){
 }
 export function syncedAsset(id:string){check();const r=get('feishu_assets',id);if(!r)throw new ApiError(404,'not_found','附件不存在');const path=realpathSync(r.diskPath);if(!path.startsWith(realpathSync(join(DATA,'feishu-attachments'))+'/'))throw new ApiError(403,'invalid_path','附件路径无效');return {bytes:readFileSync(path),name:r.name,mime:r.mime};}
 export function syncRecords(kind:string,offset:number){if(!['chats','messages','minutes','mail'].includes(kind))throw new ApiError(400,'invalid_kind','无效数据类型');const all=list('feishu_records').filter(r=>r.kind===kind);return {total:all.length,offset,items:all.slice(offset,offset+25).map(r=>({id:r.id,kind:r.kind,sourceId:r.sourceId,bytes:r.bytes,syncedAt:r.syncedAt}))};}
+
+// Discovery reads metadata only. It is deliberately independent of the chat
+// body collection window; none of these rows are recorded as synced chats.
+export async function discoverMeetingSource(sourceName:string,call:(args:string[],timeout:number)=>Promise<any>,progress:(metadata:any)=>void=()=>{}){
+ const metadata={status:'searching',scannedChats:0,pages:0,limit:1000,pageLimit:10,budgetMs:60000,truncated:false,candidateCount:0};
+ const deadline=Date.now()+metadata.budgetMs,seen=new Set<string>(),matches=new Map<string,any>();let token:string|undefined;
+ const report=()=>progress({...metadata});
+ const truncated=()=>{metadata.status='truncated';metadata.truncated=true;throw new ApiError(413,'meeting_source_lookup_truncated','纪要助手查找达到元数据窗口或时间上限，未读取助手正文');};
+ try{
+  report();
+  do{
+   const remaining=deadline-Date.now();if(remaining<=0||metadata.pages>=metadata.pageLimit||metadata.scannedChats>=metadata.limit)truncated();
+   const envelope=await call(['im','+chat-list','--types','p2p,group','--sort','active_time','--page-size','100',...(token?['--page-token',token]:[])],Math.min(45000,remaining));
+   if(Date.now()>deadline)truncated();
+   const page=rows(envelope),p=pagination(envelope);metadata.pages++;
+   if(page.length>100||metadata.scannedChats+page.length>metadata.limit)truncated();
+   metadata.scannedChats+=page.length;
+   for(const chat of page)if(chat.name===sourceName){const id=chat.chat_id||chat.id;if(typeof id!=='string'||!id)throw new ApiError(502,'meeting_source_invalid','纪要助手元数据缺少稳定ID');matches.set(id,chat);}
+   metadata.candidateCount=matches.size;report();
+   if(p.more&&!p.token)throw new ApiError(502,'missing_cursor','纪要助手查找分页游标缺失');
+   if(p.more&&!page.length)throw new ApiError(502,'empty_cursor_page','纪要助手查找分页没有取得会话');
+   token=p.more?p.token:undefined;
+   if(token&&seen.has(token))throw new ApiError(502,'repeated_cursor','纪要助手查找分页游标重复');
+   if(token)seen.add(token);
+   if(token&&(metadata.scannedChats>=metadata.limit||metadata.pages>=metadata.pageLimit))truncated();
+  }while(token);
+  if(matches.size>1){metadata.status='ambiguous';throw new ApiError(409,'meeting_source_ambiguous','找到多个同名纪要助手，未读取正文；请指定唯一来源名称');}
+  if(!matches.size){metadata.status='not_found';throw new ApiError(404,'meeting_source_not_found','在完整查找窗口中未找到纪要助手');}
+  metadata.status='found';report();return [...matches.values()][0];
+ }catch(error){if(metadata.status==='searching')metadata.status='failed';report();throw error;}
+}
 
 export async function collectFeishu(scope:SyncScope='chats',progress:(patch:any)=>void=()=>{}){
  check();const auth=await requireSelf();check();const config=syncSettings();
@@ -74,7 +105,7 @@ export async function collectFeishu(scope:SyncScope='chats',progress:(patch:any)
  }
 
  let chats:any[]=[];
- if(scope!=='mail'){
+ if(scope==='all'||scope==='chats'){
   try{chats=await pages(['im','+chat-list','--types','p2p,group','--sort','active_time','--page-size','100'],config.chatLimit,'chats');result.chats=chats.length;}catch(e){fail('chat_list',e);}
  }
  if(scope==='all'||scope==='chats'){
@@ -94,7 +125,8 @@ export async function collectFeishu(scope:SyncScope='chats',progress:(patch:any)
   }catch(e){fail('chat',e,id);if(e instanceof ApiError&&e.status===403)throw e;}}
  }
  if(scope==='all'||scope==='minutes')try{
-  progress({phase:'minutes',counts:result.counts});const assistant=chats.find(c=>c.name===config.sourceChatName);if(!assistant)throw new ApiError(404,'meeting_source_not_found','未找到纪要助手');
+  progress({phase:'minutes',counts:result.counts});
+  const assistant=await discoverMeetingSource(config.sourceChatName,call,metadata=>{result.meetingSourceLookup=metadata;progress({meetingSourceLookup:metadata});});check();
   const raw=await pages(['im','+chat-messages-list','--chat-id',assistant.chat_id||assistant.id,'--order','desc','--page-size','50','--no-reactions'],config.minutesMessageLimit,'meeting_messages');
   const links=new Map<string,any>();for(const m of raw)for(const link of meetingNoteLinksFromMessage(m.body?m:{...m,body:{content:m.text||m.content||''}}))links.set(link.documentId,link);
   if(!links.size)throw new ApiError(404,'meeting_documents_not_found','纪要助手中未找到文档链接');

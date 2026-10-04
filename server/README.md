@@ -32,7 +32,7 @@ npm run e2e:api           # 隔离数据库，端口 46111，无外部动作
 | 模块 | 约束入口 |
 | --- | --- |
 | 飞书用户连接与外发 | 根 [AGENTS.md](../AGENTS.md)；仅许茂林本人 QA，回执/未知状态不得盲目重发 |
-| 飞书数据同步 | `connection-sync.ts` 协调、`feishu-sync-data.ts` 采集；详见 [飞书数据同步迁移](../docs/journeys/feishu-sync.md) |
+| 飞书数据同步 | `connection-sync.ts` 协调、`feishu-sync-data.ts` 采集；纪要助手独立有界目录发现，不受chatLimit影响，完整唯一才读正文；详见 [飞书数据同步迁移](../docs/journeys/feishu-sync.md) |
 | 飞书 PersonalAgent 扫码绑定 | `feishu-binding.ts`；私有状态加密于 `.local/feishu-binding/` |
 | 个人微信 wechat-sync | `wechat-sync.ts` 只读本机 GreenBubbles，不提供发送 |
 | Inbox 显式来源规则 | `inbox-source-rules.ts`，写规则需直接用户请求证据 |
