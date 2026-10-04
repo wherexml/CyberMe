@@ -1379,8 +1379,8 @@ impl SettingsView {
             .gap_3()
             .border_b_1()
             .border_color(cx.theme().border)
-            .child(div().flex_1().text_size(px(13.)).child(label.to_string()))
-            .child(div().max_w(px(340.)).child(control))
+            .child(div().min_w_0().flex_1().whitespace_normal().text_size(px(13.)).child(label.to_string()))
+            .child(h_flex().justify_end().flex_shrink_0().w(px(340.)).child(control))
     }
     fn row_detail(
         &self,
