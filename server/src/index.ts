@@ -33,7 +33,7 @@ import { upload, generateArtifact, artifactText } from './artifacts';
 import { nextScheduled, runAutomation, startScheduler } from './automations';
 import { normalizeFollowup, createCalendarFromInbox, knownCalendarEvents, readCalendarEvent, deleteCalendarEvent, primaryCalendar } from './calendar';
 import {voiceStatus,transcribeVoice} from './voice';
-import {modelSettings,saveModelSettings} from './model-settings';
+import {modelSettings,saveModelSettings,saveModelProvider} from './model-settings';
 import {capabilityCatalog,installAgentOperations} from './agent-capabilities';
 import {queryInbox,bulkInboxStatus} from './inbox-operations';
 import {completedAgentWrites} from './agent-effects';
@@ -109,6 +109,7 @@ app.post('/api/notifications/:id/reconcile',async c=>json(c,await reconcileNotif
 app.post('/api/notifications/:id/retry',async c=>json(c,await retryNotification(c.req.param('id'))));
 app.get('/api/settings',c=>json(c,settings()));
 app.get('/api/settings/models',c=>{c.header('Cache-Control','no-store');return json(c,modelSettings());});
+app.patch('/api/settings/models/providers',async c=>json(c,saveModelProvider(await body(c))));
 app.patch('/api/settings/models',async c=>json(c,saveModelSettings(await body(c))));
 app.post('/api/settings/models/test',async c=>{
  const input=await body(c);

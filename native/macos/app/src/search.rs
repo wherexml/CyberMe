@@ -619,7 +619,12 @@ impl Render for SearchView {
         for (i, r) in results.iter().enumerate() {
             let row = r.clone();
             let preview = search_plain(&r.text);
-            let preview: String = preview.chars().take(110).collect();
+            // Bound the plain-text excerpt before shaping: Chinese glyphs must
+            // not be cut in half when GPUI clips a nowrap flex child.
+            let budget = (((f32::from(_window.bounds().size.width) * 0.92).min(640.) - 170.).max(110.) / 11.) as usize;
+            let mut excerpt: String = preview.chars().take(budget).collect();
+            if preview.chars().count() > budget { excerpt.push('…'); }
+            let preview = excerpt;
             list = list.child(
                 h_flex()
                     .id(ElementId::Name(
@@ -648,9 +653,10 @@ impl Render for SearchView {
                             .gap(px(3.))
                             .child(
                                 div()
-                                    .text_size(crate::settings::body_px(13., cx))
+                                    .w_full()
+                                    .text_size(px(13.))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .text_ellipsis()
+                                    .truncate()
                                     .child(if r.fallback_title {
                                         t(&r.title)
                                     } else {
@@ -659,10 +665,11 @@ impl Render for SearchView {
                             )
                             .child(
                                 div()
-                                    .text_size(crate::settings::body_px(11., cx))
-                                    .line_height(relative(1.65))
+                                    .w_full()
+                                    .text_size(px(11.))
+                                    .line_height(relative(1.5))
                                     .text_color(theme.muted_foreground)
-                                    .text_ellipsis()
+                                    .truncate()
                                     .child(preview),
                             ),
                     )
@@ -740,12 +747,13 @@ impl Render for SearchView {
                             .text_color(theme.muted_foreground),
                     )
                     .child(
-                        div().flex_1().child(
+                        div().flex_1().min_w_0().child(
                             Input::new(&self.query)
                                 .appearance(false)
                                 .bordered(false)
                                 .focus_bordered(false)
-                                .text_size(px(18.))
+                                .h(px(36.))
+                                .text_size(px(14.))
                                 .font_weight(FontWeight::NORMAL),
                         ),
                     )

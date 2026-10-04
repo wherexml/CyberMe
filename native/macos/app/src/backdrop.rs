@@ -176,3 +176,26 @@ impl Drop for SearchBackdrop {
         self.clear();
     }
 }
+
+/// Preferences retain resizing, but expose only the close traffic light.
+pub fn preferences_controls(window: &Window) {
+    let Ok(handle) = HasWindowHandle::window_handle(window) else {
+        return;
+    };
+    let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
+        return;
+    };
+    let view = unsafe { &*handle.ns_view.as_ptr().cast::<AnyObject>() };
+    unsafe {
+        let native: Option<Retained<AnyObject>> = msg_send![view, window];
+        if let Some(native) = native {
+            for kind in [1usize, 2usize] {
+                let button: Option<Retained<AnyObject>> =
+                    msg_send![&*native, standardWindowButton: kind];
+                if let Some(button) = button {
+                    let _: () = msg_send![&*button, setHidden: true];
+                }
+            }
+        }
+    }
+}

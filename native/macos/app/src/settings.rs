@@ -224,7 +224,7 @@ impl SettingsView {
     }
     fn setup_connection_secret(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let key = self.group_key();
-        let wanted = self.section == "connections"
+        let wanted = (self.section == "models" && self.detail.is_some()) || self.section == "connections"
             && self.detail.as_deref().is_some_and(|id| id != "request")
             && self.draft()["config"]["authMethod"] == "api-key";
         if self
@@ -336,7 +336,17 @@ impl SettingsView {
                                 .unwrap_or("zh-CN"),
                             cx,
                         );
-                        this.models = m.unwrap_or(json!({}));
+                        if let Ok(models)=m {
+                            this.models=models;
+                            if let Some(drafts)=this.drafts.as_object_mut() {
+                                for (key,draft) in drafts.iter_mut() {
+                                    if key.starts_with("model-provider:") && draft["_rebase"]==true {
+                                        draft["_version"]=this.models["version"].clone();
+                                        draft.as_object_mut().map(|v|v.remove("_rebase"));
+                                    }
+                                }
+                            }
+                        }
                         if this.sync_generation == sync_generation {
                             if let Ok(sync) = s {
                                 this.sync = sync;
@@ -383,13 +393,14 @@ impl SettingsView {
         }
     }
     fn group_key(&self) -> String {
+        if self.section == "models" { return self.detail.as_ref().map(|id|format!("model-provider:{id}")).unwrap_or("models".into()); }
         self.detail
             .as_ref()
             .map(|s| format!("connection:{s}"))
             .unwrap_or_else(|| self.section.clone())
     }
     fn base(&self) -> Value {
-        match self.section.as_str(){"general"=>self.data["settings"]["identity"].clone(),"models"=>json!({"standard":self.models["standard"],"deep":self.models["deep"]}),"connections"=>self.detail.as_ref().and_then(|id|self.connections().into_iter().find(|x|x["id"].as_str()==Some(id))).cloned().unwrap_or(json!({"name":"","type":"mcp","endpoint":"","permissions":["read"],"config":{"authMethod":"none"}})),"identity"=>self.data["settings"]["identity"].clone(),"autonomy"=>self.data["settings"]["autonomy"].clone(),_=>json!({})}
+        match self.section.as_str(){"general"=>self.data["settings"]["identity"].clone(),"models"=>if let Some(id)=&self.detail { self.models["providers"].as_array().and_then(|a|a.iter().find(|p|p["id"].as_str()==Some(id))).cloned().unwrap_or(json!({"id":id,"name":"新供应商","baseUrl":"","api":"anthropic-messages","enabled":true,"definitions":[]})) } else {json!({"standard":self.models["standard"],"deep":self.models["deep"]})},"connections"=>self.detail.as_ref().and_then(|id|self.connections().into_iter().find(|x|x["id"].as_str()==Some(id))).cloned().unwrap_or(json!({"name":"","type":"mcp","endpoint":"","permissions":["read"],"config":{"authMethod":"none"}})),"identity"=>self.data["settings"]["identity"].clone(),"autonomy"=>self.data["settings"]["autonomy"].clone(),_=>json!({})}
     }
     fn draft(&self) -> Value {
         self.drafts
@@ -423,7 +434,9 @@ impl SettingsView {
         }
         let key = self.group_key();
         let mut v = self.draft();
+        if self.section=="models" && self.detail.is_some() && v["_version"].is_null() {v["_version"]=self.models["version"].clone();}
         set_path(&mut v, path, value);
+        if self.section=="models" && path=="api" && v["api"]!="anthropic-messages" {v["compatibility"]=json!("");}
         self.drafts[&key] = v;
         if self.section == "connections" && path == "type" {
             // Update the existing editor's hint without recreating it or clearing its value.
@@ -450,6 +463,10 @@ impl SettingsView {
                 ("standard.model", "模型 ID", false),
                 ("deep.model", "模型 ID", false),
                 ("catalog.model", "模型 ID", false),
+                ("name", "供应商名称", false),
+                ("baseUrl", "https://api.example.com/v1", false),
+                ("catalog.contextWindow", "200000", false),
+                ("catalog.maxTokens", "7000", false),
             ],
             "autonomy" => vec![
                 ("quietFrom", "开始 HH:mm", false),
@@ -1162,7 +1179,7 @@ impl SettingsView {
     fn field(&self, path: &str) -> AnyElement {
         let font = px(13. * self.local["font"].as_u64().unwrap_or(15) as f32 / 15.);
         match self.fields.get(path) {
-            Some(Field::Line(s)) => Input::new(s).into_any_element(),
+            Some(Field::Line(s)) => Input::new(s).h(px(34.)).text_size(font).disabled(self.model_add && self.section=="models" && !path.starts_with("catalog.")).into_any_element(),
             Some(Field::Multi(s)) => Textarea::new(s).text_size(font).into_any_element(),
             None => div().into_any_element(),
         }
@@ -1551,7 +1568,7 @@ impl SettingsView {
         Switch::new(ElementId::Name(format!("toggle-{path}").into()))
             .checked(checked)
             .accessibility_label(t(label))
-            .disabled(self.busy)
+            .disabled(self.busy || (self.model_add && self.section=="models" && !path.starts_with("catalog.")) || (path=="enabled" && self.section=="models" && ["standard","deep"].iter().any(|role|self.models[*role]["providerId"]==self.draft()["id"])))
             .on_click(cx.listener(move |this, value: &bool, _, cx| {
                 if local {
                     this.save_local(&p, json!(*value), cx)
@@ -2383,36 +2400,386 @@ impl SettingsView {
         let provider_name = title.to_string();
         c.child(h_flex().gap_2().mt(px(3.)).child(Button::new(ElementId::Name(format!("manage-provider-{id}").into())).small().h(px(32.)).outline().label(t(if provider=="gmail"&&!connected{"设置 Gmail 连接"}else if provider=="wechat-sync"{"查看微信"}else{"自定义"})).on_click(cx.listener(move |this,_,_,cx|{this.detail=Some(if exists||is_wechat{manage.clone()}else{"new".into()});if !exists&&!is_wechat&&this.drafts.get("connection:new").is_none(){this.drafts["connection:new"]=json!({"name":provider_name,"type":"rest","endpoint":"","permissions":["read"],"config":{"authMethod":"none"}});this.persist();}this.delete_confirm=false;this.fields.clear();this.pending_fields=true;if is_wechat{this.wechat_chat=None;this.wechat_messages=json!({});if exists{this.read_wechat(String::new(),vec![String::new()],cx);}}cx.notify();}))).child(Button::new(ElementId::Name(format!("test-provider-{id}").into())).small().h(px(32.)).outline().label(t(if connected{"检测连接"}else{"连接"})).disabled(self.busy).on_click(cx.listener(move |this,_,_,cx|{if is_wechat{this.mutate("POST","/api/wechat/connect".into(),json!({}),cx);}else if exists{this.mutate("POST",format!("/api/connections/{probe}/test"),json!({}),cx);}else{this.detail=Some("new".into());this.fields.clear();this.pending_fields=true;cx.notify();}}))))
     }
-    fn add_model_catalog(&mut self, cx: &mut Context<Self>) {
-        let d = self.draft();
-        let provider = d["catalog"]["providerId"].as_str().unwrap_or("");
-        let model = d["catalog"]["model"].as_str().unwrap_or("").trim();
-        if !self.models["providers"].as_array().is_some_and(|a| {
-            a.iter()
-                .any(|p| p["id"].as_str() == Some(provider) && p["configured"] == true)
-        }) || model.is_empty()
-            || model.len() > 200
-            || !model.as_bytes()[0].is_ascii_alphanumeric()
-            || !model
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"._:/@+-".contains(&b))
-        {
-            self.error = Some(t("请选择已配置渠道并填写有效模型 ID"));
-            cx.notify();
+    fn open_model_provider(&mut self, id: String, cx: &mut Context<Self>) {
+        self.drop_connection_secret();
+        self.detail = Some(id);
+        let key = self.group_key();
+        if self.drafts.get(&key).is_none() {
+            let mut draft = self.base();
+            draft["_version"] = self.models["version"].clone();
+            self.drafts[key] = draft;
+            self.persist();
+        }
+        self.model_add = false;
+        self.fields.clear();
+        self.pending_fields = true;
+        self.error = None;
+        self.notice = None;
+        cx.notify();
+    }
+    fn save_model_provider(&mut self, add_model: bool, cx: &mut Context<Self>) {
+        if self.busy {
             return;
         }
-        let mut catalog = self.local["modelCatalog"].clone();
-        if !catalog.is_object() {
-            catalog = json!({});
+        let key = self.group_key();
+        let draft = self.draft();
+        let mut definitions = draft["definitions"].as_array().cloned().unwrap_or_default();
+        if add_model {
+            let catalog = &draft["catalog"];
+            let id = catalog["model"].as_str().unwrap_or("").trim();
+            let smart = catalog["smart"].as_bool().unwrap_or(true);
+            let number = |name: &str, default: u64| -> Option<u64> {
+                let v = &catalog[name];
+                if v.is_null() || v.as_str() == Some("") {
+                    if smart { Some(default) } else { None }
+                } else {
+                    v.as_u64().or_else(|| v.as_str()?.parse().ok())
+                }
+            };
+            let context = number("contextWindow", 200000);
+            let max = number("maxTokens", 7000);
+            if id.is_empty() || context.is_none() || max.is_none() {
+                self.error = Some(t("请填写模型 ID 和有效 Token 数量"));
+                cx.notify();
+                return;
+            }
+            let model = json!({"id":id,"smart":catalog["smart"].as_bool().unwrap_or(true),"contextWindow":context,"maxTokens":max,"reasoning":catalog["reasoning"].as_bool().unwrap_or(false),"vision":catalog["vision"].as_bool().unwrap_or(true)});
+            let original = catalog["originalId"].as_str();
+            if definitions
+                .iter()
+                .any(|m| m["id"] == id && Some(id) != original)
+            {
+                self.error = Some(t("此模型 ID 已存在"));
+                cx.notify();
+                return;
+            }
+            if let Some(original) = original {
+                definitions.retain(|m| m["id"] != original);
+            }
+            definitions.push(model);
         }
-        let mut list = catalog[provider].as_array().cloned().unwrap_or_default();
-        if !list.iter().any(|v| v.as_str() == Some(model)) {
-            list.push(json!(model));
+        let mut provider = json!({"id":draft["id"],"name":draft["name"],"baseUrl":draft["baseUrl"],"api":draft["api"],"enabled":draft["enabled"],"compatibility":draft["compatibility"].as_str().unwrap_or(""),"definitions":definitions});
+        let secret = self.secret_value(cx);
+        if !secret.is_empty() {
+            provider["apiKey"] = json!(secret);
         }
-        catalog[provider] = json!(list);
-        self.save_local("modelCatalog", catalog, cx);
-
+        let submitted_secret = self
+            .connection_secret
+            .as_ref()
+            .map(|(_, s)| (s.entity_id(), self.connection_secret_revision));
+        let lease = draft
+            .get("_version")
+            .unwrap_or(&self.models["version"])
+            .clone();
+        let body = json!({"version":lease,"provider":provider});
+        let client = self.client.clone();
+        self.busy = true;
+        self.error = None;
+        self._tasks.push(cx.spawn(async move |this, cx| {
+            let result = io(async move {
+                client
+                    .product_patch("/api/settings/models/providers", body)
+                    .await
+            })
+            .await;
+            _ = this.update(cx, |this, cx| {
+                this.busy = false;
+                match result {
+                    Ok(saved) => {
+                        this.models = saved;
+                        let unchanged = this
+                            .drafts
+                            .get(&key)
+                            .cloned()
+                            .unwrap_or_else(|| draft.clone())
+                            == draft;
+                        let active = this.group_key() == key;
+                        if unchanged {
+                            if let Some(map) = this.drafts.as_object_mut() {
+                                map.remove(&key);
+                            }
+                        } else {
+                            this.drafts[&key]["definitions"] = json!(definitions);
+                            this.drafts[&key]["_version"] = this.models["version"].clone();
+                        }
+                        if active
+                            && this
+                                .connection_secret
+                                .as_ref()
+                                .map(|(_, s)| (s.entity_id(), this.connection_secret_revision))
+                                == submitted_secret
+                        {
+                            this.drop_connection_secret();
+                        }
+                        if active && unchanged {
+                            this.model_add = false;
+                            this.fields.clear();
+                            this.pending_fields = true;
+                        }
+                        this.notice = Some(t(if unchanged {
+                            "已保存"
+                        } else {
+                            "提交的版本已保存，当前修改仍未保存"
+                        }));
+                        this.persist();
+                    }
+                    Err(error) => {
+                        this.error = Some(error.user_text());
+                    }
+                }
+                cx.notify();
+            });
+        }));
         cx.notify();
+    }
+    fn render_model_provider(&self, cx: &mut Context<Self>) -> Div {
+        let d = self.draft();
+        let mut out = v_flex().gap_4().child(
+            Button::new("model-provider-back")
+                .small()
+                .ghost()
+                .label(t("‹ 模型"))
+                .disabled(self.busy || self.model_add)
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.drop_connection_secret();
+                    this.detail = None;
+                    this.model_add = false;
+                    this.fields.clear();
+                    this.pending_fields = true;
+                    cx.notify();
+                })),
+        );
+        let mut c = card("供应商", cx)
+            .gap_2()
+            .bg(cx.theme().background)
+            .child(self.row("启用", self.toggle("enabled", "启用", false, cx), cx))
+            .child(div().text_size(px(12.)).child(t("供应商名称")))
+            .child(self.field("name"))
+            .child(div().text_size(px(12.)).child("Base URL"))
+            .child(self.field("baseUrl"))
+            .child(div().text_size(px(12.)).child(t("API 格式")))
+            .child(self.choices(
+                "api",
+                &[
+                    ("anthropic-messages", "Anthropic Messages (/v1/messages)"),
+                    (
+                        "openai-completions",
+                        "OpenAI Chat Completions (/v1/chat/completions)",
+                    ),
+                    ("openai-responses", "OpenAI Responses (/v1/responses)"),
+                ],
+                false,
+                self.model_add,
+                cx,
+            ))
+            .child(div().text_size(px(12.)).child("API Key"));
+        if let Some((_, state)) = &self.connection_secret {
+            c = c.child(
+                Input::new(state)
+                    .text_size(px(13.))
+                    .disabled(self.model_add),
+            );
+        }
+        if d["configured"] == true {
+            c = c.child(note("凭据已配置；留空保留，修改地址或协议后请重新输入", cx));
+        }
+        let compatibility = if d["api"] == "anthropic-messages" {
+            vec![("", "标准协议"), ("claude-code", "Claude Code 网关兼容")]
+        } else {
+            vec![("", "标准协议")]
+        };
+        c = c.child(self.choices("compatibility", &compatibility, false, self.model_add, cx));
+        out = out.child(c).child(
+            h_flex().child(div().flex_1().child(t("模型列表"))).child(
+                Button::new("add-model-catalog")
+                    .small()
+                    .outline()
+                    .label(t("＋ 添加模型"))
+                    .disabled(self.busy || self.model_add)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.model_add = true;
+                        this.error = None;
+                        this.notice = None;
+                        let mut d = this.draft();
+                        d["catalog"] = json!({"smart":true,"vision":true});
+                        let key = this.group_key();
+                        this.drafts[key] = d;
+                        this.fields.clear();
+                        this.pending_fields = true;
+                        cx.notify();
+                    })),
+            ),
+        );
+        let definitions = d["definitions"].as_array().cloned().unwrap_or_default();
+        if definitions.is_empty() {
+            out = out.child(note("当前没有配置模型，添加模型后可在聊天中使用。", cx));
+        }
+        for m in definitions {
+            let selected = m.clone();
+            out = out.child(
+                card(m["id"].as_str().unwrap_or(""), cx)
+                    .child(note(
+                        &format!(
+                            "{}: {} · {}: {}",
+                            t("上下文窗口"),
+                            m["contextWindow"],
+                            t("最大输出 Token"),
+                            m["maxTokens"]
+                        ),
+                        cx,
+                    ))
+                    .child(
+                        Button::new(ElementId::Name(
+                            format!("edit-model-{}", m["id"].as_str().unwrap_or("")).into(),
+                        ))
+                        .small()
+                        .ghost()
+                        .label(t("编辑模型"))
+                        .disabled(self.busy || self.model_add)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            let mut catalog = selected.clone();
+                            catalog["model"] = selected["id"].clone();
+                            catalog["originalId"] = selected["id"].clone();
+                            this.change("catalog", catalog, cx);
+                            this.error = None;
+                            this.model_add = true;
+                            this.fields.clear();
+                            this.pending_fields = true;
+                            cx.notify();
+                        })),
+                    ),
+            );
+        }
+        out = out.child(
+            Button::new("save-model-provider")
+                .small()
+                .primary()
+                .label(t("保存供应商"))
+                .disabled(self.busy || self.model_add)
+                .on_click(cx.listener(|this, _, _, cx| this.save_model_provider(false, cx))),
+        );
+        out
+    }
+    fn close_model_editor(&mut self, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        let mut draft = self.draft();
+        if let Some(map) = draft.as_object_mut() {
+            map.remove("catalog");
+        }
+        let key = self.group_key();
+        self.drafts[key] = draft;
+        self.model_add = false;
+        self.fields.retain(|key, _| !key.starts_with("catalog."));
+        self.pending_fields = true;
+        self.error = None;
+        self.persist();
+        cx.notify();
+    }
+    fn render_model_form(&self, cx: &mut Context<Self>) -> Div {
+        let advanced = self.expanded.contains("model-advanced");
+        let mut form = card("添加模型", cx)
+            .relative()
+            .gap_2()
+            .bg(cx.theme().background)
+            .child(
+                div().absolute().top(px(12.)).right(px(12.)).child(
+                    Button::new("close-model-dialog")
+                        .small()
+                        .ghost()
+                        .label("×")
+                        .disabled(self.busy)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.close_model_editor(cx);
+                        })),
+                ),
+            )
+            .child(self.row(
+                "智能配置",
+                self.toggle("catalog.smart", "智能配置", false, cx),
+                cx,
+            ))
+            .child(div().text_size(px(12.)).child(t("模型 ID")))
+            .child(self.field("catalog.model"))
+            .child(div().text_size(px(12.)).child(t("上下文窗口")))
+            .child(self.field("catalog.contextWindow"))
+            .child(div().text_size(px(12.)).child(t("最大输出 Token")))
+            .child(self.field("catalog.maxTokens"))
+            .child(note("智能配置使用兼容默认值；可按供应商实际限制调整。", cx))
+            .child(
+                Button::new("model-advanced")
+                    .small()
+                    .ghost()
+                    .label(t("高级配置"))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if !this.expanded.remove("model-advanced") {
+                            this.expanded.insert("model-advanced".into());
+                        }
+                        cx.notify();
+                    })),
+            );
+        if advanced {
+            form = form
+                .child(self.row(
+                    "深度思考能力",
+                    self.toggle("catalog.reasoning", "深度思考能力", false, cx),
+                    cx,
+                ))
+                .child(self.row(
+                    "图片输入",
+                    self.toggle("catalog.vision", "图片输入", false, cx),
+                    cx,
+                ));
+        }
+        if let Some(error) = &self.error {
+            form = form.child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(cx.theme().danger)
+                    .child(t(error)),
+            );
+        }
+        form = form.child(
+            h_flex()
+                .gap_2()
+                .child(
+                    Button::new("model-reset")
+                        .small()
+                        .ghost()
+                        .label(t("重置表单"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let old = this.draft()["catalog"].clone();
+                            let mut reset = json!({"smart":true,"vision":true});
+                            if let Some(id) = old["originalId"].as_str() {
+                                reset["originalId"] = json!(id);
+                                reset["model"] = json!(id);
+                            }
+                            this.change("catalog", reset, cx);
+                            this.fields.clear();
+                            this.pending_fields = true;
+                        })),
+                )
+                .child(div().flex_1())
+                .child(
+                    Button::new("cancel-add-model")
+                        .small()
+                        .ghost()
+                        .label(t("取消"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.close_model_editor(cx);
+                        })),
+                )
+                .child(
+                    Button::new("save-add-model")
+                        .small()
+                        .primary()
+                        .label(t("保存"))
+                        .disabled(self.busy)
+                        .on_click(cx.listener(|this, _, _, cx| this.save_model_provider(true, cx))),
+                ),
+        );
+        form
     }
     fn render_body(&self, cx: &mut Context<Self>) -> Div {
         let mut out = v_flex().gap_4();
@@ -2492,6 +2859,7 @@ impl SettingsView {
                     });
             }
             "models" => {
+                if self.detail.is_some() { return self.render_model_provider(cx); }
                 if self.models["version"].is_null() {
                     out = out.child(
                         card("模型配置暂不可读取", cx)
@@ -2527,7 +2895,7 @@ impl SettingsView {
                                 cx,
                             ))
                             .child(div().text_size(px(11.)).child(t("模型")))
-                            .child(self.field(&format!("{role}.model")));
+                            ;
                         let mut names = info
                             .and_then(|p| p["models"].as_array())
                             .cloned()
@@ -2604,34 +2972,10 @@ impl SettingsView {
                         roles = roles.child(c);
                     }
                     out = out.child(roles).child(self.footer(cx));
-                    out = out.child(
-                        Button::new("add-model-catalog")
-                            .small()
-                            .h(px(32.))
-                            .outline()
-                            .label(t("新增模型"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.model_add = true;
-                                this.pending_fields = true;
-                                cx.notify();
-                            })),
-                    );
-                    if self.model_add {
-                        let providers = self.models["providers"]
-                            .as_array()
-                            .cloned()
-                            .unwrap_or_default();
-                        let values: Vec<(&str, &str)> = providers
-                            .iter()
-                            .filter(|p| p["configured"] == true)
-                            .map(|p| {
-                                (
-                                    p["id"].as_str().unwrap_or(""),
-                                    p["name"].as_str().unwrap_or(""),
-                                )
-                            })
-                            .collect();
-                        out=out.child(card("新增模型",cx).child(note("选择服务端已配置渠道，模型 ID 保存到本机可选目录。渠道协议与凭据由服务端保留。",cx)).child(self.row("服务渠道",self.choices("catalog.providerId",&values,false,false,cx),cx)).child(self.field("catalog.model")).child(h_flex().gap_2().child(Button::new("cancel-add-model").small().h(px(32.)).ghost().label(t("取消")).on_click(cx.listener(|this,_,_,cx|{this.model_add=false;cx.notify();}))).child(Button::new("save-add-model").small().h(px(32.)).primary().label(t("保存")).disabled(self.busy).on_click(cx.listener(|this,_,_,cx|this.add_model_catalog(cx))))));
+                    out=out.child(h_flex().child(div().flex_1().child(t("供应商"))).child(Button::new("add-model-provider").small().outline().label(t("＋ 新供应商")).on_click(cx.listener(|this,_,_,cx|this.open_model_provider(format!("provider-{}",opstwin_api::new_request_id()),cx)))));
+                    for provider in self.models["providers"].as_array().cloned().unwrap_or_default() {
+                        let id=provider["id"].as_str().unwrap_or("").to_string();
+                        out=out.child(Button::new(ElementId::Name(format!("edit-provider-{id}").into())).small().h(px(44.)).outline().label(format!("{}  ·  {}",provider["name"].as_str().unwrap_or(""),provider["api"].as_str().unwrap_or(""))).on_click(cx.listener(move|this,_,_,cx|this.open_model_provider(id.clone(),cx))));
                     }
                 }
             }
@@ -4874,6 +5218,7 @@ impl Render for SettingsView {
         if window.window_title() != title {
             window.set_window_title(&title);
         }
+        crate::backdrop::preferences_controls(window);
         self.setup_fields(window, cx);
         self.setup_connection_secret(window, cx);
         let theme = cx.theme().clone();
@@ -4920,6 +5265,7 @@ impl Render for SettingsView {
                             .child(div().flex_1().text_size(px(13.)).child(t(label))),
                     )
                     .selected(self.section == key)
+                    .disabled(self.section=="models" && self.model_add)
                     .when(self.section == key, |button| {
                         button.bg(theme.accent).text_color(theme.primary)
                     })
@@ -4963,7 +5309,12 @@ impl Render for SettingsView {
                             .h(px(32.))
                             .ghost()
                             .label(t("重新读取"))
-                            .on_click(cx.listener(|this, _, _, cx| this.reload(cx))),
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                if this.section=="models" && this.detail.is_some() {
+                                    let key=this.group_key();let mut draft=this.draft();draft["_rebase"]=json!(true);this.drafts[key]=draft;
+                                }
+                                this.reload(cx)
+                            })),
                     ),
             );
         }
@@ -4975,11 +5326,14 @@ impl Render for SettingsView {
         } else {
             content = content.child(self.render_body(cx));
         }
-        h_flex()
-            .size_full()
-            .bg(theme.background)
-            .child(nav)
-            .child(content)
+        div().relative().size_full()
+            .child(h_flex().size_full().bg(theme.background).child(nav).child(content))
+            .when(self.section=="models" && self.detail.is_some() && self.model_add, |root| {
+                root.child(div().absolute().inset_0().size_full().bg(rgba(0x00000066)).flex().items_center().justify_center()
+                    .on_mouse_down(MouseButton::Left,|_,_,cx|cx.stop_propagation())
+                    .on_key_down(cx.listener(|this,event:&KeyDownEvent,_,cx|{if event.keystroke.key=="escape"&&!this.busy{this.close_model_editor(cx);cx.stop_propagation();}}))
+                    .child(div().id("model-editor-dialog").w(px(560.)).max_w_full().max_h_full().p_4().overflow_y_scrollbar().child(self.render_model_form(cx))))
+            })
     }
 }
 fn at<'a>(v: &'a Value, path: &str) -> &'a Value {
@@ -5852,6 +6206,28 @@ pub fn t(s: &str) -> String {
         "收起" => "Collapse",
         "数据类型" => "Data Type",
         "新增模型" => "Add Model",
+        "供应商" => "Providers",
+        "编辑模型" => "Edit model",
+        "供应商名称" => "Provider name",
+        "＋ 新供应商" => "+ New provider",
+        "＋ 添加模型" => "+ Add model",
+        "‹ 模型" => "‹ Models",
+        "API 格式" => "API format",
+        "智能配置" => "Smart configuration",
+        "上下文窗口" => "Context window",
+        "最大输出 Token" => "Maximum output tokens",
+        "高级配置" => "Advanced configuration",
+        "图片输入" => "Image input",
+        "深度思考能力" => "Reasoning capability",
+        "重置表单" => "Reset form",
+        "保存供应商" => "Save provider",
+        "添加模型" => "Add model",
+        "模型列表" => "Models",
+        "标准协议" => "Standard protocol",
+        "Claude Code 网关兼容" => "Claude Code gateway compatibility",
+        "凭据已配置；留空保留，修改地址或协议后请重新输入" => "Key configured; leave blank to keep it. Re-enter after changing URL or protocol.",
+        "智能配置使用兼容默认值；可按供应商实际限制调整。" => "Uses compatibility defaults; adjust to the provider's actual limits.",
+        "当前没有配置模型，添加模型后可在聊天中使用。" => "No models configured. Add a model to use it in chat.",
         "新类型从草稿开始，信任后可提高等级。" => "New types start with drafts. Increase autonomy as trust grows.",
         "无法保存本机偏好" => "Unable to Save Local Preferences",
         "无法打开文件夹选择器" => "Unable to Open the Folder Picker",

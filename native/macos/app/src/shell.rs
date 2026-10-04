@@ -371,6 +371,7 @@ impl Shell {
                 cx,
             ))),
             window_min_size: Some(size(px(660.), px(420.))),
+            is_minimizable: false,
             titlebar: Some(TitlebarOptions {
                 title: Some(crate::settings::t("设置").into()),
                 ..Default::default()

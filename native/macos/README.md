@@ -176,3 +176,5 @@ v19候选将微信语音、视频、文件接入现有exact-message附件API：�
 「在系统应用打开」仅适用于本轮已显式保存的验证格式；先GET原token复核服务端资格，再验证已保存文件路径/inode/600权限/大小/SHA/格式，回到UI再次复核owner与路径后请求系统打开。该API没有播放/查看回执，界面只显示请求已发出，不能证明SILK等格式有系统播放器。ZIP/opaque文档只保存、不开启。容器头检查沿API的`header-only`/`opaque-bytes`语义，不声称完整媒体解码成功。此候选仅新增已锁定`libc = "=0.2.190"`直接依赖，未升级其他包；源码/locked cargo检查与GUI、文件选择器真实写入验收分别记录，当前v16运行bundle不替换。
 
 固定v19独立source复核已完成RESOLVED_SOURCE，review `3cefe28665b756c992cd2e1062812b6cb4daa2216fe13fe1454dadc7a57273c1`、artifact `f914d4828bfec2e791a865cead8e1685b61f2c34c2c5276f7a910f850ace41b5`。GET→UI owner→磁盘验证源修复不等于动态取消/真实保存或系统播放；新包GUI仍NOT_RUN，旧报告保留，详见[非图片规格](../../docs/spec/native-product-pages.md)。
+
+2026-10-04 模型设置新增供应商编辑和添加/编辑模型浮层，真实保存地址/协议/密钥及Token/推理/图片参数；设置只显示关闭按钮、搜索采用固定字号和单行省略。API与GUI证据分别记录，见[旅程](../../docs/journeys/native-model-provider-ui.md)。
