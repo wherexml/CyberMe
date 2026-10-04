@@ -229,3 +229,5 @@ v43实际六等级锁定/选择、deepThink五勾选、23:15→06:45时段/通�
 微信当前公开恢复入口为固定`native-wechat-recovery-api.mjs`→`native-wechat-recovery-http-preflight.mjs`→media proxy `--qualified-v43`，全部从仓库根运行；旧source gate失败保留。详见[微信GUI旅程](../../docs/journeys/native-wechat-gui.md)。Rust build必须在本目录执行以使用锁定1.95.0工具链，根目录仅传manifest不能替代toolchain工作目录。
 
 v44最小断开诊断修复已构建/签名并实际回归；v43自然TTL与v43→v44重启证据单独绑定版本，详见微信GUI旅程。root验收包在.local/apps中，默认安装包与最终两评分尚未交付。
+
+2026-10-04：冻结v44独立27+9+3帧、原始97/100及五mandatory PASS关闭Part1；原扣分及同session解析恢复保留，不认证后续包。Part2/85项与独立功能评分仍未完成，见`docs/journeys/native-final-resume-20261004.md`。
