@@ -213,3 +213,5 @@ v39连接状态/失败原因使用canonical row；删除迟到回调只清原分
 v41连接配置集合/Cancel/503/真实409及正常重启恢复见[集合旅程](../../docs/journeys/native-connection-collections.md)。仓库根运行 `node scripts/native-connection-collections-readback-e2e.mjs`，只读核验本次公开scope与源码/签名包，14项、40个原图/AX绑定；默认冻结快照回查不是实时PASS；`--live`在本批已清理后应失败。
 
 字号实际14/16对比与正常重启见[字号恢复](../../docs/journeys/native-font-recovery.md)，根目录 `python3 scripts/native-font-recovery-readback-e2e.py` 只读冻结原件；原裁切原因未定位，不作渲染修复PASS。
+
+十二设置中英文切换、两个正常重启及两行未提交草稿保持见[原生语言恢复](../../docs/journeys/native-language-recovery.md)。`python3 scripts/native-language-readback-e2e.py`回查49项冻结证据，实际语言写入仅两次；不认证隐藏弹窗、权限或最终评分。CUA历史.png字节实际JPEG，本批及字体/集合原件均保留，不把扩展名作为PNG资格。
