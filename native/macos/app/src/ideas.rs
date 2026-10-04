@@ -19,219 +19,8 @@ use gpui_kit::{
 };
 use opstwin_api::{Client, new_request_id};
 use serde_json::{Value, json};
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
-    rc::Rc,
-};
-use unicode_segmentation::UnicodeSegmentation;
-// GPUI's character-advance truncator can place its ellipsis on a fourth shaped
-// line. Measure and paint the same glyph layout at the actual allocated width.
-struct IdeaDescription {
-    id: ElementId,
-    text: SharedString,
-}
-struct IdeaDescriptionLayout {
-    style: TextStyle,
-    line_height: Pixels,
-    width: Option<Pixels>,
-    lines: Vec<WrappedLine>,
-}
-impl IdeaDescriptionLayout {
-    fn measure(
-        &mut self,
-        text: &SharedString,
-        width: Option<Pixels>,
-        window: &Window,
-        max_lines: usize,
-    ) -> Size<Pixels> {
-        self.width = width;
-        let font_size = self.style.font_size.to_pixels(window.rem_size());
-        let shape = |value: SharedString| {
-            window
-                .text_system()
-                .shape_text(
-                    value.clone(),
-                    font_size,
-                    &[self.style.to_run(value.len())],
-                    width,
-                    None,
-                )
-                .map(|lines| lines.into_iter().collect::<Vec<_>>())
-                .unwrap_or_default()
-        };
-        let full = shape(text.clone());
-        let line_count = |lines: &[WrappedLine]| {
-            lines
-                .iter()
-                .map(|line| line.wrap_boundaries.len() + 1)
-                .sum::<usize>()
-        };
-        self.lines = if width.is_some() && line_count(&full) > max_lines {
-            // Cut points must satisfy both native glyph cluster starts and Unicode
-            // extended-grapheme boundaries (ZWJ, modifiers, combining marks).
-            let graphemes: BTreeSet<usize> = text
-                .grapheme_indices(true)
-                .map(|(index, _)| index)
-                .collect();
-            let mut boundaries = vec![0];
-            let mut offset = 0;
-            for line in &full {
-                for run in &line.unwrapped_layout.runs {
-                    for glyph in &run.glyphs {
-                        let index = offset + glyph.index;
-                        if index < text.len() && graphemes.contains(&index) {
-                            boundaries.push(index);
-                        }
-                    }
-                }
-                offset += line.text.len() + 1;
-            }
-            boundaries.sort_unstable();
-            boundaries.dedup();
-            let candidate = |index: usize| {
-                let prefix = text[..boundaries[index]].trim_end();
-                shape(format!("{prefix}…").into())
-            };
-            let mut low = 0;
-            let mut high = boundaries.len();
-            let mut fitted = candidate(0);
-            while low + 1 < high {
-                let middle = low + (high - low) / 2;
-                let lines = candidate(middle);
-                if line_count(&lines) <= max_lines {
-                    low = middle;
-                    fitted = lines;
-                } else {
-                    high = middle;
-                }
-            }
-            fitted
-        } else {
-            full
-        };
-        let mut measured: Size<Pixels> = Size::default();
-        for line in &self.lines {
-            let size = line.size(self.line_height);
-            measured.width = measured.width.max(size.width).ceil();
-            measured.height += size.height;
-        }
-        // Intrinsic probes have no wrap width. Their height must still remain
-        // bounded; final width100% layout performs the actual wrapped measure.
-        measured.height = measured.height.min(self.line_height * max_lines);
-        measured
-    }
-}
-impl IntoElement for IdeaDescription {
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
-}
-impl Element for IdeaDescription {
-    type RequestLayoutState = Rc<RefCell<IdeaDescriptionLayout>>;
-    type PrepaintState = ();
-    fn id(&self) -> Option<ElementId> {
-        Some(self.id.clone())
-    }
-    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
-        None
-    }
-    fn a11y_role(&self) -> Option<Role> {
-        Some(Role::Label)
-    }
-    fn write_a11y_info(&self, node: &mut accesskit::Node) {
-        node.set_value(self.text.to_string());
-    }
-    fn request_layout(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        window: &mut Window,
-        _: &mut App,
-    ) -> (LayoutId, Self::RequestLayoutState) {
-        let style = window.text_style();
-        let line_height = window.pixel_snap(style.line_height.to_pixels(
-            style.font_size.to_pixels(window.rem_size()).into(),
-            window.rem_size(),
-        ));
-        let state = Rc::new(RefCell::new(IdeaDescriptionLayout {
-            style,
-            line_height,
-            width: None,
-            lines: vec![],
-        }));
-        let measure_state = state.clone();
-        let text = self.text.clone();
-        let mut layout_style = Style::default();
-        layout_style.size.width = relative(1.).into();
-        layout_style.min_size.width = px(0.).into();
-        layout_style.max_size.height = (line_height * 3).into();
-        let layout =
-            window.request_measured_layout(layout_style, move |known, available, window, _| {
-                let width = known.width.or(match available.width {
-                    AvailableSpace::Definite(width) => Some(width.max(px(1.))),
-                    _ => None,
-                });
-                measure_state.borrow_mut().measure(&text, width, window, 3)
-            });
-        (layout, state)
-    }
-    fn prepaint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        state: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        _: &mut App,
-    ) {
-        let mut state = state.borrow_mut();
-        let width = Some(bounds.size.width.max(px(1.)));
-        let budget = ((bounds.size.height / state.line_height) + 0.001).floor() as usize;
-        let painted_lines: usize = state
-            .lines
-            .iter()
-            .map(|line| line.wrap_boundaries.len() + 1)
-            .sum();
-        if state.width != width || painted_lines > budget {
-            // This is an exceptional guard, not a normal reflow path. Never paint
-            // extra lines outside Taffy's already allocated height. A width drift
-            // warning / reduced line budget is a GUI acceptance failure gate.
-            eprintln!("Ideas description allocated-layout drift; guarded line budget");
-            if budget == 0 {
-                state.lines.clear();
-                state.width = width;
-            } else {
-                state.measure(&self.text, width, window, budget.min(3));
-            }
-        }
-    }
-    fn paint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        state: &mut Self::RequestLayoutState,
-        _: &mut (),
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        let state = state.borrow();
-        let mut origin = bounds.origin;
-        for line in &state.lines {
-            let _ = line.paint(
-                origin,
-                state.line_height,
-                state.style.text_align,
-                Some(bounds),
-                window,
-                cx,
-            );
-            origin.y += line.size(state.line_height).height;
-        }
-    }
-}
+use std::collections::BTreeMap;
+use crate::clamped_text::ClampedText;
 #[derive(Clone, Debug)]
 pub enum IdeasEvent {
     OpenConversation { conversation_id: String },
@@ -264,7 +53,7 @@ impl IdeasView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let prompt = cx.new(|cx| InputState::new(window, cx).placeholder(t("你想推进什么？")));
+        let prompt = cx.new(|cx| InputState::new(window, cx).placeholder(t("输入目标，例如：整理本周工作周报")));
         let store = opstwin_store::Store::open_default().ok();
         let saved: Value = store
             .as_ref()
@@ -294,7 +83,7 @@ impl IdeasView {
         let mut this = Self {
             client,
             prompt,
-            prompt_placeholder: t("你想推进什么？"),
+            prompt_placeholder: t("输入目标，例如：整理本周工作周报"),
             target_conversation: None,
             items: vec![],
             category: "all".into(),
@@ -750,11 +539,6 @@ impl IdeasView {
                     .px_0()
                     .text_size(px(12.))
                     .text_color(cx.theme().primary)
-                    .when(self.detail.is_none(), |b| {
-                        b.opacity(0.)
-                            .group_hover(format!("idea-row-{id}"), |s| s.opacity(1.))
-                            .focus_visible(|s| s.opacity(1.))
-                    })
                     .icon(gpui_kit::assets::IconName::MessageCircle)
                     .label(t("深入聊聊"))
                     .disabled(self.busy.is_some())
@@ -767,11 +551,6 @@ impl IdeasView {
                     .h(px(26.))
                     .px_0()
                     .text_size(px(12.))
-                    .when(self.detail.is_none(), |b| {
-                        b.opacity(0.)
-                            .group_hover(format!("idea-row-{id}"), |s| s.opacity(1.))
-                            .focus_visible(|s| s.opacity(1.))
-                    })
                     .label(t(if idea["status"] == "deferred" {
                         "取消忽略"
                     } else {
@@ -818,7 +597,7 @@ impl IdeasView {
 }
 impl Render for IdeasView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let placeholder = t("你想推进什么？");
+        let placeholder = t("输入目标，例如：整理本周工作周报");
         if self.prompt_placeholder != placeholder {
             self.prompt_placeholder = placeholder.clone();
             self.prompt
@@ -913,6 +692,7 @@ impl Render for IdeasView {
                     .child(
                         div()
                             .flex_1()
+                            .min_w_0()
                             .text_size(px(12.))
                             .font_weight(FontWeight::NORMAL)
                             .child(
@@ -933,12 +713,14 @@ impl Render for IdeasView {
                             .font_weight(FontWeight::NORMAL)
                             .bg(theme.primary.opacity(0.10))
                             .text_color(theme.primary)
-                            .label(t("一起想想"))
+                            .label(t("生成建议"))
                             .loading(self.busy.as_deref() == Some("think"))
-                            .disabled(self.busy.is_some())
+                            .disabled(self.busy.is_some() || self.prompt.read(cx).value().trim().is_empty())
                             .on_click(cx.listener(|this, _, _, cx| this.think(cx))),
                     ),
             )
+            .child(div().text_size(px(12.)).text_color(theme.muted_foreground)
+                .mb(px(16.)).child(t("输入目标，AI 会结合工作区资料生成建议；选择建议后再深入聊聊。")))
             .child(categories);
         if let Some(error) = &self.error {
             content = content.child(
@@ -1038,7 +820,6 @@ impl Render for IdeasView {
             }
         } else {
             let mut count = 0;
-            let mut section_sample = None;
             for idea in display_items
                 .iter()
                 .filter(|i| (i["status"] == "deferred") == self.show_ignored)
@@ -1047,35 +828,12 @@ impl Render for IdeasView {
                 })
             {
                 count += 1;
-                let sample = idea["sample"].as_bool() == Some(true);
-                if section_sample != Some(sample) {
-                    content = content.child(
-                        div()
-                            .text_size(px(11.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .mt(px(24.))
-                            .mb(px(13.))
-                            .text_color(theme.muted_foreground)
-                            .child(t(if sample {
-                                "示例建议 · 仅供预览"
-                            } else {
-                                "工作区建议"
-                            })),
-                    );
-                    section_sample = Some(sample);
-                }
                 let id = idea["id"].as_str().unwrap_or("").to_string();
-                let open = id.clone();
                 let mut card = v_flex()
                     .id(ElementId::Name(format!("idea-card-{id}").into()))
                     .min_w_0()
                     .py(px(18.))
                     .gap(px(6.))
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.detail = Some(open.clone());
-                        cx.notify();
-                    }))
                     .child(
                         div()
                             .w_full()
@@ -1099,7 +857,7 @@ impl Render for IdeasView {
                             .text_size(body_px(13., cx))
                             .line_height(px(22.))
                             .text_color(theme.muted_foreground)
-                            .child(IdeaDescription {
+                            .child(ClampedText {
                                 id: SharedString::from(format!("idea-description-preview-{id}"))
                                     .into(),
                                 text: idea["description"]

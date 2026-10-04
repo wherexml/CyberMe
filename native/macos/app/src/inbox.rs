@@ -1786,8 +1786,12 @@ impl InboxView {
                         } else {
                             theme.muted_foreground
                         })
-                        .line_clamp(2)
-                        .child(snippet(&s.body, 130)),
+                        .w_full()
+                        .min_w_0()
+                        .child(crate::clamped_text::ClampedText {
+                            id: ElementId::Name(format!("inbox-preview-{}", s.id).into()),
+                            text: s.body.split_whitespace().collect::<Vec<_>>().join(" ").into(),
+                        }),
                 );
             if has_edit || s.sensitive || opstwin_api::is_done_status(&s.status) {
                 copy = copy.child(

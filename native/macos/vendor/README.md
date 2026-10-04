@@ -24,3 +24,7 @@ GUI、帧间隔、输入延迟与真实 SQL 压测分别记录。禁止将强制
 `window.rs`增加非组合且ASCII输入源下escape/up/down先交GPUI；未处理时清除doCommand的重复派发状态再走原AppKit fallback。活动IME输入源或marked text保留原路由，不能因没有marked text而吞掉候选导航。`OPSTWIN_KEY_TRACE`只记导航键与路由布尔值。实际v13搜索/菜单/录音Escape及Shift-F10重开子范围通过；中文候选仍须当前包实际验收。
 
 `gpui-base/src/text/style.rs`新增可选list_block_gap，默认None沿用原paragraph gap；`node.rs`只在列表块外间距消费。Chat显式8px列表块间距，列表项4px、普通paragraph10px与其它页默认保持。对应标题margin与HTML一致，完整像素对比另由独立评分记录。上文“仅两个源文件”指原帧唤醒批次，不指后续所有补丁。
+
+## 2026-10-04 Chat真实字形断行
+
+gpui-base的display_map/text_wrapper.rs对无缩进且无inline token的文字使用WindowTextSystem shape_text的实际glyph断行，避免中文标点上下文宽度与逐字advance不一致。其他路径保留原实现；本机registry未改。实际正常/窄窗与重启证据见 docs/journeys/native-text-layout.md。

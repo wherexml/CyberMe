@@ -296,6 +296,12 @@ impl TextWrapper {
         let mut line_wrapper = cx
             .text_system()
             .line_wrapper(self.font.clone(), self.font_size);
+        // Plain chat text must use the same shaped glyph widths as painting.
+        // Per-character advances differ from contextual CJK punctuation shaping.
+        let shaped_system = gpui::WindowTextSystem::new(cx.text_system().clone());
+        let shaped_font = self.font.clone();
+        let shaped_size = self.font_size;
+        let shaped_plain = self.wrapping_indent == WrappingIndent::None;
         let metrics = self.inline_metrics.clone();
         self._update(
             changed_text,
@@ -323,6 +329,23 @@ impl TextWrapper {
                     }
                     fragments.push(LineFragment::element(*width, range.len()));
                     offset = range.end;
+                }
+                if fragments.is_empty() && shaped_plain {
+                    let run = gpui::TextRun {
+                        len: line_str.len(), font: shaped_font.clone(),
+                        color: gpui::black(), background_color: None,
+                        underline: None, strikethrough: None,
+                    };
+                    if let Ok(lines) = shaped_system.shape_text(
+                        line_str.to_string().into(), shaped_size, &[run], Some(wrap_width), None,
+                    ) {
+                        return lines.iter().flat_map(|line| {
+                            line.wrap_boundaries.iter().map(|boundary| gpui::Boundary {
+                                ix: line.unwrapped_layout.runs[boundary.run_ix].glyphs[boundary.glyph_ix].index,
+                                next_indent: 0,
+                            })
+                        }).collect();
+                    }
                 }
                 if fragments.is_empty() {
                     return line_wrapper

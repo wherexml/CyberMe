@@ -1,5 +1,6 @@
 mod backdrop;
 mod chat;
+mod clamped_text;
 mod dictation;
 mod files;
 mod ideas;

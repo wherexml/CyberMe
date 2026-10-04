@@ -295,6 +295,7 @@ impl ChatView {
         let input = cx.new(|cx| {
             let mut s = TextareaState::new(window, cx)
                 .auto_grow(1, 8)
+                .wrapping_indent(gpui_kit::component::input::WrappingIndent::None)
                 // Plain Enter emits PressEnter instead of inserting "\n";
                 // Shift+Enter still inserts a newline.
                 .submit_on_enter(true)

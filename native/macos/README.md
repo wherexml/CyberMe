@@ -237,3 +237,7 @@ v44最小断开诊断修复已构建/签名并实际回归；v43自然TTL与v43�
 2026-10-04 v46 precise Task read: v45 stale error FAIL retained; fresh v46 actual503/same-ID200 clears prior action_error only after dirty/busy gates. Dirty draft guard and explicit close recovery remain visible; v45 late GET Ideas/newquery protection independently verified. See `docs/journeys/native-task-editor-focus.md`; full85 score null.
 
 - v46冻结包实际直接打断与物理麦克风组合、停止后可见填稿、Cancel/切页保稿和正常退出，见[Chat GUI旅程](../../docs/journeys/native-chat-gui-20261003.md)。原Stop切页干扰保留；不认证后续UI工作区改动或全部85项。
+
+- 文字裁切/灵感交互当前契约及公开46257复验：[`native-text-layout.md`](../../docs/journeys/native-text-layout.md)。
+
+- v46原生Chat来源规则屏蔽/恢复与引用否定、Inbox未知例外的真实模型/GUI绑定见[来源授权旅程](../../docs/journeys/native-agent-source-rules.md)；不把模型未调用当dispatcher拒绝，不升级完整85评分。
