@@ -181,4 +181,9 @@ v19候选将微信语音、视频、文件接入现有exact-message附件API：�
 
 2026-10-04 会话侧栏展开采用240pt整高并排列，正文及输入框按剩余宽度共同居中；普通展开/多行/收起/760pt窄窗与重启偏好实际GUI证据见[侧栏旅程](../../docs/journeys/native-chat-sidebar-layout.md)。
 
+
 设置最新截图布局：透明标题栏使导航表面延伸至窗口顶部，右侧标题顶部18pt，225pt导航/14pt字号/中性灰选中。契约见[设置连续布局](../../docs/design/native-settings-continuous-layout.md)。
+
+2026-10-04 飞书原生本人真实外发已在同隔离根完成唯一发送、丢成功响应GET回查、同状态重启及撤回，原回执保留且精确CLI确认删除；见[飞书旅程](../../docs/journeys/native-feishu-gui.md)。这是实际子旅程，完整85项仍未完成。冻结01fb旧包27组静态Haiku评分91，不能继承给后续整高侧栏/新设置布局。
+
+微信GUI环境用 `node scripts/native-wechat-gui-service.mjs`（46226），同scope `--stop/--resume`严格核路径/owner/自有PID与原token失效；[实际准备与恢复](../../docs/journeys/native-wechat-gui.md)不等于原生Read/Save/Hide通过。Chat真实听写可用 `OPSTWIN_API=http://127.0.0.1:46218 node scripts/native-chat-voice-gui-proxy.mjs`（46219），代理23项协议预检与真实硬件结果分开。
