@@ -64,3 +64,5 @@ HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 
 服务器正常重启可从 PRIVATE_DIR 内 `wechat-attachment-runtime.json` 采用非凭据程序绑定：严格schema/cliPath/sha256、600/owner/单链接、仅本项目摘要归档；缺文件保持安装版，坏文件微信503，其余API继续。环境显式覆盖优先，启动快照不热改；每次命令仍核摘要。公开复跑 `node scripts/native-wechat-runtime-http-e2e.mjs`（46232）与附件脚本 `--recovery`（46230）、上下文 `--public-only`（46223），均不调用默认私人来源。见[选择及重启规格](../docs/journeys/native-wechat-runtime.md)。
 
 模型供应商维护使用 `PATCH /api/settings/models/providers`，版本冲突、凭据目的地绑定、完整模型定义与当前角色保护见[原生模型配置旅程](../docs/journeys/native-model-provider-ui.md)。公共接口不返回密钥；完整定义供新Agent注册模型，旧角色接口兼容。
+
+角色选择私有持久化 `standardProviderId`/`deepProviderId`，重复渠道记录保留各自身份；显式 ID 无效或与实际渠道/模型目录冲突返回 `model_provider_binding_invalid`，不静默使用另一供应商。旧配置无 ID 时保留原推断，首次角色或供应商写入迁移绑定。`node scripts/native-model-provider-http-e2e.mjs` 在独立 46236 验证保存、重读、重启、已选保护和冲突；真实上游调用与原生 GUI 另验。

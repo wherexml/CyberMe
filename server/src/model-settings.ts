@@ -21,9 +21,19 @@ function read() {
   // Keep existing channels even when both roles are switched to the same one.
   const selections=current.map((p,i)=>{
     registerSecret(p.apiKey);
-    let match=providers.find(x=>x.baseUrl===p.baseUrl&&x.api===p.api&&x.apiKey===p.apiKey&&x.compatibility===p.compatibility);
+    const field=i?'deepProviderId':'standardProviderId',model=(i?llm.deepModel:llm.model)||'claude-opus-5-5';
+    const matchesBinding=(x:Provider)=>x.baseUrl===p.baseUrl&&x.api===p.api&&x.apiKey===p.apiKey&&(x.compatibility||undefined)===(p.compatibility||undefined);
+    let match:Provider|undefined;
+    if(Object.hasOwn(llm,field)){
+      const id=llm[field];
+      match=typeof id==='string'&&/^[-a-zA-Z0-9_]{1,100}$/.test(id)&&providers.filter(x=>x.id===id).length===1?providers.find(x=>x.id===id):undefined;
+      if(!match||!matchesBinding(match)||match.enabled===false||!match.apiKey||(match.definitions&&!match.definitions.some(m=>m.id===model)))throw new ApiError(503,'model_provider_binding_invalid','模型供应商绑定无效，请恢复或修正服务端配置。 / Invalid model provider binding. Restore or repair the server configuration.');
+    }else{
+      // Only configurations without an explicit role identity use legacy inference.
+      match=providers.find(matchesBinding);
+    }
     if(!match){match={...p,id:providers.some(x=>x.id===p.id)?'provider-'+providers.length:p.id};providers.push(match);}
-    return {providerId:match.id,model:(i?llm.deepModel:llm.model)||'claude-opus-5-5'};
+    return {providerId:match.id,model};
   });
   providers.forEach(p=>registerSecret(p.apiKey));
   const s=statSync(file,{bigint:true});
@@ -45,6 +55,7 @@ function selection(value:any,providers:Provider[]):{choice:ModelSelection;provid
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['providerId','model'].includes(k))||typeof value.model!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9._:/@+-]{0,199}$/.test(value.model.trim()))throw new ApiError(400,'invalid_model','请输入有效的模型 ID。 / Enter a valid model ID.');
   const provider=providers.find(p=>p.id===value.providerId);
   if(!provider||provider.enabled===false||!provider.apiKey||!provider.baseUrl)throw new ApiError(400,'invalid_provider','所选渠道尚未配置。 / Provider is not configured.');
+  if(provider.definitions&&!provider.definitions.some(m=>m.id===value.model.trim()))throw new ApiError(400,'invalid_model','所选模型不在供应商目录中。 / The selected model is not in the provider catalog.');
   return {choice:{providerId:provider.id,model:value.model.trim()},provider};
 }
 export function saveModelSettings(input:any):ModelSettings {
@@ -53,7 +64,7 @@ export function saveModelSettings(input:any):ModelSettings {
   if(input.version!==state.version)throw new ApiError(409,'model_settings_changed','配置已在其他地方变更，请先重新读取。 / Configuration changed. Reload before saving.');
   const standard=selection(input.standard,state.providers),deep=selection(input.deep,state.providers);
   const standardDef=standard.provider.definitions?.find(m=>m.id===standard.choice.model),deepDef=deep.provider.definitions?.find(m=>m.id===deep.choice.model);
-  const llm={...state.llm,modelOptions:standardDef,deepModelOptions:deepDef,modelProviders:state.providers,model:standard.choice.model,baseUrl:standard.provider.baseUrl,apiKey:standard.provider.apiKey,api:standard.provider.api,gatewayCompatibility:standard.provider.compatibility,deepModel:deep.choice.model,deepBaseUrl:deep.provider.baseUrl,deepApiKey:deep.provider.apiKey,deepApi:deep.provider.api,deepGatewayCompatibility:deep.provider.compatibility};
+  const llm={...state.llm,standardProviderId:standard.choice.providerId,deepProviderId:deep.choice.providerId,modelOptions:standardDef,deepModelOptions:deepDef,modelProviders:state.providers,model:standard.choice.model,baseUrl:standard.provider.baseUrl,apiKey:standard.provider.apiKey,api:standard.provider.api,gatewayCompatibility:standard.provider.compatibility,deepModel:deep.choice.model,deepBaseUrl:deep.provider.baseUrl,deepApiKey:deep.provider.apiKey,deepApi:deep.provider.api,deepGatewayCompatibility:deep.provider.compatibility};
   const root=state.root.llm?{...state.root,llm}:llm;
   const temp=file+'.'+randomUUID()+'.tmp';
   try {writeFileSync(temp,JSON.stringify(root,null,2)+'\n',{mode:0o600,flag:'wx'});renameSync(temp,file);}
@@ -91,7 +102,7 @@ export function saveModelProvider(input:any):ModelSettings {
   registerSecret(apiKey);
   const provider:Provider={id:p.id,name:p.name.trim(),baseUrl:p.baseUrl,api:p.api,apiKey:apiKey||'',enabled:p.enabled,compatibility:p.compatibility||undefined,definitions:p.definitions};
   const providers=state.providers.filter(x=>x.id!==p.id).concat(provider);
-  const llm={...state.llm,modelProviders:providers};
+  const llm={...state.llm,standardProviderId:state.selections[0].providerId,deepProviderId:state.selections[1].providerId,modelProviders:providers};
   for(const [i,choice] of state.selections.entries()){
     if(choice.providerId!==p.id)continue;
     const def=provider.definitions!.find(m=>m.id===choice.model);
