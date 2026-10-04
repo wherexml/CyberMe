@@ -257,3 +257,7 @@ Inbox已改为自动保存与服务端默认补稿，精简工具栏和迟到/�
 - 灵感资料默认折叠且可全文展开，旧长回答显示带时效声明的建议摘录；新生成最多三项，Markdown结论/行动/缺口并优先核最新状态，不把未查到后续判为逾期。折叠不改原请求或授权。见 `docs/journeys/native-idea-decision-reading.md`。
 
 - Chat行内代码的深浅主题配色与公开GUI回归见 [深色可读性](../../docs/journeys/native-chat-dark-contrast.md)。
+
+## 设置全页视觉精修
+
+模型以外11个设置分区统一轻分组与内容列；身份阅读复用安全Markdown。设计及可重复验收入口见 [全页精修](../../docs/design/native-settings-polish.md)。公开fixture和生产权限/保存分别记录。

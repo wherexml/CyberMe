@@ -1341,8 +1341,8 @@ impl SettingsView {
                 Button::new(ElementId::Name(format!("language-{value}").into()))
                     .ghost()
                     .flex_1()
-                    .h(px(60.))
-                    .p(px(12.))
+                    .h(px(48.))
+                    .p(px(10.))
                     .rounded(px(10.))
                     .border_1()
                     .border_color(if selected {
@@ -1423,15 +1423,19 @@ impl SettingsView {
     fn row(&self, label: &str, control: impl IntoElement, cx: &App) -> Div {
         self.row_raw(&t(label), control, cx)
     }
+    fn input_row(&self, label: &str, control: impl IntoElement, cx: &App) -> Div {
+        self.row(label, div().w(px(340.)).min_w_0().child(control), cx)
+    }
     fn row_raw(&self, label: &str, control: impl IntoElement, cx: &App) -> Div {
         h_flex()
-            .min_h(px(52.))
-            .py_3()
-            .gap_3()
+            .w_full().min_w_0()
+            .min_h(px(44.))
+            .py(px(8.))
+            .gap(px(16.))
             .border_b_1()
             .border_color(cx.theme().border)
-            .child(div().min_w_0().flex_1().whitespace_normal().text_size(px(13.)).child(label.to_string()))
-            .child(h_flex().justify_end().flex_shrink_0().w(px(340.)).child(control))
+            .child(div().min_w_0().flex_1().whitespace_normal().text_size(px(13.)).line_height(relative(1.5)).child(label.to_string()))
+            .child(h_flex().justify_end().flex_shrink_0().child(control))
     }
     fn row_detail(
         &self,
@@ -1450,9 +1454,9 @@ impl SettingsView {
         cx: &App,
     ) -> Div {
         h_flex()
-            .min_h(px(52.))
-            .py_3()
-            .gap_3()
+            .min_h(px(44.))
+            .py(px(8.))
+            .gap(px(16.))
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
@@ -1469,7 +1473,7 @@ impl SettingsView {
                         v.child(
                             div()
                                 .mt(px(5.))
-                                .text_size(px(11.))
+                                .text_size(px(12.))
                                 .line_height(relative(1.65))
                                 .text_color(cx.theme().muted_foreground)
                                 .child(description.to_string()),
@@ -1488,26 +1492,8 @@ impl SettingsView {
         brand: Option<&str>,
         cx: &mut Context<Self>,
     ) -> Div {
-        let key = format!("card-details-{title}");
-        let open = self.expanded.contains(&key);
-        let mut c = card_heading(title, brand, cx).child(
-            h_flex().mb(px(12.)).child(
-                Button::new(ElementId::Name(key.clone().into()))
-                    .small()
-                    .h(px(17.))
-                    .px_0()
-                    .ghost()
-                    .text_size(px(11.))
-                    .font_weight(FontWeight::NORMAL)
-                    .text_color(cx.theme().muted_foreground)
-                    .label(format!("{} {}", if open { "▾" } else { "▸" }, t("详情")))
-                    .on_click(cx.listener(move |this, _, _, cx| this.flip(&key, cx))),
-            ),
-        );
-        if open {
-            c = c.child(note(description, cx).line_height(relative(1.7)).mb(px(8.)));
-        }
-        c
+        card_heading(title, brand, cx)
+            .child(note(description, cx).mb(px(8.)))
     }
     fn choices(
         &self,
@@ -1552,6 +1538,7 @@ impl SettingsView {
                 let value = value.to_string();
                 r = r.child(
                     Radio::new(ElementId::Name(format!("alert-{value}").into()))
+                        .small().text_size(px(14.)).font_weight(FontWeight::NORMAL)
                         .checked(val == value)
                         .label(t(label))
                         .disabled(locked || self.busy)
@@ -2467,7 +2454,7 @@ impl SettingsView {
             })
             .unwrap_or(caption);
         let mut c = document_card(cx)
-            .flex_1()
+            .w_full()
             .min_w(px(0.))
             .gap_3()
             .child(
@@ -2487,11 +2474,9 @@ impl SettingsView {
                             .child(img(provider_art(provider)).size(px(26.))),
                     )
                     .child(
-                        div()
-                            .flex_1()
-                            .text_size(px(11.))
-                            .text_color(theme.muted_foreground)
-                            .child(t(account)),
+                        v_flex().flex_1().min_w_0().gap(px(3.))
+                            .child(div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).child(t(title)))
+                            .child(div().text_size(px(12.)).text_color(theme.muted_foreground).child(t(account))),
                     )
                     .child(
                         div()
@@ -2507,12 +2492,6 @@ impl SettingsView {
                                 t(status_label(status))
                             )),
                     ),
-            )
-            .child(
-                div()
-                    .text_size(px(13.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(t(title)),
             );
         if connected {
             let granted = conn
@@ -2560,7 +2539,7 @@ impl SettingsView {
         let exists = conn.is_some();
         let is_wechat = provider == "wechat-sync";
         let provider_name = title.to_string();
-        c.child(h_flex().gap_2().mt(px(3.)).child(Button::new(ElementId::Name(format!("manage-provider-{id}").into())).small().h(px(32.)).outline().label(t(if provider=="gmail"&&!connected{"设置 Gmail 连接"}else if provider=="wechat-sync"{"查看微信"}else{"自定义"})).on_click(cx.listener(move |this,_,_,cx|{this.detail=Some(if exists||is_wechat{manage.clone()}else{"new".into()});if !exists&&!is_wechat&&this.drafts.get("connection:new").is_none(){this.drafts["connection:new"]=json!({"name":provider_name,"type":"rest","endpoint":"","permissions":["read"],"config":{"authMethod":"none"}});this.persist();}this.delete_confirm=false;this.fields.clear();this.pending_fields=true;if is_wechat{this.wechat_chat=None;this.wechat_messages=json!({});if exists{this.read_wechat(String::new(),vec![String::new()],cx);}}cx.notify();}))).child(Button::new(ElementId::Name(format!("test-provider-{id}").into())).small().h(px(32.)).outline().label(t(if checking{"检测中…"}else if connected{"检测连接"}else{"连接"})).disabled(checking).on_click(cx.listener(move |this,_,_,cx|{if is_wechat||exists{this.check_provider_connection(probe.clone(),is_wechat,cx);}else{this.detail=Some("new".into());this.fields.clear();this.pending_fields=true;cx.notify();}}))))
+        c.child(h_flex().gap_2().mt(px(3.)).child(Button::new(ElementId::Name(format!("manage-provider-{id}").into())).small().h(px(32.)).outline().label(t(if provider=="gmail"&&!connected{"设置 Gmail 连接"}else if provider=="wechat-sync"{"查看微信"}else{"自定义"})).on_click(cx.listener(move |this,_,_,cx|{this.detail=Some(if exists||is_wechat{manage.clone()}else{"new".into()});if !exists&&!is_wechat&&this.drafts.get("connection:new").is_none(){this.drafts["connection:new"]=json!({"name":provider_name,"type":"rest","endpoint":"","permissions":["read"],"config":{"authMethod":"none"}});this.persist();}this.delete_confirm=false;this.fields.clear();this.pending_fields=true;if is_wechat{this.wechat_chat=None;this.wechat_messages=json!({});if exists{this.read_wechat(String::new(),vec![String::new()],cx);}}cx.notify();}))).when(exists || is_wechat, |actions| actions.child(Button::new(ElementId::Name(format!("test-provider-{id}").into())).small().h(px(32.)).outline().label(t(if checking{"检测中…"}else if connected{"检测连接"}else{"连接"})).disabled(checking).on_click(cx.listener(move |this,_,_,cx|{if is_wechat||exists{this.check_provider_connection(probe.clone(),is_wechat,cx);}else{this.detail=Some("new".into());this.fields.clear();this.pending_fields=true;cx.notify();}})))))
     }
     fn open_model_provider(&mut self, id: String, cx: &mut Context<Self>) {
         self.drop_connection_secret();
@@ -2872,7 +2851,7 @@ impl SettingsView {
             .child(self.field("catalog.maxTokens"))
             .child(note("智能配置使用兼容默认值；可按供应商实际限制调整。", cx))
             .child(
-                Button::new("model-advanced")
+                Button::new("model-advanced").self_start()
                     .small()
                     .ghost()
                     .label(t("高级配置"))
@@ -2946,7 +2925,7 @@ impl SettingsView {
         form
     }
     fn render_body(&self, cx: &mut Context<Self>) -> Div {
-        let mut out = v_flex().gap_4();
+        let mut out = v_flex().w_full().max_w(px(640.)).gap(px(24.));
         let theme = cx.theme().clone();
         let d = self.draft();
         if self.section == "connections" && self.detail.as_deref() == Some("request") {
@@ -3180,16 +3159,13 @@ impl SettingsView {
                         ),
                 );
                 soul = soul.child(
-                    Button::new("soul-details")
+                    Button::new("soul-details").self_start()
                         .small()
                         .h(px(32.))
                         .ghost()
                         .accessibility_label(t("详情"))
-                        .child(div().w_full().child(format!(
-                            "{} {}",
-                            if self.soul_details { "⌄" } else { "›" },
-                            t("详情")
-                        )))
+                        .icon(if self.soul_details { gpui_kit::component::IconName::ChevronDown } else { gpui_kit::component::IconName::ChevronRight })
+                        .label(t("详情"))
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.soul_details = !this.soul_details;
                             cx.notify();
@@ -3216,24 +3192,21 @@ impl SettingsView {
                     }
                     soul = soul.child(self.footer(cx));
                 } else {
-                    let content = format!(
-                        "# Soul\n\n## Who I am\nI’m the work twin of {}.\n{}\n{}\n\n## How I work\n{}",
-                        d["name"].as_str().unwrap_or("Steve"),
-                        d["role"].as_str().unwrap_or(""),
-                        d["about"].as_str().unwrap_or(""),
-                        d["instructions"]
-                            .as_str()
-                            .unwrap_or("Ask before sending messages or making commitments.")
-                    );
-                    soul = soul
-                        .child(
-                            div()
-                                .py_3()
-                                .text_size(body_px(12., cx))
-                                .line_height(px(22.8))
-                                .font_family("SFMono-Regular")
-                                .child(content),
-                        )
+                    let mut profile = v_flex().gap(px(12.)).py(px(8.));
+                    for (path, label) in [("name", "姓名"), ("role", "角色"), ("about", "关于你")] {
+                        if let Some(value) = d[path].as_str().filter(|value| !value.trim().is_empty()) {
+                            profile = profile.child(v_flex().gap(px(4.))
+                                .child(note(label, cx))
+                                .child(div().text_size(px(13.)).line_height(relative(1.6)).whitespace_normal().child(value.to_string())));
+                        }
+                    }
+                    if let Some(instructions) = d["instructions"].as_str().filter(|value| !value.trim().is_empty()) {
+                        profile = profile.child(v_flex().gap(px(6.))
+                            .child(note("指令（Markdown）", cx))
+                            .child(crate::util::markdown("settings-identity-instructions", instructions.to_string())
+                                .selectable(true).text_size(px(13.))));
+                    }
+                    soul = soul.child(profile)
                         .child(note(
                             if self.drafts.get("identity").is_some() {
                                 "当前显示未保存的预览草稿"
@@ -3279,16 +3252,13 @@ impl SettingsView {
                         ),
                 );
                 memory = memory.child(
-                    Button::new("memory-details")
+                    Button::new("memory-details").self_start()
                         .small()
                         .h(px(32.))
                         .ghost()
                         .accessibility_label(t("详情"))
-                        .child(div().w_full().child(format!(
-                            "{} {}",
-                            if self.memory_details { "⌄" } else { "›" },
-                            t("详情")
-                        )))
+                        .icon(if self.memory_details { gpui_kit::component::IconName::ChevronDown } else { gpui_kit::component::IconName::ChevronRight })
+                        .label(t("详情"))
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.memory_details = !this.memory_details;
                             cx.notify();
@@ -3300,7 +3270,7 @@ impl SettingsView {
                 }
                 if self.memory_manage {
                     memory = memory.child(
-                        Button::new("memory-snapshot")
+                        Button::new("memory-snapshot").self_start()
                             .small()
                             .h(px(32.))
                             .ghost()
@@ -3311,7 +3281,7 @@ impl SettingsView {
                             })),
                     );
                     memory = memory.child(
-                        Button::new("add-memory")
+                        Button::new("add-memory").self_start()
                             .small()
                             .h(px(32.))
                             .outline()
@@ -3414,7 +3384,7 @@ impl SettingsView {
                                     text.to_string(),
                                 )
                                 .selectable(true)
-                                .text_size(body_px(12., cx)),
+                                .text_size(px(12.)),
                             )
                             .when(self.memory_manage, |v| {
                                 v.child(
@@ -3460,7 +3430,7 @@ impl SettingsView {
             }
             "autonomy" => {
                 out = out.child(
-                    self.explained_card("暂停所有发送", "分身继续读取和起草，关闭前不会发送。", cx)
+                    self.explained_card("外部发送", "分身继续读取和起草，关闭前不会发送。", cx)
                         .child(
                             self.row(
                                 "暂停所有发送",
@@ -3577,8 +3547,8 @@ impl SettingsView {
                     .child(deep)
                     .child(
                         self.explained_card("安静时间", "非紧急通知延后到安静时间结束。", cx)
-                            .child(self.row("开始", self.field("quietFrom"), cx))
-                            .child(self.row("结束", self.field("quietUntil"), cx)),
+                            .child(self.row("开始", div().w(px(120.)).child(self.field("quietFrom")), cx))
+                            .child(self.row("结束", div().w(px(120.)).child(self.field("quietUntil")), cx)),
                     )
                     .child(card("通知时机", cx).child(self.choices(
                         "alerts",
@@ -3760,11 +3730,11 @@ impl SettingsView {
                                     self.toggle("config.workingHoursOnly", "", false, cx),
                                     cx,
                                 ))
-                                .child(self.row("开始", self.field("config.workFrom"), cx))
-                                .child(self.row("结束", self.field("config.workUntil"), cx))
-                                .child(self.row("时区", self.field("config.timezone"), cx)),
+                                .child(self.row("开始", div().w(px(120.)).child(self.field("config.workFrom")), cx))
+                                .child(self.row("结束", div().w(px(120.)).child(self.field("config.workUntil")), cx))
+                                .child(self.input_row("时区", self.field("config.timezone"), cx)),
                         )
-                        .child(card("连接与同步规则", cx).child(self.row(
+                        .child(card("连接与同步规则", cx).child(self.input_row(
                             "消息过滤",
                             self.field("config.filter"),
                             cx,
@@ -3775,7 +3745,7 @@ impl SettingsView {
                             let created = created.to_string();
                             out = out
                                 .child(
-                                    Button::new("recover-created-connection")
+                                    Button::new("recover-created-connection").self_start()
                                         .small()
                                         .h(px(32.))
                                         .outline()
@@ -3824,7 +3794,7 @@ impl SettingsView {
                         );
                         let recover = id.clone();
                         out = out.child(
-                            Button::new("read-saved-connection")
+                            Button::new("read-saved-connection").self_start()
                                 .small()
                                 .h(px(32.))
                                 .ghost()
@@ -3881,7 +3851,7 @@ impl SettingsView {
                             );
                         } else {
                             out = out.child(
-                                Button::new("delete-custom-app")
+                                Button::new("delete-custom-app").self_start()
                                     .small()
                                     .h(px(32.))
                                     .ghost()
@@ -3928,23 +3898,24 @@ impl SettingsView {
                             ),
                         ],
                     ] {
-                        let mut row = h_flex().gap_4().items_stretch();
+                        let mut row = v_flex().gap(px(16.));
                         for (provider, title, caption, desc) in pair {
                             row = row.child(self.provider_card(provider, title, caption, desc, cx));
                         }
                         out = out.child(row);
                     }
                     out = out.child(
-                        Button::new("add-connection")
+                        Button::new("add-connection").self_start()
                             .small()
                             .h(px(32.))
                             .ghost()
+                            .icon(gpui_kit::component::IconName::Plus)
                             .accessibility_label(t("添加自定义应用"))
                             .child(
                                 div()
                                     .w_full()
                                     .text_size(px(12.))
-                                    .child(format!("› {}", t("添加自定义应用"))),
+                                    .child(t("添加自定义应用")),
                             )
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.detail = Some("new".into());
@@ -4320,7 +4291,7 @@ impl SettingsView {
                     .child(card("其他设备", cx).child(note("暂无已连接设备", cx)));
             }
             "help" => {
-                let mut help = card("帮助", cx);
+                let mut help = card("常见问题", cx);
                 for (title, text) in [
                     (
                         "快捷键",
@@ -4353,7 +4324,7 @@ impl SettingsView {
                         ),
                     );
                     if self.expanded.contains(&key) {
-                        help = help.child(div().py_3().text_size(body_px(13., cx)).child(t(text)));
+                        help = help.child(div().py(px(12.)).text_size(px(13.)).line_height(relative(1.7)).child(t(text)));
                     }
                 }
                 out = out.child(help);
@@ -4382,20 +4353,16 @@ impl SettingsView {
                     .child(card("服务条款", cx).child(note("尚未提供", cx)));
             }
             "about" => {
-                out =
-                    out.child(
-                        card("OpsTwins", cx)
-                            .child(self.row("版本", div().child(env!("CARGO_PKG_VERSION")), cx))
-                            .child(self.row(
-                                "工作区版本",
-                                div().child(format!(
-                                    "r{}",
-                                    self.data["revision"].as_u64().unwrap_or(0)
-                                )),
-                                cx,
-                            ))
-                            .child(self.row("客户端", div().child("macOS · GPUI"), cx)),
-                    );
+                out = out.child(v_flex().gap(px(8.)).py(px(12.))
+                    .child(div().text_size(px(24.)).font_weight(FontWeight::SEMIBOLD).child("OpsTwins"))
+                    .child(note_raw(&format!("{} {} · macOS", t("版本"), env!("CARGO_PKG_VERSION")), cx)))
+                    .child(Button::new("about-diagnostics").small().h(px(32.)).self_start().ghost()
+                        .icon(if self.expanded.contains("about-diagnostics") { gpui_kit::component::IconName::ChevronDown } else { gpui_kit::component::IconName::ChevronRight })
+                        .label(t("诊断信息"))
+                        .on_click(cx.listener(|this, _, _, cx| this.flip("about-diagnostics", cx))))
+                    .when(self.expanded.contains("about-diagnostics"), |v| v.child(v_flex()
+                        .child(self.row("工作区版本", div().text_size(px(13.)).child(format!("r{}", self.data["revision"].as_u64().unwrap_or(0))), cx))
+                        .child(self.row("客户端", div().text_size(px(13.)).child("macOS · GPUI"), cx))));
             }
             _ => {}
         }
@@ -4411,7 +4378,7 @@ impl SettingsView {
                 cx,
             )
             .child(
-                Button::new("history-close")
+                Button::new("history-close").self_start()
                     .small()
                     .h(px(32.))
                     .ghost()
@@ -4647,7 +4614,7 @@ impl SettingsView {
     fn connection_collections(&self, cx: &mut Context<Self>) -> Div {
         let d = self.draft();
         let mut out = v_flex().gap_4();
-        let mut scopes = card("分身关注的频道", cx);
+        let mut scopes = card("分身关注的频道", cx).gap(px(8.));
         for (index, scope) in d["config"]["scopes"]
             .as_array()
             .into_iter()
@@ -4705,7 +4672,7 @@ impl SettingsView {
                 ),
         );
         out = out.child(scopes);
-        let mut important = card("重要内容", cx).child(note("人员", cx));
+        let mut important = card("重要内容", cx).gap(px(8.)).child(note("人员", cx));
         for (index, person) in d["config"]["importantPeople"]
             .as_array()
             .into_iter()
@@ -5149,7 +5116,7 @@ impl SettingsView {
             );
         }
         c.child(
-            Button::new("refresh-system-permissions")
+            Button::new("refresh-system-permissions").self_start()
                 .small()
                 .h(px(32.))
                 .ghost()
@@ -5304,7 +5271,7 @@ impl SettingsView {
                     })),
             );
         c = c.child(
-            Button::new("sync-configuration-toggle")
+            Button::new("sync-configuration-toggle").self_start()
                 .small()
                 .h(px(32.))
                 .ghost()
@@ -5333,7 +5300,7 @@ impl SettingsView {
                 ("sync.minutesMessageLimit", "助手消息数"),
                 ("sync.mailLimit", "邮件数"),
             ] {
-                configuration = configuration.child(self.row(label, self.field(path), cx));
+                configuration = configuration.child(self.input_row(label, self.field(path), cx));
             }
             let draft = self
                 .drafts
@@ -5354,7 +5321,7 @@ impl SettingsView {
                 );
             }
             c = c.child(configuration).child(
-                Button::new("save-sync-settings")
+                Button::new("save-sync-settings").self_start()
                     .small()
                     .h(px(32.))
                     .primary()
@@ -5767,9 +5734,9 @@ async fn probe_permissions() -> Value {
 fn document_card(cx: &App) -> Div {
     v_flex()
         .gap_2()
-        .px(px(20.))
-        .py(px(18.))
-        .rounded(px(12.))
+        .px(px(16.))
+        .py(px(16.))
+        .rounded(px(10.))
         .border_1()
         .border_color(cx.theme().border)
         .bg(cx.theme().muted)
@@ -5796,42 +5763,23 @@ fn card(title: &str, cx: &App) -> Div {
     card_heading(title, None, cx)
 }
 fn card_heading(title: &str, brand: Option<&str>, cx: &App) -> Div {
-    v_flex()
-        .gap_0()
-        .px(px(20.))
-        .py(px(18.))
-        .rounded(px(12.))
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().muted)
-        .when_some(brand, |card, brand| {
-            card.child(
-                div()
-                    .size(px(34.))
-                    .rounded(px(9.))
-                    .bg(rgb(0xffffff))
-                    .border_1()
-                    .border_color(rgb(0xe7eaf0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(img(provider_art(brand)).size(px(26.))),
-            )
-        })
-        .child(
-            div()
-                .text_size(px(13.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .mb(px(10.))
-                .child(t(title)),
-        )
+    v_flex().w_full().min_w_0().gap_0()
+        .child(h_flex().gap(px(10.)).mb(px(10.))
+            .when_some(brand, |header, brand| header.child(
+                div().size(px(28.)).rounded(px(7.)).bg(rgb(0xffffff))
+                    .flex().items_center().justify_center()
+                    .child(img(provider_art(brand)).size(px(22.)))))
+            .child(div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD)
+                .text_color(cx.theme().foreground).child(t(title))))
 }
 fn note(text: &str, cx: &App) -> Div {
     note_raw(&t(text), cx)
 }
 fn note_raw(text: &str, cx: &App) -> Div {
     div()
-        .text_size(px(11.))
+        .text_size(px(12.))
+        .line_height(relative(1.6))
+        .whitespace_normal()
         .text_color(cx.theme().muted_foreground)
         .child(text.to_string())
 }
@@ -6333,6 +6281,8 @@ pub fn t(s: &str) -> String {
         "服务条款" => "Terms of Service",
         "尚未提供" => "Not Provided Yet",
         "版本" => "Version",
+        "常见问题" => "Common Questions",
+        "诊断信息" => "Diagnostics",
         "工作区版本" => "Workspace Revision",
         "客户端" => "Client",
         "数据同步" => "Data Sync",
