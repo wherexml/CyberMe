@@ -3556,8 +3556,17 @@ impl SettingsView {
                                 cx.notify();
                             })),
                     );
-                    let status = d["status"].as_str().unwrap_or("not_connected");
+                    // Transport state belongs to the canonical saved connection, not
+                    // to an editor snapshot retained across creation/testing.
+                    let saved_connection = self.base();
+                    let state = if id == "new" { &d } else { &saved_connection };
+                    let status = state["status"].as_str().unwrap_or("not_connected");
                     out = out.child(note(status_label(status), cx));
+                    if status == "error" {
+                        if let Some(message) = state["message"].as_str().filter(|m| !m.is_empty()) {
+                            out = out.child(note(message, cx));
+                        }
+                    }
                     let custom = self.is_custom_connection(&d);
                     if custom {
                         let saved = self.base();
@@ -4533,6 +4542,8 @@ impl SettingsView {
         if id == "new" {
             return;
         }
+        let original_key = self.group_key();
+        let submitted_draft = self.drafts.get(&original_key).cloned();
         let client = self.client.clone();
         self.busy = true;
         self.error = None;
@@ -4547,16 +4558,23 @@ impl SettingsView {
                 this.busy = false;
                 match result {
                     Ok(_) => {
-                        let key = this.group_key();
-                        this.drafts.as_object_mut().map(|m| m.remove(&key));
-                        this.persist();
-                        this.detail = None;
-                        this.delete_confirm = false;
-                        this.fields.clear();
-                        this.pending_fields = true;
+                        if this.drafts.get(&original_key).cloned() == submitted_draft {
+                            this.drafts.as_object_mut().map(|m| m.remove(&original_key));
+                            this.persist();
+                        }
+                        if this.group_key() == original_key {
+                            this.detail = None;
+                            this.delete_confirm = false;
+                            this.fields.clear();
+                            this.pending_fields = true;
+                        }
                         this.reload(cx);
                     }
-                    Err(e) => this.error = Some(e.user_text()),
+                    Err(e) => {
+                        if this.group_key() == original_key {
+                            this.error = Some(e.user_text());
+                        }
+                    }
                 }
                 cx.notify();
             });

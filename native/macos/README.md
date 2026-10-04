@@ -207,3 +207,5 @@ Search→Inbox精确跳转的v35原错跳与v36修复回归保留在 `output/nat
 - [模型测试原请求恢复](../../docs/journeys/native-model-probe-recovery.md)：持久 ID、事务 receipt、GET 回查、重启 unknown 与新包丢响应恢复；完整设置/产品评分仍未完成。
 
 - [本机设置Saver恢复](../../docs/journeys/native-settings-local-saver.md)：真实写入失败保值、明确重试与同state正常重启，HTTP和本机错误分开。
+
+v39连接状态/失败原因使用canonical row；删除迟到回调只清原分区未变稿。真实REST丢201/503/删除拒绝/12秒延迟跨分区/正常重启及17项只读复验见[连接恢复旅程](../../docs/journeys/native-connection-recovery.md)。根目录执行 `node scripts/native-connection-recovery-readback-e2e.mjs`；完整十二设置/85与两评分仍未闭合。
