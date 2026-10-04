@@ -68,3 +68,5 @@ HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 
 模型供应商维护使用 `PATCH /api/settings/models/providers`，版本冲突、凭据目的地绑定、完整模型定义与当前角色保护见[原生模型配置旅程](../docs/journeys/native-model-provider-ui.md)。公共接口不返回密钥；完整定义供新Agent注册模型，旧角色接口兼容。
 
 角色选择私有持久化 `standardProviderId`/`deepProviderId`，重复渠道记录保留各自身份；显式 ID 无效或与实际渠道/模型目录冲突返回 `model_provider_binding_invalid`，不静默使用另一供应商。旧配置无 ID 时保留原推断，首次角色或供应商写入迁移绑定。`node scripts/native-model-provider-http-e2e.mjs` 在独立 46236 验证保存、重读、重启、已选保护和冲突；真实上游调用与原生 GUI 另验。
+
+微信 `/api/wechat/contacts` 的 `searchAll:true` 是明确请求的有界后续页搜索（最多20页/8秒，找到匹配即返回），普通请求继续保持单页过滤。返回 scanned/pagesScanned/searchPending/queryComplete；游标绑定查询、limit、模式、连接版本和源身份，重复/缺失游标不能伪装为完成。复验 `node scripts/native-wechat-contact-search-http-e2e.mjs`；公开CLI fixture与实际本机GUI分别记录。

@@ -1733,7 +1733,7 @@ impl SettingsView {
                 let capabilities = capabilities?;
                 let page = if applied_query.is_empty() { client.product_get(&path).await }
                 else if let Some(id) = conversation { client.wechat_search(json!({"conversation":id,"query":applied_query,"cursor":cursor})).await }
-                else { client.wechat_contacts(json!({"query":applied_query,"cursor":cursor})).await }?;
+                else { client.wechat_contacts(json!({"query":applied_query,"cursor":cursor,"searchAll":true,"limit":100})).await }?;
                 Ok::<_, opstwin_api::ApiError>((capabilities, page))
             }).await;
             _ = this.update(cx, |this, cx| {
@@ -1943,7 +1943,7 @@ impl SettingsView {
         let conn = self.provider_connection("wechat-sync");
         let connected = conn.is_some_and(|c| c["status"] == "connected");
         let mut out = v_flex().gap_4().child(
-            Button::new("wechat-connections-back")
+            Button::new("wechat-connections-back").self_start()
                 .small()
                 .h(px(32.))
                 .ghost()
@@ -1954,33 +1954,22 @@ impl SettingsView {
                     cx.notify();
                 })),
         );
-        let mut status = card("读取这台 Mac 上的个人微信", cx)
-            .child(note("只读，不发送或自动回复", cx))
-            .child(note(
-                "只有查看时才读取本机历史，不自动批量导入，也不自动提交给 AI 模型。",
-                cx,
-            ));
+        let mut status = card("个人微信", cx)
+            .gap_2()
+            .child(h_flex().gap_2()
+                .child(div().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD)
+                    .text_color(if connected { theme.success } else { theme.muted_foreground })
+                    .child(t(if connected { "已连接 · 只读" } else { "未连接" }))))
+            .child(note("按需查看本机联系人和消息，不自动导入或发送", cx));
         if let Some(conn) = conn {
-            status = status.child(note_raw(conn["message"].as_str().unwrap_or(""), cx));
-            for (key, label) in [
-                ("databaseCount", "本机数据库数"),
-                ("coverageComplete", "读取范围完整"),
-                ("verifiedAt", "检测时间"),
-            ] {
-                if let Some(value) = conn["evidence"].get(key) {
-                    status = status.child(
-                        self.row(
-                            label,
-                            div().text_size(px(11.)).child(
-                                value
-                                    .as_str()
-                                    .map(str::to_string)
-                                    .unwrap_or_else(|| value.to_string()),
-                            ),
-                            cx,
-                        ),
-                    );
-                }
+            if let Some(value) = conn["evidence"]["verifiedAt"].as_str() {
+                status = status.child(note_raw(&format!("{} {}", t("最近检测"), crate::util::fmt_time(value)), cx));
+            }
+            if conn["evidence"]["coverageComplete"] == false {
+                status = status.child(note("当前读取范围可能不完整", cx));
+            }
+            if !connected {
+                status = status.child(note_raw(conn["message"].as_str().unwrap_or(""), cx));
             }
         }
         status = status.child(
@@ -2026,7 +2015,7 @@ impl SettingsView {
         }
         out = out.child(h_flex().gap_2()
             .child(div().flex_1().child(Input::new(&self.wechat_query).small()))
-            .child(Button::new("wechat-context-search").small().h(px(32.)).outline()
+            .child(Button::new("wechat-context-search").small().h(px(32.)).outline().loading(self.wechat_loading)
                 .label(t(if self.wechat_chat.is_some() { "搜索当前会话" } else { "查找联系人" }))
                 .disabled(self.wechat_loading || self.wechat_save_busy)
                 .on_click(cx.listener(|this, _, _, cx| {
@@ -2036,11 +2025,14 @@ impl SettingsView {
                     this.read_wechat(String::new(), vec![String::new()], cx);
                 })))
             .child(Button::new("wechat-context-all").small().h(px(32.)).ghost().label(t("全部"))
-                .disabled(self.wechat_loading || self.wechat_save_busy).on_click(cx.listener(|this, _, _, cx| {
+                .disabled(self.wechat_loading || self.wechat_save_busy).on_click(cx.listener(|this, _, window, cx| {
+                    this.wechat_query.update(cx, |input, cx| input.set_value("", window, cx));
                     this.wechat_applied_query.clear();this.wechat_exact=None;this.wechat_image=None;
                     this.read_wechat(String::new(),vec![String::new()],cx);
                 }))));
-        out = out.child(note("查找只过滤当前联系人页；无结果时仍可继续下一页，不代表整个档案无匹配。", cx));
+        out = out.child(note(if self.wechat_chat.is_some() {
+            "只搜索当前会话中的消息"
+        } else { "按昵称、备注或微信号查找联系人，搜索会继续读取后续页" }, cx));
         if let Some(image)=&self.wechat_image {
             out=out.child(document_card(cx)
                 .child(Button::new("wechat-close-image").small().ghost().label(t("关闭图片"))
@@ -2119,6 +2111,11 @@ impl SettingsView {
             &self.wechat_page
         };
         let mut list = document_card(cx);
+        if self.wechat_chat.is_none() && !self.wechat_applied_query.is_empty() {
+            list = list.child(note_raw(&format!("{} {} · {} {}", t("已检查"),
+                page["scanned"].as_u64().unwrap_or(0), t("匹配"),
+                page["items"].as_array().map_or(0, |items| items.len())), cx));
+        }
         if let Some((_, name)) = &self.wechat_chat {
             list = list.child(
                 div()
@@ -2228,7 +2225,13 @@ impl SettingsView {
             }
         }
         if page["items"].as_array().is_some_and(|a| a.is_empty()) {
-            list = list.child(note("暂无", cx));
+            list = list.child(note(if self.wechat_chat.is_some() {
+                if self.wechat_applied_query.is_empty() { "暂无消息" } else { "未找到匹配的消息" }
+            } else if !self.wechat_applied_query.is_empty() {
+                if page["hasMore"] == true { "本批尚未找到匹配，继续搜索后续联系人" }
+                else if page["queryComplete"] == true { "未找到匹配的联系人" }
+                else { "当前可读范围内没有匹配" }
+            } else { "暂无会话" }, cx));
         }
         if page["items"].is_null() {
             list = list.child(note("点击刷新读取本机记录", cx));
@@ -2266,7 +2269,7 @@ impl SettingsView {
                         .small()
                         .h(px(32.))
                         .outline()
-                        .label(t("下一页"))
+                        .label(t(if self.wechat_chat.is_none() && !self.wechat_applied_query.is_empty() { "继续搜索" } else { "下一页" }))
                         .disabled(self.wechat_loading || !has_more)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             let mut history = cursors.clone();
@@ -2535,7 +2538,7 @@ impl SettingsView {
     fn render_model_provider(&self, cx: &mut Context<Self>) -> Div {
         let d = self.draft();
         let mut out = v_flex().gap_4().child(
-            Button::new("model-provider-back")
+            Button::new("model-provider-back").self_start()
                 .small()
                 .ghost()
                 .label(t("‹ 模型"))
@@ -2788,7 +2791,7 @@ impl SettingsView {
         if self.section == "connections" && self.detail.as_deref() == Some("request") {
             return out
                 .child(
-                    Button::new("request-back")
+                    Button::new("request-back").self_start()
                         .small()
                         .h(px(32.))
                         .ghost()
@@ -3444,7 +3447,7 @@ impl SettingsView {
                         return self.wechat_view(cx);
                     }
                     out = out.child(
-                        Button::new("connection-back")
+                        Button::new("connection-back").self_start()
                             .small()
                             .h(px(32.))
                             .ghost()
@@ -6189,6 +6192,21 @@ pub fn t(s: &str) -> String {
         "查找只过滤当前联系人页；无结果时仍可继续下一页，不代表整个档案无匹配。" => "Contact lookup filters this bounded page. An empty page can have more results; it does not cover the whole archive.",
         "此来源正文仍有截断，不能视为完整消息" => "The source is still truncated and cannot be treated as the full message",
         "关闭全文" => "Close Full Text",
+        "个人微信" => "Personal WeChat",
+        "已连接 · 只读" => "Connected · Read only",
+        "按需查看本机联系人和消息，不自动导入或发送" => "View local contacts and messages on demand; no automatic import or sending",
+        "最近检测" => "Last checked",
+        "只搜索当前会话中的消息" => "Search messages in this conversation only",
+        "按昵称、备注或微信号查找联系人，搜索会继续读取后续页" => "Find contacts by nickname, remark or WeChat ID, including later pages",
+        "本批尚未找到匹配，继续搜索后续联系人" => "No match in this batch. Continue searching later contacts",
+        "未找到匹配的联系人" => "No matching contacts found",
+        "当前可读范围内没有匹配" => "No match within the readable data",
+        "暂无会话" => "No conversations yet",
+        "暂无消息" => "No messages yet",
+        "未找到匹配的消息" => "No matching messages found",
+        "已检查" => "Checked",
+        "匹配" => "Matches",
+        "继续搜索" => "Continue search",
         "查找联系人" => "Find Contacts",
         "搜索当前会话" => "Search Conversation",
         "查找联系人或当前会话消息" => "Find contacts or messages in this conversation",

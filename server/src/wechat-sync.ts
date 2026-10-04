@@ -61,13 +61,35 @@ export async function wechatMessages(conversation:string,cursor?:string,limit?:u
   const id=verifiedConversation(conversation);const before=requireConnection();const value=await read(['messages','list','--conversation',id,'--limit',String(boundedLimit(limit,50,100)),'--json',...cursorArgs(cursor)]);assertConversationSource(id,value);const owner=await boundOwner(value.source);if(requireConnection().updatedAt!==before.updatedAt)throw new ApiError(409,'connection_changed','连接已变更，请重新读取。');
   return {...pageInfo(value),accountHolderKnown:!!owner,items:rows(value).map((m:any)=>message(m,owner))};
 }
-// Filtering is bounded to this CLI contact page. No silent whole-archive scan.
-const contactCursors=new Map<string,{scope:string,at:number}>();
+// Explicit archive lookup advances bounded contact pages; ordinary calls keep page semantics.
+const contactCursors=new Map<string,{scope:string,at:number,version:string,sourceHash:string,coverageComplete:boolean,warnings:any[]}>();
 export async function wechatContacts(input:any={}){
-  requireConnection();const q=privateQuery(input.query);const limit=boundedLimit(input.limit,50,100);const scope=digest({q,limit});if(input.cursor){const saved=contactCursors.get(input.cursor);if(!saved||saved.scope!==scope||Date.now()-saved.at>3600000)throw new ApiError(400,'invalid_cursor','查找条件已改变或过期，请从第一页开始。');}
-  const value=await read(['contacts','list','--limit',String(limit),'--details',...cursorArgs(input.cursor)]);const sourceRows=rows(value);rememberConversations(sourceRows,value);const filtered=sourceRows.filter((c:any)=>!q||[c.id,c.displayName,c.nickname,c.nickName,c.remark,c.alias].some(v=>typeof v==='string'&&v.toLocaleLowerCase().includes(q.toLocaleLowerCase())));
-  const info=pageInfo(value);if(info.nextCursor){if(contactCursors.size>1000)contactCursors.clear();contactCursors.set(info.nextCursor,{scope,at:Date.now()});}
-  return {...info,filterScope:'bounded-contact-page',scanned:sourceRows.length,queryComplete:!info.hasMore&&info.coverageComplete,ambiguous:filtered.length>1,items:filtered.map((c:any)=>({id:c.id,name:c.displayName||c.remark||c.nickname||c.nickName||c.id,kind:c.kind,alias:c.alias,remark:c.remark}))};
+  const connection=requireConnection();const q=privateQuery(input.query);const limit=boundedLimit(input.limit,50,100);
+  if(input.searchAll!==undefined&&typeof input.searchAll!=='boolean')throw new ApiError(400,'invalid_search_scope','搜索范围无效。');
+  const searchAll=input.searchAll===true&&!!q;const scope=digest({q,limit,searchAll});
+  const saved=input.cursor?contactCursors.get(input.cursor):undefined;
+  if(input.cursor&&(!saved||saved.scope!==scope||saved.version!==connection.updatedAt||Date.now()-saved.at>3600000))throw new ApiError(400,'invalid_cursor','查找条件已改变或过期，请从第一页开始。');
+  let cursor=input.cursor,sourceHash=saved?.sourceHash,scanned=0,pagesScanned=0,value:any,filtered:any[]=[];
+  let coverageComplete=searchAll?(saved?.coverageComplete??true):true;const warnings:any[]=searchAll?[...(saved?.warnings||[])]:[];
+  const started=Date.now(),seen=new Set<string>();
+  do{
+    if(cursor){cursorArgs(cursor);if(seen.has(cursor))throw new ApiError(502,'wechat_cursor_repeated','联系人分页未前进，请重新搜索。');seen.add(cursor);}
+    value=await read(['contacts','list','--limit',String(limit),'--details',...cursorArgs(cursor)]);
+    if(requireConnection().updatedAt!==connection.updatedAt)throw new ApiError(409,'connection_changed','连接已变更，请重新读取。');
+    const currentHash=digest(value.source?.identity);
+    if(!value.source?.identity||(sourceHash&&sourceHash!==currentHash)){clearWechatReader();throw new ApiError(409,'wechat_source_changed','本机微信来源已变化，请重新搜索。');}
+    sourceHash=currentHash;coverageComplete=coverageComplete&&pageInfo(value).coverageComplete;
+    for(const warning of pageInfo(value).warnings)if(warnings.length<64&&!warnings.some(w=>digest(w)===digest(warning)))warnings.push(warning);
+    const sourceRows=rows(value);scanned+=sourceRows.length;pagesScanned++;
+    rememberConversations(sourceRows,value,connection.updatedAt);
+    filtered=sourceRows.filter((c:any)=>!q||[c.id,c.displayName,c.nickname,c.nickName,c.remark,c.alias].some(v=>typeof v==='string'&&v.toLocaleLowerCase().includes(q.toLocaleLowerCase())));
+    cursor=pageInfo(value).nextCursor;
+    // A positive match is useful immediately. More pages remain explicitly available.
+  }while(searchAll&&!filtered.length&&value.page?.hasMore===true&&cursor&&pagesScanned<20&&Date.now()-started<8000);
+  const info={...pageInfo(value),coverageComplete,hasWarnings:warnings.length>0,warnings};
+  if(info.hasMore&&!info.nextCursor)throw new ApiError(502,'wechat_cursor_missing','联系人分页缺少后续标识，请重新搜索。');
+  if(info.nextCursor){if(seen.has(info.nextCursor))throw new ApiError(502,'wechat_cursor_repeated','联系人分页未前进，请重新搜索。');if(contactCursors.size>1000)contactCursors.clear();contactCursors.set(info.nextCursor,{scope,at:Date.now(),version:connection.updatedAt,sourceHash:sourceHash!,coverageComplete,warnings});}
+  return {...info,filterScope:searchAll?'bounded-archive-contact-search':'bounded-contact-page',scanned,pagesScanned,searchPending:searchAll&&info.hasMore,queryComplete:!info.hasMore&&info.coverageComplete,ambiguous:filtered.length>1,items:filtered.map((c:any)=>({id:c.id,name:c.displayName||c.remark||c.nickname||c.nickName||c.id,kind:c.kind,alias:c.alias,remark:c.remark}))};
 }
 export async function wechatSearch(input:any){
   const conversation=verifiedConversation(input?.conversation);const q=privateQuery(input?.query,true);const args=['messages','search','--query-stdin','--conversation',conversation,'--limit',String(boundedLimit(input.limit,50,100)),'--json',...cursorArgs(input.cursor)];for(const k of ['since','until'])if(input[k]!==undefined){if(!Number.isSafeInteger(input[k])||input[k]<0)throw new ApiError(400,'invalid_time','时间范围无效。');args.push(`--${k}`,String(input[k]));}if(input.since!==undefined&&input.until!==undefined&&input.since>input.until)throw new ApiError(400,'invalid_time','时间范围无效。');
@@ -76,7 +98,7 @@ export async function wechatSearch(input:any){
 export async function wechatMessage(input:any){
   const conversation=verifiedConversation(input?.conversation);const id=exactId(input?.message,'message');const before=requireConnection();const value=await read(['message','get','--conversation',conversation,'--message',id]);assertConversationSource(conversation,value);if(!value.item||value.item.id!==id||value.item.conversationId!==conversation)throw new ApiError(502,'wechat_message_mismatch','精确消息引用不一致，请重新读取。');const owner=await boundOwner(value.source);if(requireConnection().updatedAt!==before.updatedAt)throw new ApiError(409,'connection_changed','连接已变更，请重新读取。');return {...pageInfo(value),accountHolderKnown:!!owner,item:message(value.item,owner)};
 }
-export function wechatCapabilities(){requireConnection();const exact=verifyWechatAttachmentCli();return {readOnly:true,chats:true,contacts:true,contactLookup:'bounded-page-filter',messageSearch:'conversation-only-stdin',messageGet:true,direction:'cli-account-holder-id-or-unknown',textLimitCharacters:262144,attachments:{mode:exact?'verified-exact-cli':'installed-image-fallback',images:exact?'exact-message-inspect-materialize':'exact-message-single-row-cli-cache',voice:exact?'exact-message-inspect-materialize':'unsupported-ordinary-inspect',video:exact?'exact-message-inspect-materialize':'unsupported-ordinary-inspect',document:exact?'exact-message-inspect-materialize':'unsupported-ordinary-inspect',maxBytes:25000000,ambiguousTimestamp:'rejected',businessMediaVerified:false},send:false,archiveExport:false};}
+export function wechatCapabilities(){requireConnection();const exact=verifyWechatAttachmentCli();return {readOnly:true,chats:true,contacts:true,contactLookup:'bounded-page-filter',contactArchiveLookup:'explicit-bounded-scan',messageSearch:'conversation-only-stdin',messageGet:true,direction:'cli-account-holder-id-or-unknown',textLimitCharacters:262144,attachments:{mode:exact?'verified-exact-cli':'installed-image-fallback',images:exact?'exact-message-inspect-materialize':'exact-message-single-row-cli-cache',voice:exact?'exact-message-inspect-materialize':'unsupported-ordinary-inspect',video:exact?'exact-message-inspect-materialize':'unsupported-ordinary-inspect',document:exact?'exact-message-inspect-materialize':'unsupported-ordinary-inspect',maxBytes:25000000,ambiguousTimestamp:'rejected',businessMediaVerified:false},send:false,archiveExport:false};}
 // Search/body never enters persisted tool evidence, including failed requests.
 export function wechatToolAudit(params:any,result?:any,errorCode?:string){return {input:{action:params?.action,scopeHash:digest(params?.input??{}),privacy:'wechat_query_omitted'},output:{privacy:'wechat_body_omitted',count:Array.isArray(result?.items)?result.items.length:result?.item?1:0,hasMore:result?.hasMore===true,coverageComplete:result?.coverageComplete===true,warningCount:Array.isArray(result?.warnings)?result.warnings.length:0,...(errorCode?{code:errorCode}:{})}};}
 
