@@ -191,3 +191,5 @@ v19候选将微信语音、视频、文件接入现有exact-message附件API：�
 ### 直接发送（2026-10-04）
 
 运行中输入与普通发送相同，Enter/上箭头统一 `POST /api/chat` + `interruptCurrent:true`，停止旧回复后继续对话；不自动排队或插入运行。列表滚动条隐藏，滚轮/历史分页保留；遗留待发请求仍可恢复。主动打断为普通状态，完成写入保留原partial记录。可重复HTTP验收：`node scripts/native-chat-interrupt-http-e2e.mjs`（46240/46241公开隔离上游，report.json）；真实原生GUI与真实模型另记。
+
+停止消息下仅显示灰色“已停止”；悬停或键盘聚焦消息可复制/查看原请求执行记录，移除文字入口取消。真实错误与partial恢复操作保留。

@@ -2775,6 +2775,8 @@ impl ChatView {
         let text = content.to_string();
         let record = id.to_string();
         let record_view = view.clone();
+        let record_request = outgoing.map(|o| o.request_id.clone());
+        let stopped = outgoing.is_some_and(|o| matches!(&o.state, SendState::Failed { message, retryable: false } if message == "已被新消息打断"));
         let actions = h_flex()
             .absolute()
             .bottom(px(-21.))
@@ -2809,7 +2811,11 @@ impl ChatView {
                         .accessibility_label(t("查看执行记录"))
                         .on_click(move |_, window, cx| {
                             _ = record_view.update(cx, |this, cx| {
-                                this.show_record(record.clone(), window, cx)
+                                if let Some(request) = record_request.clone() {
+                                    this.show_request_record(request, window, cx);
+                                } else {
+                                    this.show_record(record.clone(), window, cx);
+                                }
                             });
                         }),
                 )
@@ -2833,8 +2839,10 @@ impl ChatView {
                         .text_color(theme.muted_foreground)
                         .child(t("原请求仍在运行，等待结果…")),
                 ),
+                SendState::Failed { message, retryable: false } if message == "已被新消息打断" => h_flex().child(
+                    div().text_xs().text_color(theme.muted_foreground).child(t("已停止")),
+                ),
                 SendState::Failed { message, retryable } => {
-                    let interrupted = !*retryable && message == "已被新消息打断";
                     let rid_retry = o.request_id.clone();
                     let rid_dismiss = o.request_id.clone();
                     let rid_clear = o.request_id.clone();
@@ -2844,9 +2852,7 @@ impl ChatView {
                     h_flex()
                         .gap_2()
                         .items_center()
-                        .child(div().text_xs().text_color(if interrupted { theme.muted_foreground } else { theme.danger }).child(if interrupted {
-                            t(message)
-                        } else { format!("{}{}", t("发送失败："), t(message)) }))
+                        .child(div().text_xs().text_color(theme.danger).child(format!("{}{}", t("发送失败："), t(message))))
                         .when(*retryable, |this| {
                             this.child(
                                 Button::new(ElementId::Name(format!("retry-{rid_retry}").into()))
@@ -2893,7 +2899,7 @@ impl ChatView {
             .relative()
             .mb(px(22.))
             .child(message)
-            .when(outgoing.is_none(), |this| this.child(actions))
+            .when(outgoing.is_none() || stopped, |this| this.child(actions))
             .into_any_element()
     }
 

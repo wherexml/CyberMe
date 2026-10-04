@@ -6028,6 +6028,7 @@ pub fn t(s: &str) -> String {
         "复制消息" => "Copy Message",
         "查看执行记录" => "View Run",
         "执行记录" => "Execution Record",
+        "已停止" => "Stopped",
         "已被新消息打断" => "Interrupted by a new message",
         "插入当前运行" => "Steer Current Run",
         "等待完成后发送" => "Send After Current Run",
