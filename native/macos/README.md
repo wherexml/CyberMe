@@ -245,3 +245,5 @@ v44最小断开诊断修复已构建/签名并实际回归；v43自然TTL与v43�
 2026-10-04 v48：新建201后输入原v47重复Save Decode FAIL保留；同原ID只读GET迁稿→明确PATCH、正常重启、末尾换行及fresh visible/切General迟到回包保护实际通过。冻结99项回查只核原E2E，不是完整设置/85评分；历史Restore仍待验。见 docs/journeys/native-memory-recovery.md。
 
 Inbox 后台生成与图标/提示回归见 [验收旅程](../../docs/journeys/native-inbox-background.md)：生成状态按事项隔离，公开fixture实际GUI不代表真实模型或完整产品评分。
+
+Chat发送状态：长POST同时每秒只读回查原requestId；已确认运行在左侧显示三点气泡，未知/终态停止动画。公开隔离GUI及10项证据复核入口见[Chat规格](../../docs/spec/native-chat-parity.md)，fixture用46264，不连接真实模型。

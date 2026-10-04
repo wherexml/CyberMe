@@ -41,9 +41,10 @@ use opstwin_store::{ConversationDraft, ConversationState};
 enum SendState {
     /// Request in flight (includes automatic retries with the same requestId).
     Sending { attempt: u32 },
-    /// Server says the original request is still running; waiting for a
-    /// revision event before re-reading.
+    /// Original request confirmed running by a read-only receipt poll.
     Waiting,
+    /// POST remains in flight, but its receipt could not be confirmed.
+    Checking,
     /// Failed; `retryable` decides whether Retry (same requestId) is offered.
     Failed { message: String, retryable: bool },
 }
@@ -67,7 +68,7 @@ impl Outgoing {
     fn to_record(&self) -> OutgoingRecord {
         let (state, error, retryable) = match &self.state {
             SendState::Sending { .. } => (OutgoingState::Pending, None, true),
-            SendState::Waiting => (OutgoingState::Waiting, None, true),
+            SendState::Waiting | SendState::Checking => (OutgoingState::Waiting, None, true),
             SendState::Failed { message, retryable } => {
                 (OutgoingState::Failed, Some(message.clone()), *retryable)
             }
@@ -139,6 +140,7 @@ enum Row {
         outgoing: Option<Outgoing>,
     },
     Local(Outgoing),
+    Processing(String),
 }
 
 impl Row {
@@ -148,6 +150,7 @@ impl Row {
             Row::Earlier { .. } => EARLIER_KEY.to_string(),
             Row::Server { msg, .. } => msg.id.to_string(),
             Row::Local(o) => format!("local-{}", o.request_id),
+            Row::Processing(rid) => format!("processing-{rid}"),
         }
     }
     /// Fingerprint used to decide whether a kept row must be remeasured.
@@ -163,6 +166,7 @@ impl Row {
                     .unwrap_or_default(),
             ),
             Row::Local(o) => (o.text.len(), format!("{:?}", o.state)),
+            Row::Processing(_) => (0, "processing".into()),
         }
     }
 }
@@ -842,6 +846,12 @@ impl ChatView {
             }
         }
 
+        if let Some(o) = self.outgoing.iter().rev().find(|o| {
+            o.conversation_id == self.conversation_id && o.state == SendState::Waiting
+        }) {
+            rows.push(Row::Processing(o.request_id.clone()));
+        }
+
         let old = &self.rows;
         let old_keys: Vec<String> = old.iter().map(Row::key).collect();
         let new_keys: Vec<String> = rows.iter().map(Row::key).collect();
@@ -1049,6 +1059,7 @@ impl ChatView {
     ) -> bool {
         match self.outgoing.iter_mut().find(|o| o.request_id == rid) {
             Some(o) if o.generation == generation => {
+                if o.state == state { return true; }
                 o.state = state;
                 self.persist(cx);
                 self.rebuild_rows(cx);
@@ -1338,7 +1349,79 @@ impl ChatView {
                 }
                 posted = true;
                 let (c, r, context) = (client.clone(), req.clone(), context_ids.clone());
-                match io(async move { c.chat_product_interrupt_context(&r, &context).await }).await {
+                // Keep the original POST alive while reading its durable receipt.
+                // A slow/lost POST response must not hide running or terminal state.
+                let mut post = Box::pin(io(async move {
+                    c.chat_product_interrupt_context(&r, &context).await
+                }));
+                let post_result = loop {
+                    let (c, id) = (client.clone(), rid.clone());
+                    let poll = Box::pin(async move {
+                        sleep(1000).await;
+                        io(async move {
+                            tokio::time::timeout(std::time::Duration::from_secs(5),
+                                c.chat_request_status(&id)).await
+                                .unwrap_or_else(|_| Err(ApiError::Network("status_read_timeout".into())))
+                        }).await
+                    });
+                    match futures_util::future::select(post, poll).await {
+                        futures_util::future::Either::Left((result, _)) => break result,
+                        futures_util::future::Either::Right((status, pending_post)) => {
+                            post = pending_post;
+                            let current = this.update(cx, |this, _| {
+                                this.outgoing.iter().any(|o| o.request_id == rid
+                                    && o.generation == generation
+                                    && o.conversation_id == req.conversation_id)
+                            }).unwrap_or(false);
+                            if !current { return; }
+                            match status {
+                                Ok(status) if status.request_id == rid
+                                    && status.conversation_id == req.conversation_id => {
+                                    match status.status.as_str() {
+                                        "succeeded" => {
+                                            if let Some(response) = status.result {
+                                                _ = this.update(cx, |this, cx| this.accept_response(&rid, response, cx));
+                                                return;
+                                            }
+                                            _ = this.update(cx, |this, cx| {
+                                                this.set_send_state(&rid, generation, SendState::Checking, cx);
+                                            });
+                                        }
+                                        "running" => {
+                                            _ = this.update(cx, |this, cx| {
+                                                this.set_send_state(&rid, generation, SendState::Waiting, cx);
+                                            });
+                                        }
+                                        "partial" | "failed" => {
+                                            _ = this.update(cx, |this, cx| {
+                                                this.set_send_state(&rid, generation, SendState::Failed {
+                                                    message: if status.status == "partial" {
+                                                        "原运行已有部分写入，请查看执行记录后继续".into()
+                                                    } else { "原请求已失败，请查看执行记录".into() },
+                                                    retryable: false,
+                                                }, cx);
+                                                this.refresh_newest(cx);
+                                            });
+                                            // Briefly allow the POST's precise interruption/error detail;
+                                            // a lost terminal response must not keep polling forever.
+                                            match futures_util::future::select(post, Box::pin(sleep(1000))).await {
+                                                futures_util::future::Either::Left((result, _)) => break result,
+                                                futures_util::future::Either::Right(_) => return,
+                                            }
+                                        }
+                                        _ => { _ = this.update(cx, |this, cx| {
+                                            this.set_send_state(&rid, generation, SendState::Checking, cx);
+                                        }); }
+                                    }
+                                }
+                                _ => { _ = this.update(cx, |this, cx| {
+                                    this.set_send_state(&rid, generation, SendState::Checking, cx);
+                                }); }
+                            }
+                        }
+                    }
+                };
+                match post_result {
                     Ok(response) => {
                         _ = this.update(cx, |this, cx| this.accept_response(&rid, response, cx));
                         return;
@@ -1362,7 +1445,7 @@ impl ChatView {
                     }
                     Err(e) if e.is_in_progress() || e.outcome_unknown() => {
                         _ = this.update(cx, |this, cx| {
-                            this.set_send_state(&rid, generation, SendState::Waiting, cx);
+                            this.set_send_state(&rid, generation, SendState::Checking, cx);
                         });
                         sleep(1000).await;
                     }
@@ -2687,6 +2770,23 @@ impl ChatView {
                 files,
                 cx,
             ),
+            Row::Processing(rid) => h_flex().w_full().mb(px(22.)).child(
+                h_flex().id(ElementId::Name(format!("typing-{rid}").into()))
+                    .role(gpui_kit::Role::Status)
+                    .aria_label(if crate::settings::is_english() { "AI is processing" } else { "AI 正在处理" })
+                    .gap(px(5.)).px(px(18.)).h(px(44.)).rounded(px(22.))
+                    .bg(cx.theme().muted)
+                    .children((0..3).map(|index| {
+                        div().size(px(7.)).rounded_full().bg(cx.theme().muted_foreground)
+                            .with_animation(ElementId::Name(format!("typing-{rid}-{index}").into()),
+                                Animation::new(std::time::Duration::from_millis(1200)).repeat(),
+                                move |dot, delta| {
+                                    let wave = ((delta * std::f32::consts::TAU
+                                        - index as f32 * 0.8).sin() + 1.) / 2.;
+                                    dot.opacity(0.3 + 0.7 * wave)
+                                })
+                    }))
+            ).into_any_element(),
             Row::Local(o) => {
                 let id: SharedString = format!("local-{}", o.request_id).into();
                 let ids: Vec<String> = o.attachments.iter().map(|a| a.id.clone()).collect();
@@ -2968,11 +3068,12 @@ impl ChatView {
                             t("发送中…")
                         }),
                 ),
-                SendState::Waiting => h_flex().child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child(t("原请求仍在运行，等待结果…")),
+                SendState::Waiting => h_flex(),
+                SendState::Checking => h_flex().child(
+                    div().text_xs().text_color(theme.muted_foreground)
+                        .child(if crate::settings::is_english() {
+                            "Confirming request status…"
+                        } else { "正在确认请求状态…" }),
                 ),
                 SendState::Failed { message, retryable: false } if message == "已被新消息打断" => h_flex().child(
                     div().text_xs().text_color(theme.muted_foreground).child(t("已停止")),
