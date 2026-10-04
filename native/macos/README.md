@@ -219,3 +219,7 @@ v41连接配置集合/Cancel/503/真实409及正常重启恢复见[集合旅程]
 ## 2026-10-04 记忆恢复增量
 
 实际9534字新建201丢响应后原ID GET恢复，无重复创建；9573字全文保存。v41冲突Reload旧lease及v42迟到200删除后输入FAIL均保留；v43实际保稿/丢稿精确读取、15秒成功后保稿、正常Quit重启继续Save及迟到真实409切分区保护通过。20项冻结回查仅认证上述27原JPEG/43AX及HTTP/源/App，不是完整85或独立评分。new成功后后来输入迁ID、Identity/历史恢复和next Agent消费仍待验。旅程：`docs/journeys/native-memory-recovery.md`。
+
+## 2026-10-04 自主权限恢复增量
+
+v43实际六等级锁定/选择、deepThink五勾选、23:15→06:45时段/通知/披露整组保存。代理503保稿跨正常重启、明确重试200、Cancel、关闭重开和保存重启后原生恢复baseline；15档案检查/17原JPEG/17AX。实际next Local只读deep模型消费everyone，原request ledger/GET run一致；本人hold HTTP423及0发送/日历意图。原生Record、自动调度、逐类deep/quiet通知/运输披露与并发仍未关闭。详见`docs/journeys/native-autonomy-recovery.md`，不计完整85或独立功能评分。
