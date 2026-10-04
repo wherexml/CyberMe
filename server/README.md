@@ -74,3 +74,5 @@ HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 
 - [模型测试原请求恢复](../docs/journeys/native-model-probe-recovery.md)：持久 ID、事务 receipt、GET 回查、重启 unknown 与新包丢响应恢复；完整设置/产品评分仍未完成。
 
 默认空草稿队列由 `default-drafts.ts` 启动（遵循OPSTWIN_NO_BACKGROUND），按事项持久准备状态/串行只读模型调用，已有人工草稿不覆盖、失败/重启未知不自动重跑；协议和复验见 [Inbox自动保存旅程](../docs/journeys/native-inbox-autosave.md)。
+
+- 聊天灵感结构化结果只作内部数据：新回复保存可读正文，历史assistant按精确ideas结构只读投影；执行记录呈现确认状态/操作摘要，业务taskOutcome优先，不展示原始JSON。Ideas移除审核占位；见 `docs/journeys/native-chat-readable-results.md`。

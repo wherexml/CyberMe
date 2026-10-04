@@ -2371,7 +2371,7 @@ impl ChatView {
             _ = this.update_in(cx, |this, window, cx| {
                 if !this.visible || this.conversation_id != target || this.record_owner_generation != owner { return; }
                 let text = match result {
-                    Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_default(),
+                    Ok(v) => crate::chat_presentation::record(&v),
                     Err(e) => e.user_text(),
                 };
                 window.open_dialog(cx, move |dialog, _, _| {
@@ -2382,7 +2382,7 @@ impl ChatView {
                             .overflow_y_scroll()
                             .child(crate::util::markdown(
                                 "chat-request-record-body",
-                                format!("```json\n{text}\n```"),
+                                text.clone(),
                             )),
                     )
                 })
@@ -2400,7 +2400,7 @@ impl ChatView {
             _ = this.update_in(cx, |this, window, cx| {
                 if !this.visible || this.conversation_id != target || this.record_owner_generation != owner { return; }
                 let text = match result {
-                    Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_default(),
+                    Ok(v) => crate::chat_presentation::record(&v),
                     Err(e) => format!("执行记录读取失败：{}", e.user_text()),
                 };
                 window.open_dialog(cx, move |dialog, _, _| {
@@ -2411,7 +2411,7 @@ impl ChatView {
                             .overflow_y_scroll()
                             .child(crate::util::markdown(
                                 "chat-record",
-                                format!("```json\n{text}\n```"),
+                                text.clone(),
                             )),
                     )
                 })
@@ -2808,6 +2808,7 @@ impl ChatView {
         files: &Rc<FileCtx>,
         cx: &mut App,
     ) -> AnyElement {
+        let content: SharedString = if is_user { content.clone() } else { crate::chat_presentation::reply(content.as_ref()).into() };
         let theme = cx.theme().clone();
         // Match macos-markdown.css rather than the component facade's
         // documentation-sized headings and default 1rem paragraph gap.

@@ -249,3 +249,5 @@ Inbox 后台生成与图标/提示回归见 [验收旅程](../../docs/journeys/n
 Chat发送状态：长POST同时每秒只读回查原requestId；已确认运行在左侧显示三点气泡，未知/终态停止动画。公开隔离GUI及10项证据复核入口见[Chat规格](../../docs/spec/native-chat-parity.md)，fixture用46264，不连接真实模型。
 
 Inbox已改为自动保存与服务端默认补稿，精简工具栏和迟到/失败/冲突/重启证据见 [热保存旅程](../../docs/journeys/native-inbox-autosave.md)。
+
+- 聊天灵感结构化结果只作内部数据：新回复保存可读正文，历史assistant按精确ideas结构只读投影；执行记录呈现确认状态/操作摘要，业务taskOutcome优先，不展示原始JSON。Ideas移除审核占位；见 `docs/journeys/native-chat-readable-results.md`。

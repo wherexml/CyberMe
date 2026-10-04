@@ -881,14 +881,6 @@ impl Render for IdeasView {
                             })),
                     );
                 }
-                if self.runs.get(&id).is_none() && idea["sample"].as_bool() != Some(true) {
-                    card = card.child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(theme.muted_foreground)
-                            .child(t("等待你审核")),
-                    );
-                }
                 card = card.child(div().mt(px(2.)).child(self.actions(idea, cx)));
                 content = content.child(
                     h_flex()
