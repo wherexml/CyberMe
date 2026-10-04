@@ -2067,7 +2067,10 @@ impl SettingsView {
             if conn["evidence"]["coverageComplete"] == false {
                 status = status.child(note("当前读取范围可能不完整", cx));
             }
-            if !connected {
+            // Disconnect preserves the historical probe message in canonical data.
+            // Only the explicit disconnected state suppresses that stale diagnostic;
+            // failed and unknown states must still expose their actual reason.
+            if !connected && conn["status"] != "disconnected" {
                 status = status.child(note_raw(conn["message"].as_str().unwrap_or(""), cx));
             }
         }
