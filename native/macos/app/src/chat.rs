@@ -200,6 +200,7 @@ pub struct ChatView {
     panel_open: bool,
     switching: bool,
     placeholder_locale: String,
+    copied_messages: HashMap<String, std::time::Instant>,
     keep_panel_visible: bool,
     show_archived: bool,
     last_deleted: Option<String>,
@@ -342,6 +343,7 @@ impl ChatView {
             panel_open: saved.keep_panel_visible,
             switching: false,
             placeholder_locale: t("输入消息…"),
+            copied_messages: HashMap::new(),
             keep_panel_visible: saved.keep_panel_visible,
             show_archived: false,
             last_deleted: None,
@@ -3000,6 +3002,11 @@ impl ChatView {
                     .child(inner),
             );
         let text = content.to_string();
+        let copy_id = id.to_string();
+        let copy_view = view.clone();
+        let copied = view.upgrade().is_some_and(|view| {
+            view.read(cx).copied_messages.contains_key(copy_id.as_str())
+        });
         let record = id.to_string();
         let record_view = view.clone();
         let record_request = outgoing.map(|o| o.request_id.clone());
@@ -3014,14 +3021,31 @@ impl ChatView {
                 Button::new(ElementId::Name(format!("chat-copy-{id}").into()))
                     .ghost()
                     .xsmall()
-                    .icon(ProductIcon::Copy)
-                    .opacity(0.)
+                    .icon(Icon::new(if copied { ProductIcon::Check } else { ProductIcon::Copy })
+                        .when(copied, |icon| icon.text_color(theme.success)))
+                    .opacity(if copied { 1. } else { 0. })
                     .group_hover("chat-message", |this| this.opacity(1.))
                     .focus_visible(|this| this.opacity(1.))
-                    .tooltip(t("复制消息"))
-                    .accessibility_label(t("复制消息"))
+                    .tooltip(t(if copied { if crate::settings::is_english() { "Copied" } else { "已复制" } } else { "复制消息" }))
+                    .accessibility_label(t(if copied { if crate::settings::is_english() { "Copied" } else { "已复制" } } else { "复制消息" }))
                     .on_click(move |_, _, cx| {
-                        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()))
+                        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                        _ = copy_view.update(cx, |this, cx| {
+                            let stamp = std::time::Instant::now();
+                            let id = copy_id.clone();
+                            this.copied_messages.insert(id.clone(), stamp);
+                            cx.notify();
+                            cx.spawn(async move |this, cx| {
+                                sleep(2000).await;
+                                _ = this.update(cx, |this, cx| {
+                                    // Repeated clicks restart feedback; an older timer cannot clear it.
+                                    if this.copied_messages.get(&id) == Some(&stamp) {
+                                        this.copied_messages.remove(&id);
+                                        cx.notify();
+                                    }
+                                });
+                            }).detach();
+                        });
                     }),
             )
             .when(!is_user || request_id.is_some(), |this| {
