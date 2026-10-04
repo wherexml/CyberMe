@@ -2824,6 +2824,13 @@ impl ChatView {
             .with_selection(theme.selection)
             .with_border(theme.border)
             .with_code_background(theme.muted)
+            // Inline code has its own explicit default background; changing
+            // code_background alone only updates blocks and the fallback.
+            .with_inline_code(HighlightStyle {
+                color: Some(theme.foreground),
+                background_color: Some(theme.muted),
+                ..Default::default()
+            })
             .with_dark(theme.is_dark())
             .with_paragraph_gap(rems(10. / 16. * body_scale))
             .with_list_prefix_width(crate::settings::body_px(22., cx))
