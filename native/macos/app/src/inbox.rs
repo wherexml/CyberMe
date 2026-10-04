@@ -3192,6 +3192,9 @@ fn avatar(url: Option<String>, name: &str, size: f32, cx: &App) -> AnyElement {
                 d.child(
                     img(url)
                         .size_full()
+                        // GPUI overflow clips to rectangular bounds. The image
+                        // sprite needs its own radius for circular avatars.
+                        .rounded_full()
                         .object_fit(ObjectFit::Cover)
                         .with_fallback(move || {
                             div()

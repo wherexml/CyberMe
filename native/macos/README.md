@@ -193,3 +193,7 @@ v19候选将微信语音、视频、文件接入现有exact-message附件API：�
 运行中输入与普通发送相同，Enter/上箭头统一 `POST /api/chat` + `interruptCurrent:true`，停止旧回复后继续对话；不自动排队或插入运行。列表滚动条隐藏，滚轮/历史分页保留；遗留待发请求仍可恢复。主动打断为普通状态，完成写入保留原partial记录。可重复HTTP验收：`node scripts/native-chat-interrupt-http-e2e.mjs`（46240/46241公开隔离上游，report.json）；真实原生GUI与真实模型另记。
 
 停止消息下仅显示灰色“已停止”；悬停或键盘聚焦消息可复制/查看原请求执行记录，移除文字入口取消。真实错误与partial恢复操作保留。
+
+### 服务端未确认运行恢复
+
+打开会话、刷新和同根重启均只读发现服务器未确认请求，不要求本机 `outgoing` 或已加载历史消息含该请求。`GET /api/chat/conversations/:id/unresolved` 返回有界元数据及 revision 分页；原生独立 RAM 缓存按会话与可见代次核对，刷新失败保留已有记录和草稿，分页变更要求重读。partial 提示真实写入次数，缺少证据显示未知；执行记录先按原 requestId 读取 receipt，再读原 run，不能生成可重发本机记录。真实 GUI、HTTP 和 Rust 客户端证据见 [Chat 恢复旅程](../../docs/journeys/native-chat-gui-20261003.md)。

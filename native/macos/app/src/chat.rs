@@ -34,7 +34,7 @@ use crate::sync::{SyncEvent, SyncHub};
 const PAGE: u32 = 50;
 const EARLIER_KEY: &str = "\u{0}earlier";
 use gpui_kit::assets::IconName as ProductIcon;
-use opstwin_api::chat_product::{Continuation, SessionState};
+use opstwin_api::chat_product::{Continuation, RecoveryIntent, SessionState};
 use opstwin_store::{ConversationDraft, ConversationState};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -205,6 +205,17 @@ pub struct ChatView {
     session_states: HashMap<String, SessionState>,
     session_states_ready: bool,
     session_state_generation: u64,
+    // Server recovery is RAM-only metadata, never a synthetic retryable Outgoing.
+    recovery_items: Vec<RecoveryIntent>,
+    recovery_total: u64,
+    recovery_partial_count: u64,
+    recovery_next_before: Option<String>,
+    recovery_revision: Option<u64>,
+    recovery_loading: bool,
+    recovery_error: Option<String>,
+    recovery_generation: u64,
+    recovery_refresh_again: bool,
+    record_owner_generation: u64,
     keyboard_menu: Option<(
         Entity<gpui_kit::component::menu::PopupMenu>,
         Point<Pixels>,
@@ -335,6 +346,16 @@ impl ChatView {
             session_states: HashMap::new(),
             session_states_ready: false,
             session_state_generation: 0,
+            recovery_items: Vec::new(),
+            recovery_total: 0,
+            recovery_partial_count: 0,
+            recovery_next_before: None,
+            recovery_revision: None,
+            recovery_loading: false,
+            recovery_error: None,
+            recovery_generation: 0,
+            recovery_refresh_again: false,
+            record_owner_generation: 0,
             keyboard_menu: None,
             keyboard_menu_previous: None,
             keyboard_menu_subscription: None,
@@ -409,6 +430,10 @@ impl ChatView {
     pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
         self.visible = visible;
         if !visible {
+            self.record_owner_generation += 1;
+            self.recovery_generation += 1;
+            self.recovery_loading = false;
+            self.recovery_refresh_again = false;
             self.keyboard_menu = None;
             self.keyboard_menu_previous = None;
             self.keyboard_menu_subscription = None;
@@ -417,6 +442,7 @@ impl ChatView {
         if visible && std::mem::take(&mut self.stale) {
             self.refresh_newest(cx);
         }
+        if visible { self.refresh_recovery(false, cx); }
     }
 
     // ------------------------------------------------------------ persistence
@@ -470,6 +496,7 @@ impl ChatView {
         }
         self.refresh_continuation(cx);
         self.refresh_session_states(cx);
+        self.refresh_recovery(false, cx);
         if self.load_error.is_some() && self.messages.is_empty() && !self.initial_loading {
             self.start(cx);
         } else if self.visible || !self.outgoing.is_empty() {
@@ -576,6 +603,7 @@ impl ChatView {
                 this.initial_loading = false;
                 this.refresh_continuation(cx);
                 this.refresh_session_states(cx);
+                this.refresh_recovery(false, cx);
                 match page {
                     Some(Ok(page)) => {
                         eprintln!(
@@ -1497,6 +1525,7 @@ impl ChatView {
                     item.created_locally = false;
                 }
                 this.conversation_id = Some(id.clone());
+                this.clear_recovery();
                 this.file_preview = None;
                 let draft = this.drafts.get(&id).cloned().unwrap_or_default();
                 this.input
@@ -1560,6 +1589,98 @@ impl ChatView {
                 .any(|o| o.conversation_id.as_deref() == Some(id))
             || self.conversation_id.as_deref() == Some(id)
                 && (self.continuation.running || !self.continuation.items.is_empty())
+    }
+
+    fn clear_recovery(&mut self) {
+        self.record_owner_generation += 1;
+        self.recovery_generation += 1;
+        self.recovery_items.clear();
+        self.recovery_total = 0;
+        self.recovery_partial_count = 0;
+        self.recovery_next_before = None;
+        self.recovery_revision = None;
+        self.recovery_loading = false;
+        self.recovery_error = None;
+        self.recovery_refresh_again = false;
+    }
+
+    /// Bounded GET pages discover server-only intents even when their user
+    /// message is missing or outside the loaded history. No draft/Outgoing writes.
+    fn refresh_recovery(&mut self, more: bool, cx: &mut Context<Self>) {
+        if !self.visible { return; }
+        let Some(cid) = self.conversation_id.clone() else { return; };
+        if self.recovery_loading {
+            if !more { self.recovery_refresh_again = true; }
+            return;
+        }
+        let before = if more { self.recovery_next_before.clone() } else { None };
+        if more && before.is_none() { return; }
+        let revision = if more { self.recovery_revision } else { None };
+        // Refresh all already-expanded metadata pages, preserving access to old
+        // intents; additional pages remain reachable through explicit Load More.
+        let refresh_count = self.recovery_items.len().max(100);
+        self.recovery_generation += 1;
+        let generation = self.recovery_generation;
+        self.recovery_loading = true;
+        self.recovery_error = None;
+        let client = self.client.clone();
+        cx.notify();
+        let task = cx.spawn(async move |this, cx| {
+            let mut cursor = before;
+            let mut version = revision;
+            let mut collected = Vec::new();
+            let mut seen = HashSet::new();
+            let result = loop {
+                let (c, target, anchor) = (client.clone(), cid.clone(), cursor.clone());
+                let result = io(async move { c.chat_unresolved_intents(&target, anchor.as_deref(), version).await }).await;
+                let valid = this.update(cx, |this, _| this.visible && this.recovery_generation == generation && this.conversation_id.as_ref() == Some(&cid)).unwrap_or(false);
+                if !valid { return; }
+                match result {
+                    Err(error) => break Err(error),
+                    Ok(page) => {
+                        if version.is_some_and(|v| v != page.revision) { break Err(ApiError::Decode("运行回查版本不一致".into())); }
+                        version = Some(page.revision);
+                        let mut duplicate = false;
+                        for item in page.items.iter().cloned() {
+                            if !seen.insert(item.request_id.clone()) { duplicate = true; break; }
+                            collected.push(item);
+                        }
+                        if duplicate { break Err(ApiError::Decode("运行回查请求重复".into())); }
+                        if more || collected.len() >= refresh_count || !page.has_more {
+                            break Ok((collected, page));
+                        }
+                        let next = page.next_before.clone();
+                        if next == cursor { break Err(ApiError::Decode("运行回查游标没有前进".into())); }
+                        cursor = next;
+                    }
+                }
+            };
+            _ = this.update(cx, |this, cx| {
+                if !this.visible || this.recovery_generation != generation || this.conversation_id.as_ref() != Some(&cid) { return; }
+                this.recovery_loading = false;
+                match result {
+                    Ok((items, page)) => {
+                        if more {
+                            let mut known: HashSet<String> = this.recovery_items.iter().map(|v| v.request_id.clone()).collect();
+                            this.recovery_items.extend(items.into_iter().filter(|v| known.insert(v.request_id.clone())));
+                        } else { this.recovery_items = items; }
+                        this.recovery_total = page.total;
+                        this.recovery_partial_count = page.partial_count;
+                        this.recovery_revision = Some(page.revision);
+                        this.recovery_next_before = if page.has_more { page.next_before } else { None };
+                        this.recovery_error = None;
+                    }
+                    Err(error) => {
+                        // Keep cached unresolved evidence and all drafts. A failed
+                        // read cannot establish success or make a retry safe.
+                        this.recovery_error = Some(error.user_text());
+                    }
+                }
+                if std::mem::take(&mut this.recovery_refresh_again) { this.refresh_recovery(false, cx); }
+                cx.notify();
+            });
+        });
+        self._tasks.push(task);
     }
 
     fn refresh_session_states(&mut self, cx: &mut Context<Self>) {
@@ -2138,12 +2259,19 @@ impl ChatView {
 
     fn show_request_record(&mut self, rid: String, window: &mut Window, cx: &mut Context<Self>) {
         let client = self.client.clone();
-        let task = cx.spawn_in(window, async move |_, cx| {
+        let target = self.conversation_id.clone();
+        let owner = self.record_owner_generation;
+        let task = cx.spawn_in(window, async move |this, cx| {
             let result = io(async move {
                 match client.chat_request_status(&rid).await {
-                    Ok(status) => match status.run_id {
-                        Some(id) => client.chat_run(&id).await,
-                        None => Ok(serde_json::json!({"status":status.status,"requestId":rid})),
+                    Ok(status) => match status.run_id.as_deref() {
+                        Some(id) => {
+                            match client.chat_run(id).await {
+                                Ok(run) => Ok(serde_json::json!({"request":status.record_metadata(),"run":run})),
+                                Err(error) => Ok(serde_json::json!({"request":status.record_metadata(),"runReadError":error.user_text()})),
+                            }
+                        }
+                        None => Ok(serde_json::json!({"request":status.record_metadata()})),
                     },
                     Err(e) if e.status() == Some(404) => {
                         let receipt = client.chat_continuation_receipt(&rid).await?;
@@ -2156,7 +2284,8 @@ impl ChatView {
                 }
             })
             .await;
-            _ = cx.update(|window, cx| {
+            _ = this.update_in(cx, |this, window, cx| {
+                if !this.visible || this.conversation_id != target || this.record_owner_generation != owner { return; }
                 let text = match result {
                     Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_default(),
                     Err(e) => e.user_text(),
@@ -2180,9 +2309,12 @@ impl ChatView {
 
     fn show_record(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         let client = self.client.clone();
-        let task = cx.spawn_in(window, async move |_, cx| {
+        let target = self.conversation_id.clone();
+        let owner = self.record_owner_generation;
+        let task = cx.spawn_in(window, async move |this, cx| {
             let result = io(async move { client.chat_record(&id).await }).await;
-            _ = cx.update(|window, cx| {
+            _ = this.update_in(cx, |this, window, cx| {
+                if !this.visible || this.conversation_id != target || this.record_owner_generation != owner { return; }
                 let text = match result {
                     Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_default(),
                     Err(e) => format!("执行记录读取失败：{}", e.user_text()),
@@ -2547,6 +2679,7 @@ impl ChatView {
                 msg.role == Role::User,
                 &msg.content,
                 &msg.attachments,
+                msg.request_id.as_deref(),
                 outgoing.as_ref(),
                 ix,
                 view,
@@ -2556,7 +2689,7 @@ impl ChatView {
             Row::Local(o) => {
                 let id: SharedString = format!("local-{}", o.request_id).into();
                 let ids: Vec<String> = o.attachments.iter().map(|a| a.id.clone()).collect();
-                Self::render_message(&id, true, &o.text, &ids, Some(o), ix, view, files, cx)
+                Self::render_message(&id, true, &o.text, &ids, Some(&o.request_id), Some(o), ix, view, files, cx)
             }
         }
     }
@@ -2567,6 +2700,7 @@ impl ChatView {
         is_user: bool,
         content: &SharedString,
         attachments: &[String],
+        request_id: Option<&str>,
         outgoing: Option<&Outgoing>,
         _ix: usize,
         view: WeakEntity<Self>,
@@ -2798,7 +2932,7 @@ impl ChatView {
                         cx.write_to_clipboard(ClipboardItem::new_string(text.clone()))
                     }),
             )
-            .when(!is_user, |this| {
+            .when(!is_user || request_id.is_some(), |this| {
                 this.child(
                     Button::new(ElementId::Name(format!("chat-record-{id}").into()))
                         .ghost()
@@ -3488,8 +3622,71 @@ impl ChatView {
             .into_any_element()
     }
 
-    fn render_composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn recovery_item_visible(&self, item: &RecoveryIntent) -> bool {
+        // Local outgoing rows already own their live/failed state and record.
+        // Never duplicate ordinary sending as an earlier-run warning. Partial
+        // evidence must remain visible even when a local request also exists.
+        item.status == "partial" || !self.outgoing.iter().any(|outgoing|
+            outgoing.request_id == item.request_id
+                && outgoing.conversation_id.as_deref() == Some(item.conversation_id.as_str()))
+    }
+
+    fn recovery_visible(&self) -> bool {
+        let known_partial = self.conversation_id.as_ref().and_then(|id| self.session_states.get(id)).is_some_and(|v| v.partial);
+        self.recovery_items.iter().any(|item| self.recovery_item_visible(item))
+            || self.recovery_next_before.is_some() || known_partial || self.recovery_error.is_some()
+    }
+
+    fn render_recovery(&self, cx: &mut Context<Self>) -> AnyElement {
+        let known_partial = self.conversation_id.as_ref().and_then(|id| self.session_states.get(id)).is_some_and(|v| v.partial);
+        if !self.recovery_visible() {
+            return div().into_any_element();
+        }
+        let english = crate::settings::is_english();
+        let label = |zh: &str, en: &str| if english { en.to_string() } else { zh.to_string() };
         let theme = cx.theme();
+        let title = if self.recovery_partial_count > 0 || known_partial {
+            label("原运行部分完成，请查看执行记录；原请求不会重发", "An earlier run completed partially. Review its record; it will not be resent.")
+        } else { label("原运行结果待检查", "Review earlier run outcomes") };
+        let mut panel = v_flex().id("chat-server-recovery").gap(px(6.)).text_size(px(12.));
+        panel = panel.child(h_flex().gap(px(8.)).items_center().child(div().flex_1().text_color(theme.danger).child(title)).child(
+            Button::new("chat-recovery-refresh").ghost().xsmall()
+                .label(label("重新回查", "Refresh status"))
+                .accessibility_label(label("重新回查未确认运行", "Refresh unresolved runs"))
+                .loading(self.recovery_loading).disabled(self.recovery_loading)
+                .on_click(cx.listener(|this, _, _, cx| this.refresh_recovery(false, cx))),
+        ));
+        if let Some(error) = &self.recovery_error {
+            panel = panel.child(div().text_color(theme.danger).child(format!("{}: {}", label("回查失败，原记录与草稿保留", "Status lookup failed; records and drafts are preserved"), error)));
+        }
+        let mut rows = v_flex().id("chat-recovery-items").gap(px(5.)).max_h(px(180.)).overflow_y_scroll();
+        for item in self.recovery_items.iter().filter(|item| self.recovery_item_visible(item)) {
+            let count = item.completed_write_count.map(|n| n.to_string()).unwrap_or_else(|| label("未知", "unknown"));
+            let status = match item.status.as_str() {
+                "partial" => format!("{} · {}: {}", label("部分完成", "Partial"), label("已完成写入", "Completed writes"), count),
+                "running" => label("原请求仍在运行，等待结果…", "The original request is still running…"),
+                _ => label("原运行失败，请检查结果", "The original run failed; review its outcome"),
+            };
+            let rid = item.request_id.clone();
+            rows = rows.child(h_flex().gap(px(8.)).items_center()
+                .child(div().flex_1().child(format!("{} · {}", time_label(&item.updated_at), status)))
+                .child(Button::new(ElementId::Name(format!("chat-recovery-record-{}", item.request_id).into()))
+                    .ghost().xsmall().label(t("查看执行记录")).accessibility_label(t("查看执行记录"))
+                    .on_click(cx.listener(move |this, _, window, cx| this.show_request_record(rid.clone(), window, cx)))));
+        }
+        panel = panel.child(rows);
+        if self.recovery_next_before.is_some() {
+            panel = panel.child(Button::new("chat-recovery-more").ghost().xsmall()
+                .label(label("加载更多原运行记录", "Load more earlier run records"))
+                .accessibility_label(label("加载更多原运行记录", "Load more earlier run records"))
+                .disabled(self.recovery_loading)
+                .on_click(cx.listener(|this, _, _, cx| this.refresh_recovery(true, cx))));
+        }
+        panel.into_any_element()
+    }
+
+    fn render_composer(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme().clone();
         let blocked = self.initial_loading || self.uploading > 0 || self.switching;
         let voice = self.capture.is_some() || self.dictation_processing;
         let send_disabled =
@@ -3609,6 +3806,7 @@ impl ChatView {
             .max_w(px(680.))
             .gap(px(8.))
             .pb(px(20.))
+            .when(self.recovery_visible(), |this| this.child(self.render_recovery(cx)))
             .when(!self.continuation.items.is_empty(), |this| {
                 this.child(pending)
             })

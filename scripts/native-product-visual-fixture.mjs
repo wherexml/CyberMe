@@ -19,6 +19,7 @@ http.createServer((req,res)=>{
  else if(u.pathname==='/api/conversations')value=page(conversations);
  else if(u.pathname.endsWith('/messages'))value={items:messages,hasMore:false,nextBefore:null};
  else if(u.pathname==='/api/chat/conversations/state')value={items:(u.searchParams.get('ids')||'').split(',').map(id=>({id,found:id===conversationId,running:false,partial:false,pending:0,locked:id!==conversationId}))};
+ else if(u.pathname===`/api/chat/conversations/${conversationId}/unresolved`)value={conversationId,revision:1,total:0,partialCount:0,items:[],hasMore:false,nextBefore:null};
  else if(u.pathname.startsWith('/api/chat/continuation/'))value={running:false,items:[]};
  else if(u.pathname==='/api/inbox/query')value={...page(inbox),unknownTimeCount:0};
  else if(u.pathname==='/api/inbox/'+inbox[0].id)value=inbox[0];

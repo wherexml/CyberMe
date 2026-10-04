@@ -11,6 +11,43 @@ pub struct RequestStatus {
     pub conversation_id: Option<String>,
     pub run_id: Option<String>,
     pub result: Option<ChatResponse>,
+    pub run_status: Option<String>,
+    /// Missing evidence remains unknown, never an invented zero.
+    pub completed_writes: Option<Vec<Value>>,
+}
+
+impl RequestStatus {
+    pub fn record_metadata(&self) -> Value {
+        json!({"requestId":self.request_id,"conversationId":self.conversation_id,
+            "status":self.status,"runId":self.run_id,"runStatus":self.run_status,
+            "completedWrites":self.completed_writes,
+            "completedWriteCount":self.completed_writes.as_ref().map(Vec::len)})
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RecoveryIntent {
+    pub request_id: String,
+    pub conversation_id: String,
+    pub status: String,
+    pub run_id: Option<String>,
+    pub run_status: Option<String>,
+    pub user_message_id: Option<String>,
+    pub completed_write_count: Option<u64>,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RecoveryPage {
+    pub conversation_id: String,
+    pub revision: u64,
+    pub total: u64,
+    pub partial_count: u64,
+    pub items: Vec<RecoveryIntent>,
+    pub has_more: bool,
+    pub next_before: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -32,6 +69,31 @@ pub struct SessionState {
 }
 
 impl Client {
+    pub async fn chat_unresolved_intents(
+        &self,
+        conversation_id: &str,
+        before: Option<&str>,
+        revision: Option<u64>,
+    ) -> Result<RecoveryPage, ApiError> {
+        let mut route = format!("/api/chat/conversations/{}/unresolved?limit=100", enc(conversation_id));
+        if let Some(before) = before { route.push_str(&format!("&before={}", enc(before))); }
+        if let Some(revision) = revision { route.push_str(&format!("&revision={revision}")); }
+        let value: Value = self.get(&route).await?;
+        // Do not decode an unsupported/malformed response into an empty success.
+        if value.get("items").and_then(Value::as_array).is_none()
+            || value.get("conversationId").and_then(Value::as_str) != Some(conversation_id)
+            || value.get("revision").and_then(Value::as_u64).is_none()
+            || value.get("total").and_then(Value::as_u64).is_none()
+            || value.get("partialCount").and_then(Value::as_u64).is_none()
+            || value.get("hasMore").and_then(Value::as_bool).is_none()
+        { return Err(ApiError::Decode("未确认运行回查响应无效".into())); }
+        let page: RecoveryPage = serde_json::from_value(value).map_err(|e| ApiError::Decode(e.to_string()))?;
+        if page.items.len() > 100 || page.total < page.items.len() as u64 || page.partial_count > page.total
+            || page.items.iter().any(|v| v.request_id.is_empty() || v.conversation_id != conversation_id || !["running", "partial", "failed"].contains(&v.status.as_str()))
+            || (page.has_more && (page.items.is_empty() || page.next_before.as_deref().is_none_or(str::is_empty)))
+        { return Err(ApiError::Decode("未确认运行回查范围无效".into())); }
+        Ok(page)
+    }
     pub async fn chat_session_states(&self, ids: &[String]) -> Result<Vec<SessionState>, ApiError> {
         let value: Value = self
             .get(&format!(
@@ -167,7 +229,21 @@ impl Client {
             .await?;
         match message.get("runId").and_then(Value::as_str) {
             Some(id) => self.get(&format!("/api/runs/{}", enc(id))).await,
-            None => Ok(json!({"status":"no_run","message":"此消息没有关联执行记录"})),
+            None => match message.get("requestId").and_then(Value::as_str) {
+                Some(id) => {
+                    let receipt: Value = self.get(&format!("/api/chat/requests/{}", enc(id))).await?;
+                    match receipt.get("runId").and_then(Value::as_str) {
+                        Some(run_id) => {
+                            match self.get::<Value>(&format!("/api/runs/{}", enc(run_id))).await {
+                                Ok(run) => Ok(json!({"request":receipt,"run":run})),
+                                Err(error) => Ok(json!({"request":receipt,"runReadError":error.user_text()})),
+                            }
+                        }
+                        None => Ok(receipt),
+                    }
+                }
+                None => Ok(json!({"status":"no_run","message":"此消息没有关联执行记录"})),
+            },
         }
     }
     pub async fn transcribe_microphone(&self, bytes: Vec<u8>) -> Result<String, ApiError> {
