@@ -43,6 +43,19 @@ fn inbox_list_width(window: &Window) -> Pixels {
     })
 }
 
+// detail-scroll and its independent actions share the HTML outer-window breakpoints.
+// Values are top, symmetric horizontal, bottom, and footer vertical padding.
+fn inbox_detail_padding(window: &Window) -> (Pixels, Pixels, Pixels, Pixels) {
+    let width = window.bounds().size.width;
+    if width <= px(760.) {
+        (px(20.), px(16.), px(20.), px(12.))
+    } else if width <= px(1100.) {
+        (px(24.), px(21.), px(24.), px(12.))
+    } else {
+        (px(26.), px(28.), px(24.), px(14.))
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Filter {
     Pending,
@@ -1994,14 +2007,16 @@ impl InboxView {
         let busy = self.busy;
         let locked = item.send_locked();
         let done = item.is_done();
+        let (detail_top, detail_horizontal, detail_bottom, footer_vertical) =
+            inbox_detail_padding(window);
 
         let mut body = v_flex()
             .id("inbox-detail")
             .flex_1()
             .min_h_0()
-            .px(px(28.))
-            .pt(px(26.))
-            .pb(px(24.))
+            .px(detail_horizontal)
+            .pt(detail_top)
+            .pb(detail_bottom)
             .gap_0()
             .overflow_y_scrollbar();
 
@@ -2264,7 +2279,7 @@ impl InboxView {
         let source_row_width = (f32::from(window.bounds().size.width)
             - 78.
             - f32::from(inbox_list_width(window))
-            - 56.
+            - 2. * f32::from(detail_horizontal)
             - 2.
             - 28.
             - if self.source_preview.is_some() {
@@ -3145,8 +3160,8 @@ impl InboxView {
             .gap_2()
             .flex_shrink_0()
             .min_h(px(62.))
-            .px(px(28.))
-            .py(px(14.))
+            .px(detail_horizontal)
+            .py(footer_vertical)
             .border_t_1()
             .border_color(theme.border)
             .when_some(self.progress.clone(), |d, p| {
