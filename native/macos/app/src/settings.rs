@@ -94,6 +94,7 @@ pub struct SettingsView {
     model_probe: Value,
     model_probe_retry: bool,
     model_probe_status: Option<String>,
+    connection_checks: BTreeMap<String, (bool, bool, String)>,
     model_probe_saver: Option<Saver<Value>>,
     loading: bool,
     busy: bool,
@@ -183,7 +184,7 @@ impl SettingsView {
             }),
         ];
         let wechat_query = cx.new(|cx| InputState::new(_window, cx).placeholder(t("查找联系人或当前会话消息")));
-        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,local_save_generation:0,local_saving:false,local_save_error:None,model_probe,model_probe_retry:false,model_probe_status:None,model_probe_saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,memory_recovery_generation:0,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_capabilities:json!({}),wechat_media:None,wechat_saved:None,wechat_save_busy:false,wechat_save_cancel:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
+        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,local_save_generation:0,local_saving:false,local_save_error:None,model_probe,model_probe_retry:false,model_probe_status:None,connection_checks:BTreeMap::new(),model_probe_saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,memory_recovery_generation:0,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_capabilities:json!({}),wechat_media:None,wechat_saved:None,wechat_save_busy:false,wechat_save_cancel:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
         this.visible = _window.is_owner_visible();
         this.reload(cx);
         if this.model_probe["requestId"].is_string() { this.test_model("standard", true, cx); }
@@ -1029,6 +1030,53 @@ impl SettingsView {
                 connections.push(saved.clone());
             }
         }
+    }
+    fn check_provider_connection(&mut self, id: String, wechat: bool, cx: &mut Context<Self>) {
+        if self.connection_checks.get(&id).is_some_and(|state| state.0) { return; }
+        let original = self.connections().into_iter().find(|c| c["id"] == id).cloned();
+        if self.section == "connections" { self.notice = None; self.error = None; }
+        self.connection_checks.insert(id.clone(), (true, false, t("正在检测连接…")));
+        if wechat { self.invalidate_wechat_reader(true, true); }
+        let client = self.client.clone();
+        let request_id = id.clone();
+        let task = cx.spawn(async move |this, cx| {
+            let result = io(async move {
+                if wechat {
+                    client.product_post("/api/wechat/connect", json!({})).await
+                } else {
+                    let saved = client.product_get(&format!("/api/connections/{request_id}")).await?;
+                    if saved["id"] != request_id || !saved["updatedAt"].is_string() {
+                        return Err(opstwin_api::ApiError::Api {
+                            status: 409, code: "connection_changed".into(),
+                            message: t("连接配置已变更，请先读取原连接"), detail: None,
+                        });
+                    }
+                    client.product_post(&format!("/api/connections/{request_id}/test"),
+                        json!({"baseUpdatedAt":saved["updatedAt"]})).await
+                }
+            }).await;
+            _ = this.update(cx, |this, cx| {
+                let (ok, message) = match result {
+                    Ok(value) => {
+                        // Never replace a newer canonical row or any editor draft.
+                        let current = this.connections().into_iter().find(|c| c["id"] == id).cloned();
+                        if current == original && value["connection"]["id"] == id {
+                            if wechat { this.invalidate_wechat_reader(true, true); }
+                            this.merge_saved_connection(&value["connection"]);
+                        }
+                        let ok = value["ok"] == true;
+                        let message = value["message"].as_str().filter(|s| !s.trim().is_empty())
+                            .map(t).unwrap_or_else(|| t(if ok { "连接实际检测成功" } else { "无法验证连接，输入已保留" }));
+                        (ok, message)
+                    }
+                    Err(error) => (false, format!("{}：{}", t("连接检测未确认"), error.user_text())),
+                };
+                this.connection_checks.insert(id, (false, ok, message));
+                cx.notify();
+            });
+        });
+        self._tasks.push(task);
+        cx.notify();
     }
     fn test_saved_connection(&mut self, id: String, cx: &mut Context<Self>) {
         if self.busy {
@@ -2498,12 +2546,18 @@ impl SettingsView {
         } else {
             c = c.child(note(description, cx));
         }
+        let checking = self.connection_checks.get(&id).is_some_and(|state| state.0);
+        if let Some((running, ok, message)) = self.connection_checks.get(&id) {
+            c = c.child(div().text_size(px(11.)).text_color(
+                if !running && *ok { rgb(0x478766).into() } else { theme.muted_foreground }
+            ).child(message.clone()));
+        }
         let manage = id.clone();
         let probe = id.clone();
         let exists = conn.is_some();
         let is_wechat = provider == "wechat-sync";
         let provider_name = title.to_string();
-        c.child(h_flex().gap_2().mt(px(3.)).child(Button::new(ElementId::Name(format!("manage-provider-{id}").into())).small().h(px(32.)).outline().label(t(if provider=="gmail"&&!connected{"设置 Gmail 连接"}else if provider=="wechat-sync"{"查看微信"}else{"自定义"})).on_click(cx.listener(move |this,_,_,cx|{this.detail=Some(if exists||is_wechat{manage.clone()}else{"new".into()});if !exists&&!is_wechat&&this.drafts.get("connection:new").is_none(){this.drafts["connection:new"]=json!({"name":provider_name,"type":"rest","endpoint":"","permissions":["read"],"config":{"authMethod":"none"}});this.persist();}this.delete_confirm=false;this.fields.clear();this.pending_fields=true;if is_wechat{this.wechat_chat=None;this.wechat_messages=json!({});if exists{this.read_wechat(String::new(),vec![String::new()],cx);}}cx.notify();}))).child(Button::new(ElementId::Name(format!("test-provider-{id}").into())).small().h(px(32.)).outline().label(t(if connected{"检测连接"}else{"连接"})).disabled(self.busy).on_click(cx.listener(move |this,_,_,cx|{if is_wechat{this.mutate("POST","/api/wechat/connect".into(),json!({}),cx);}else if exists{this.mutate("POST",format!("/api/connections/{probe}/test"),json!({}),cx);}else{this.detail=Some("new".into());this.fields.clear();this.pending_fields=true;cx.notify();}}))))
+        c.child(h_flex().gap_2().mt(px(3.)).child(Button::new(ElementId::Name(format!("manage-provider-{id}").into())).small().h(px(32.)).outline().label(t(if provider=="gmail"&&!connected{"设置 Gmail 连接"}else if provider=="wechat-sync"{"查看微信"}else{"自定义"})).on_click(cx.listener(move |this,_,_,cx|{this.detail=Some(if exists||is_wechat{manage.clone()}else{"new".into()});if !exists&&!is_wechat&&this.drafts.get("connection:new").is_none(){this.drafts["connection:new"]=json!({"name":provider_name,"type":"rest","endpoint":"","permissions":["read"],"config":{"authMethod":"none"}});this.persist();}this.delete_confirm=false;this.fields.clear();this.pending_fields=true;if is_wechat{this.wechat_chat=None;this.wechat_messages=json!({});if exists{this.read_wechat(String::new(),vec![String::new()],cx);}}cx.notify();}))).child(Button::new(ElementId::Name(format!("test-provider-{id}").into())).small().h(px(32.)).outline().label(t(if checking{"检测中…"}else if connected{"检测连接"}else{"连接"})).disabled(checking).on_click(cx.listener(move |this,_,_,cx|{if is_wechat||exists{this.check_provider_connection(probe.clone(),is_wechat,cx);}else{this.detail=Some("new".into());this.fields.clear();this.pending_fields=true;cx.notify();}}))))
     }
     fn open_model_provider(&mut self, id: String, cx: &mut Context<Self>) {
         self.drop_connection_secret();
@@ -6221,6 +6275,9 @@ pub fn t(s: &str) -> String {
         "添加表情回复" => "React to Messages",
         "未被提及的频道发言" => "Post When Not Mentioned",
         "检测连接" => "Test Connection",
+        "正在检测连接…" => "Checking connection…",
+        "检测中…" => "Checking…",
+        "连接检测未确认" => "Connection check could not be confirmed",
         "断开连接" => "Disconnect",
         "管理" => "Manage",
         "添加自定义应用" => "Add Custom App",
