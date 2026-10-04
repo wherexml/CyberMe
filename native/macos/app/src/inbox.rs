@@ -118,11 +118,6 @@ pub struct InboxView {
     show_analysis: bool,
     show_full_messages: bool,
     undo_status: Option<String>,
-    auto_saver: Saver<BTreeMap<String, String>>,
-    auto_attempted: BTreeMap<String, String>,
-    auto_checking: bool,
-    auto_visibility_generation: u64,
-    auto_preparations: BTreeMap<String, (u64, u64)>,
     source_history: Option<Vec<serde_json::Value>>,
     source_offset: u64,
     source_more: bool,
@@ -166,6 +161,10 @@ pub struct InboxView {
     busy: Option<Busy>,
     generating: BTreeMap<String, String>,
     generation_errors: BTreeMap<String, String>,
+    saving: BTreeMap<String, bool>,
+    save_errors: BTreeMap<String, String>,
+    save_conflicts: BTreeMap<String, InboxItem>,
+    save_timers: BTreeMap<String, Task<()>>,
     progress: Option<String>,
     action_error: Option<String>,
     notice: Option<String>,
@@ -199,18 +198,13 @@ impl InboxView {
         );
         let draft_requests: BTreeMap<String, String> = store.load("inbox-requests.json");
         let request_saver = Saver::new(store.clone(), "inbox-requests.json");
-        let mut auto_attempted: BTreeMap<String, String> = store.load("inbox-auto-attempts.json");
-        // A marker without a durable request cannot represent a submitted
-        // generation. Recover a quit/crash between preparation and submission.
-        auto_attempted.retain(|id, _| draft_requests.contains_key(id));
-        let auto_saver = Saver::new(store.clone(), "inbox-auto-attempts.json");
         let saver = Saver::new(store, opstwin_store::INBOX_FILE);
         let search =
             cx.new(|cx| InputState::new(window, cx).placeholder(crate::settings::t("搜索收件箱")));
         let editor = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .auto_grow(4, 16)
-                .placeholder(crate::settings::t("回复草稿（保存后才能发送）"))
+                .placeholder(crate::settings::t("回复草稿"))
         });
         let subscriptions = vec![
             cx.subscribe_in(
@@ -235,9 +229,9 @@ impl InboxView {
                     }));
                 }
             }),
-            cx.subscribe_in(&editor, window, |this, _, ev: &InputEvent, _, cx| {
+            cx.subscribe_in(&editor, window, |this, _, ev: &InputEvent, window, cx| {
                 if matches!(ev, InputEvent::Change) {
-                    this.on_editor_change(cx);
+                    this.on_editor_change(window, cx);
                 }
             }),
         ];
@@ -252,11 +246,6 @@ impl InboxView {
             show_analysis: false,
             show_full_messages: false,
             undo_status: None,
-            auto_saver,
-            auto_attempted,
-            auto_checking: false,
-            auto_visibility_generation: 0,
-            auto_preparations: BTreeMap::new(),
             source_history: None,
             source_offset: 0,
             source_more: false,
@@ -292,6 +281,10 @@ impl InboxView {
             busy: None,
             generating: BTreeMap::new(),
             generation_errors: BTreeMap::new(),
+            saving: BTreeMap::new(),
+            save_errors: BTreeMap::new(),
+            save_conflicts: BTreeMap::new(),
+            save_timers: BTreeMap::new(),
             progress: None,
             action_error: None,
             notice: None,
@@ -311,15 +304,7 @@ impl InboxView {
 
     pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
         if self.visible != visible {
-            self.auto_visibility_generation += 1;
-            self.auto_checking = false;
             self.stale = true;
-            if !visible {
-                self.auto_preparations.clear();
-                self.auto_attempted
-                    .retain(|id, _| self.draft_requests.contains_key(id));
-                self.auto_saver.save(self.auto_attempted.clone());
-            }
         }
         self.visible = visible;
         if visible && self.stale {
@@ -331,9 +316,6 @@ impl InboxView {
     pub fn persist_blocking(&self) {
         self.saver.save_blocking(&self.state);
         self.request_saver.save_blocking(&self.draft_requests);
-        let mut submitted_attempts = self.auto_attempted.clone();
-        submitted_attempts.retain(|id, _| self.draft_requests.contains_key(id));
-        self.auto_saver.save_blocking(&submitted_attempts);
     }
 
     fn on_server_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -500,7 +482,6 @@ impl InboxView {
         self.selected = Some(id);
         self.source_scroll.set_offset(point(px(0.), px(0.)));
         self.product = None;
-        self.auto_checking = false;
         self.source_history = None;
         self.source_more = false;
         self.source_busy = false;
@@ -513,7 +494,11 @@ impl InboxView {
         self.show_analysis = false;
         self.show_full_messages = false;
         self.detail = None;
-        self.conflict = None;
+        self.conflict = self
+            .selected
+            .as_ref()
+            .and_then(|id| self.save_conflicts.get(id))
+            .cloned();
         self.server_changed = false;
         self.action_error = None;
         self.notice = None;
@@ -525,7 +510,11 @@ impl InboxView {
         self.action_error = self
             .selected
             .as_ref()
-            .and_then(|id| self.generation_errors.get(id))
+            .and_then(|id| {
+                self.save_errors
+                    .get(id)
+                    .or_else(|| self.generation_errors.get(id))
+            })
             .cloned();
         self.send_needs_new_key = false;
         self.sensitive_ok = false;
@@ -542,7 +531,6 @@ impl InboxView {
         self.detail_gen += 1;
         let generation = self.detail_gen;
         self.detail_loading = true;
-        self.auto_checking = false;
         cx.notify();
         let client = self.client.clone();
         let task = cx.spawn_in(window, async move |this, cx| {
@@ -561,7 +549,10 @@ impl InboxView {
                         if this.source_history.is_none() && !this.source_busy {
                             this.load_source_history(false, window, cx);
                         }
-                        this.maybe_auto_draft(product, window, cx);
+                        if this.state.edits.contains_key(&id) {
+                            this.schedule_save(id.clone(), window, cx);
+                        }
+                        // Default drafts are queued server-side, including unopened items.
                     }
                     Err(e) => {
                         eprintln!("[opstwin] inbox item {id} load failed: {e}");
@@ -572,129 +563,6 @@ impl InboxView {
             });
         });
         self._tasks.push(task);
-    }
-
-    fn maybe_auto_draft(
-        &mut self,
-        product: InboxProduct,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let id = product.item.id.clone();
-        if !self.visible
-            || self.busy.is_some()
-            || self.auto_checking
-            || self.is_dirty(cx)
-            || self.editing
-            || self.auto_attempted.contains_key(&id)
-            || self.draft_requests.contains_key(&id)
-            || self.state.edits.contains_key(&id)
-        {
-            return;
-        }
-        self.auto_checking = true;
-        let client = self.client.clone();
-        let version = product.item.updated_at.clone();
-        let generation = self.detail_gen;
-        let visibility_generation = self.auto_visibility_generation;
-        self._tasks.push(cx.spawn_in(window, async move |this, cx| {
-            let allowed = io(async move { client.inbox_auto_draft_allowed(&product).await }).await;
-            let mut durable = None;
-            _ = this.update_in(cx, |this, _, cx| {
-                if !this.visible
-                    || this.auto_visibility_generation != visibility_generation
-                    || this.detail_gen != generation
-                    || this.selected.as_deref() != Some(id.as_str())
-                {
-                    return;
-                }
-                this.auto_checking = false;
-                if !matches!(allowed, Ok(true))
-                    || this.busy.is_some()
-                    || this.is_dirty(cx)
-                    || this.editing
-                    || this.detail.as_ref().is_none_or(|item| {
-                        item.updated_at != version
-                            || item.draft.as_ref().is_some_and(|s| !s.trim().is_empty())
-                    })
-                {
-                    return;
-                }
-                this.auto_attempted
-                    .insert(id.clone(), version.clone().unwrap_or_default());
-                this.auto_preparations
-                    .insert(id.clone(), (generation, visibility_generation));
-                durable = Some(this.auto_saver.save_now(this.auto_attempted.clone()));
-            });
-            let Some(durable) = durable else {
-                return;
-            };
-            let saved = io(durable).await;
-            _ = this.update_in(cx, |this, window, cx| {
-                if !this.visible
-                    || this.auto_visibility_generation != visibility_generation
-                    || this.detail_gen != generation
-                    || this.selected.as_deref() != Some(id.as_str())
-                {
-                    if this.discard_unstarted_auto_attempt(
-                        &id,
-                        &version,
-                        generation,
-                        visibility_generation,
-                    ) && this.visible
-                        && this.selected.as_deref() == Some(id.as_str())
-                    {
-                        this.stale = true;
-                        cx.notify();
-                    }
-                    return;
-                }
-                if let Err(error) = saved {
-                    this.discard_unstarted_auto_attempt(
-                        &id,
-                        &version,
-                        generation,
-                        visibility_generation,
-                    );
-                    this.action_error = Some(
-                        crate::settings::t("无法保存自动起草状态，未运行：{error}")
-                            .replace("{error}", &error),
-                    );
-                } else if this.busy.is_none() && !this.is_dirty(cx) && !this.editing {
-                    this.auto_preparations.remove(&id);
-                    this.generate_draft(window, cx);
-                } else {
-                    this.discard_unstarted_auto_attempt(
-                        &id,
-                        &version,
-                        generation,
-                        visibility_generation,
-                    );
-                }
-                cx.notify();
-            });
-        }));
-    }
-
-    fn discard_unstarted_auto_attempt(
-        &mut self,
-        id: &str,
-        version: &Option<String>,
-        generation: u64,
-        visibility_generation: u64,
-    ) -> bool {
-        if self.auto_preparations.get(id) == Some(&(generation, visibility_generation))
-            && !self.draft_requests.contains_key(id)
-            && self.auto_attempted.get(id).map(String::as_str)
-                == Some(version.as_deref().unwrap_or_default())
-        {
-            self.auto_attempted.remove(id);
-            self.auto_preparations.remove(id);
-            self.auto_saver.save(self.auto_attempted.clone());
-            true
-        } else {
-            false
-        }
     }
 
     fn load_source_history(&mut self, older: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -963,18 +831,18 @@ impl InboxView {
         self.detail = Some(item);
     }
 
-    fn on_editor_change(&mut self, cx: &mut Context<Self>) {
+    fn on_editor_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(id) = self.detail.as_ref().map(|d| d.id.clone()) else {
             return;
         };
         let text = self.editor.read(cx).value().to_string();
-        if text == self.base_draft {
+        if text == self.base_draft && !self.saving.contains_key(&id) {
             if self.state.edits.remove(&id).is_some() {
                 self.saver.save(self.state.clone());
             }
         } else {
             self.state.edits.insert(
-                id,
+                id.clone(),
                 InboxEdit {
                     text,
                     base_updated_at: self.base_updated_at.clone(),
@@ -983,6 +851,9 @@ impl InboxView {
                 },
             );
             self.saver.save(self.state.clone());
+        }
+        if self.state.edits.contains_key(&id) {
+            self.schedule_save(id, window, cx);
         }
         cx.notify();
     }
@@ -1007,7 +878,12 @@ impl InboxView {
     // ---------------------------------------------------------------- actions
 
     fn begin(&mut self, busy: Busy, cx: &mut Context<Self>) -> bool {
-        if self.busy.is_some() {
+        if self.busy.is_some()
+            || self
+                .selected
+                .as_ref()
+                .is_some_and(|id| self.saving.contains_key(id))
+        {
             return false;
         }
         self.busy = Some(busy);
@@ -1017,72 +893,115 @@ impl InboxView {
         true
     }
 
+    fn schedule_save(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.save_errors.contains_key(&id) || self.save_conflicts.contains_key(&id) {
+            return;
+        }
+        let owner = id.clone();
+        let task = cx.spawn_in(window, async move |this, cx| {
+            sleep(700).await;
+            _ = this.update_in(cx, |this, window, cx| this.save_edit(owner, window, cx));
+        });
+        self.save_timers.insert(id, task);
+    }
+
     fn save_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(item) = self.detail.clone() else {
+        let Some(id) = self.selected.clone() else {
             return;
         };
-        if item.send_locked() {
-            self.action_error = Some(crate::settings::t("已外发或结果未知的消息内容已冻结"));
-            cx.notify();
+        self.save_errors.remove(&id);
+        self.save_edit(id, window, cx);
+    }
+
+    fn save_edit(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.saving.contains_key(&id) || self.save_conflicts.contains_key(&id) {
             return;
         }
-        if !self.begin(Busy::Save, cx) {
+        let Some(edit) = self.state.edits.get(&id).cloned() else {
+            return;
+        };
+        if self.selected.as_deref() == Some(id.as_str())
+            && (self.busy.is_some() || self.detail.as_ref().is_none_or(|item| item.send_locked()))
+        {
             return;
         }
-        let text = self.editor.read(cx).value().to_string();
-        let base = self.base_updated_at.clone();
+        self.saving.insert(id.clone(), true);
+        self.save_errors.remove(&id);
+        if self.selected.as_deref() == Some(id.as_str()) {
+            self.action_error = None;
+        }
+        cx.notify();
         let client = self.client.clone();
-        let id = item.id.clone();
         let task = cx.spawn_in(window, async move |this, cx| {
-            let sent_text = text.clone();
+            let (owner, submitted) = (id.clone(), edit.clone());
             let result = io(async move {
-                let mut body = json!({ "draft": sent_text, "editedByUser": true });
-                if let Some(b) = base {
-                    body["baseUpdatedAt"] = json!(b);
+                let mut body = json!({ "draft": submitted.text, "editedByUser": true });
+                if let Some(base) = submitted.base_updated_at {
+                    body["baseUpdatedAt"] = json!(base);
                 }
-                client.inbox_patch(&id, body).await
+                client.inbox_patch(&owner, body).await
             })
             .await;
             _ = this.update_in(cx, |this, window, cx| {
-                this.busy = None;
+                this.saving.remove(&id);
+                let current = this.selected.as_deref() == Some(id.as_str());
                 match result {
                     Ok(saved) => {
-                        eprintln!("[opstwin] inbox {} draft saved", saved.id);
-                        this.state.edits.remove(&saved.id);
-                        this.saver.save(this.state.clone());
-                        this.conflict = None;
-                        this.server_changed = false;
-                        let server_draft = saved.draft.clone().unwrap_or_default();
-                        this.base_draft = server_draft.clone();
-                        this.base_updated_at = saved.updated_at.clone();
-                        // Only replace the editor if the user did not type meanwhile.
-                        if this.editor.read(cx).value().as_ref() == text {
-                            this.editor
-                                .update(cx, |s, cx| s.set_value(server_draft, window, cx));
+                        let canonical = saved.draft.clone().unwrap_or_default();
+                        let unchanged = this
+                            .state
+                            .edits
+                            .get(&id)
+                            .is_some_and(|local| local.text == edit.text);
+                        if unchanged {
+                            this.state.edits.remove(&id);
+                        } else if let Some(local) = this.state.edits.get_mut(&id) {
+                            local.base_draft = canonical.clone();
+                            local.base_updated_at = saved.updated_at.clone();
                         }
-                        this.detail = Some(saved);
-                        this.notice =
-                            Some(crate::settings::t("草稿已保存（需重新批准后才能发送）"));
-                    }
-                    Err(e) if e.is_edit_conflict() => {
-                        eprintln!("[opstwin] inbox draft save edit_conflict");
-                        this.conflict = e
-                            .detail()
-                            .and_then(|d| d.get("entity"))
-                            .and_then(|v| serde_json::from_value::<InboxItem>(v.clone()).ok());
-                        this.action_error = Some(crate::settings::t(
-                            "此事项已在其他地方更新，请选择保留哪一版",
-                        ));
-                        if this.conflict.is_none() {
-                            this.reload_detail(window, cx);
+                        this.save_errors.remove(&id);
+                        this.save_conflicts.remove(&id);
+                        if current {
+                            this.conflict = None;
+                            this.server_changed = false;
+                            this.base_draft = canonical.clone();
+                            this.base_updated_at = saved.updated_at.clone();
+                            if this.editor.read(cx).value().as_ref() == edit.text {
+                                this.editor
+                                    .update(cx, |s, cx| s.set_value(canonical, window, cx));
+                            }
+                            this.detail = Some(saved);
+                            this.action_error = None;
+                        }
+                        this.saver.save(this.state.clone());
+                        // A newer edit gets the returned canonical lease, then its own save.
+                        if this.state.edits.contains_key(&id) {
+                            this.schedule_save(id.clone(), window, cx);
                         }
                     }
                     Err(e) => {
-                        eprintln!("[opstwin] inbox draft save failed: {e}");
-                        this.action_error = Some(
+                        let message = if e.is_edit_conflict() {
+                            crate::settings::t("此事项已在其他地方更新，请选择保留哪一版")
+                        } else {
                             crate::settings::t("保存失败：{error}（本地修改已保留）")
-                                .replace("{error}", &e.user_text()),
-                        );
+                                .replace("{error}", &e.user_text())
+                        };
+                        if e.is_edit_conflict() {
+                            if let Some(server) = e
+                                .detail()
+                                .and_then(|d| d.get("entity").or_else(|| d.get("item")))
+                                .and_then(|v| serde_json::from_value::<InboxItem>(v.clone()).ok())
+                            {
+                                this.save_conflicts.insert(id.clone(), server.clone());
+                                if current {
+                                    this.conflict = Some(server);
+                                }
+                            }
+                        }
+                        this.save_errors.insert(id.clone(), message.clone());
+                        if current {
+                            this.action_error = Some(message);
+                        }
                     }
                 }
                 cx.notify();
@@ -1095,6 +1014,7 @@ impl InboxView {
         let Some(server) = self.conflict.take() else {
             return;
         };
+        self.save_conflicts.remove(&server.id);
         self.base_updated_at = server.updated_at.clone();
         self.base_draft = server.draft.clone().unwrap_or_default();
         self.server_changed = false;
@@ -1112,6 +1032,8 @@ impl InboxView {
 
     fn conflict_take_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(server) = self.conflict.take() {
+            self.save_conflicts.remove(&server.id);
+            self.save_errors.remove(&server.id);
             self.detail = Some(server);
         }
         self.action_error = None;
@@ -2719,13 +2641,16 @@ impl InboxView {
                 .child(messages),
         );
 
+        let preparing = product
+            .and_then(|p| p.draft_preparation.as_ref())
+            .is_some_and(|p| matches!(p["status"].as_str(), Some("queued" | "running")));
         // Draft editor
         let mut draft = v_flex()
             .flex_shrink_0()
             .gap(px(9.))
             .child(
                 h_flex()
-                    .h(px(16.))
+                    .h(px(28.))
                     .items_center()
                     .gap(px(12.))
                     .child(
@@ -2740,16 +2665,12 @@ impl InboxView {
                         Button::new("inbox-analysis")
                             .ghost()
                             .xsmall()
-                            .h(px(16.))
+                            .h(px(28.))
                             .px_0()
                             .text_color(theme.primary)
                             .accessibility_label(crate::settings::t("查看分析过程"))
-                            .child(
-                                div()
-                                    .text_size(px(12.))
-                                    .line_height(relative(1.25))
-                                    .child(crate::settings::t("查看分析过程")),
-                            )
+                            .icon(gpui_kit::assets::IconName::ListTree)
+                            .tooltip(crate::settings::t("查看分析过程"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.show_analysis = !this.show_analysis;
                                 cx.notify();
@@ -2759,7 +2680,7 @@ impl InboxView {
                         Button::new("inbox-edit")
                             .ghost()
                             .xsmall()
-                            .h(px(16.))
+                            .h(px(28.))
                             .px_0()
                             .text_color(theme.primary)
                             .accessibility_label(crate::settings::t(if self.editing {
@@ -2767,13 +2688,16 @@ impl InboxView {
                             } else {
                                 "编辑"
                             }))
-                            .child(div().text_size(px(12.)).line_height(relative(1.25)).child(
-                                crate::settings::t(if self.editing {
-                                    "收起编辑"
-                                } else {
-                                    "编辑"
-                                }),
-                            ))
+                            .icon(if self.editing {
+                                gpui_kit::assets::IconName::ChevronUp
+                            } else {
+                                gpui_kit::assets::IconName::Pencil
+                            })
+                            .tooltip(crate::settings::t(if self.editing {
+                                "收起编辑"
+                            } else {
+                                "编辑"
+                            }))
                             .disabled(locked)
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.editing = !this.editing;
@@ -2781,13 +2705,49 @@ impl InboxView {
                             })),
                     )
                     .when(dirty, |d| {
-                        d.child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.warning)
-                                .child(crate::settings::t("未保存（已在本机保留）")),
-                        )
+                        d.child(div().text_xs().text_color(theme.muted_foreground).child(
+                            crate::settings::t(if self.save_errors.contains_key(&item.id) {
+                                "本地修改已保留"
+                            } else {
+                                "正在自动保存…"
+                            }),
+                        ))
                     })
+                    .child(
+                        Button::new("inbox-generate")
+                            .ghost()
+                            .small()
+                            .icon(gpui_kit::assets::IconName::RefreshCw)
+                            .label(crate::settings::t(
+                                if self
+                                    .draft_request
+                                    .as_ref()
+                                    .is_some_and(|(id, _)| id == &item.id)
+                                    && busy.is_none()
+                                {
+                                    "重试生成"
+                                } else if item
+                                    .draft
+                                    .as_deref()
+                                    .is_some_and(|d| !d.trim().is_empty())
+                                {
+                                    "重新生成草稿"
+                                } else {
+                                    "生成草稿"
+                                },
+                            ))
+                            .loading(busy == Some(Busy::Generate) || preparing)
+                            .disabled(
+                                locked
+                                    || busy.is_some()
+                                    || dirty
+                                    || self.saving.contains_key(&item.id)
+                                    || preparing,
+                            )
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.generate_draft(window, cx)),
+                            ),
+                    )
                     .when(item.approved && !dirty, |d| {
                         d.child(
                             div()
@@ -2813,10 +2773,30 @@ impl InboxView {
                             item.draft
                                 .clone()
                                 .filter(|s| !s.trim().is_empty())
-                                .unwrap_or_else(|| crate::settings::t("尚无回复草稿")),
+                                .unwrap_or_else(|| {
+                                    crate::settings::t(if preparing {
+                                        "正在后台准备草稿…"
+                                    } else {
+                                        "尚无回复草稿"
+                                    })
+                                }),
                         ),
                 )
             });
+        if let Some(preparation) = product.and_then(|p| p.draft_preparation.as_ref()) {
+            if matches!(
+                preparation["status"].as_str(),
+                Some("failed" | "unknown" | "review")
+            ) && item.draft.as_deref().is_none_or(|d| d.trim().is_empty())
+            {
+                draft = draft.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(crate::settings::t("后台草稿未完成，请检查结果后重新生成")),
+                );
+            }
+        }
         if self.show_analysis {
             let analysis = triage
                 .map(|t| {
@@ -2984,76 +2964,19 @@ impl InboxView {
                     ),
             );
         }
-        draft = draft.when(
-            self.editing
-                || dirty
-                || item.draft.as_deref().is_none_or(|s| s.trim().is_empty())
-                || item.draft_error.is_some(),
-            |draft| {
-                draft.child(
-                    h_flex()
-                        .gap_2()
-                        .flex_wrap()
-                        .child(
-                            Button::new("inbox-save")
-                                .small()
-                                .primary()
-                                .label(crate::settings::t("保存草稿"))
-                                .loading(busy == Some(Busy::Save))
-                                .disabled(
-                                    !dirty || locked || busy.is_some() || self.conflict.is_some(),
-                                )
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| this.save_draft(window, cx)),
-                                ),
-                        )
-                        .child(
-                            Button::new("inbox-discard")
-                                .small()
-                                .ghost()
-                                .label(crate::settings::t("放弃修改"))
-                                .disabled(!dirty || busy.is_some())
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.discard_edits(window, cx)
-                                })),
-                        )
-                        .child(
-                            Button::new("inbox-generate")
-                                .accessibility_label(crate::settings::t(
-                                    if self
-                                        .draft_request
-                                        .as_ref()
-                                        .is_some_and(|(i, _)| *i == item.id)
-                                        && busy.is_none()
-                                    {
-                                        "重试生成"
-                                    } else {
-                                        "生成草稿"
-                                    },
-                                ))
-                                .small()
-                                .outline()
-                                .label(crate::settings::t(
-                                    if self
-                                        .draft_request
-                                        .as_ref()
-                                        .is_some_and(|(i, _)| *i == item.id)
-                                        && busy.is_none()
-                                    {
-                                        "重试生成"
-                                    } else {
-                                        "生成草稿"
-                                    },
-                                ))
-                                .loading(busy == Some(Busy::Generate))
-                                .disabled(locked || busy.is_some() || dirty)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.generate_draft(window, cx)
-                                })),
-                        ),
-                )
-            },
-        );
+        if self.save_errors.contains_key(&item.id) && self.conflict.is_none() {
+            draft = draft.child(
+                h_flex().justify_end().child(
+                    Button::new("inbox-save-retry")
+                        .ghost()
+                        .small()
+                        .icon(gpui_kit::assets::IconName::RefreshCw)
+                        .label(crate::settings::t("重试保存"))
+                        .disabled(self.saving.contains_key(&item.id) || locked)
+                        .on_click(cx.listener(|this, _, window, cx| this.save_draft(window, cx))),
+                ),
+            );
+        }
         body = body.child(draft);
 
         // Send section

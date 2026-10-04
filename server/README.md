@@ -72,3 +72,5 @@ HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 
 微信 `/api/wechat/contacts` 的 `searchAll:true` 是明确请求的有界后续页搜索（最多20页/8秒，找到匹配即返回），普通请求继续保持单页过滤。返回 scanned/pagesScanned/searchPending/queryComplete；游标绑定查询、limit、模式、连接版本和源身份，重复/缺失游标不能伪装为完成。复验 `node scripts/native-wechat-contact-search-http-e2e.mjs`；公开CLI fixture与实际本机GUI分别记录。
 
 - [模型测试原请求恢复](../docs/journeys/native-model-probe-recovery.md)：持久 ID、事务 receipt、GET 回查、重启 unknown 与新包丢响应恢复；完整设置/产品评分仍未完成。
+
+默认空草稿队列由 `default-drafts.ts` 启动（遵循OPSTWIN_NO_BACKGROUND），按事项持久准备状态/串行只读模型调用，已有人工草稿不覆盖、失败/重启未知不自动重跑；协议和复验见 [Inbox自动保存旅程](../docs/journeys/native-inbox-autosave.md)。

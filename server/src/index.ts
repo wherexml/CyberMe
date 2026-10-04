@@ -17,6 +17,7 @@ import {notificationState,notificationPreview,tickNotifications,reconcileNotific
 import {enqueueSourceProcessing,retrySourceProcessing,startSourceProcessing} from './source-processing';
 import {retryLineage} from './run-lineage';
 import {generateInboxDraft} from './drafts';
+import {startDefaultDrafts} from './default-drafts';
 import {attachmentContradiction} from './attachment-consistency';
 import {syncFeishu, startConnectionScheduler} from './connection-sync';
 import {migrateAutomaticReplyFiles} from './automatic-files';
@@ -70,7 +71,7 @@ function listResponse(c:any,values:any[],legacyLimit?:number){
 }
 function need(type:string,id:string,includeDeleted=false) {const item=get(type,id,includeDeleted);if(!item)throw new ApiError(404,'not_found','对象不存在');return item;}
 function validate(type:string,input:any,old:any={}) {
- if(type==='inbox')for(const field of ['sourceRule','dismissalFeedbackActive','surfacing','attentionOverride','triage','sourceProcessing','draftRunId','semanticAuthorization','semanticAuthorizationId','semanticClassification','semanticClassificationId','effectiveCategory','autonomousDispatch'])if(input[field]!==undefined&&JSON.stringify(input[field])!==JSON.stringify(old[field]))throw new ApiError(403,'server_managed_field',field+' is managed by the server');
+ if(type==='inbox')for(const field of ['draftPreparation','sourceRule','dismissalFeedbackActive','surfacing','attentionOverride','triage','sourceProcessing','draftRunId','semanticAuthorization','semanticAuthorizationId','semanticClassification','semanticClassificationId','effectiveCategory','autonomousDispatch'])if(input[field]!==undefined&&JSON.stringify(input[field])!==JSON.stringify(old[field]))throw new ApiError(403,'server_managed_field',field+' is managed by the server');
  if(type==='inbox'&&['sending','sent','recalled','send_unknown'].includes(old.status))for(const field of ['draft','body','attachments','recipientId','isSelfTest','testMarker','sentDraft','sentText','sentAttachments'])if(input[field]!==undefined&&JSON.stringify(input[field])!==JSON.stringify(old[field]))throw new ApiError(409,'locked_send_payload','已外发或结果未知的消息内容已冻结，请复制创建新的审批项');
  const data={...old,...input};delete data.deleted;delete data.localEdited;delete data.diskPath;delete data.sourceSystem;delete data.receipt;delete data.recallReceipt;delete data.baseUpdatedAt;for(const field of ['calendarEvent','calendarReceipt','calendarStatus','calendarIntentKey','calendarRunId']){delete data[field];if(old[field]!==undefined)data[field]=old[field];}
  if(old.sourceSystem)data.sourceSystem=old.sourceSystem;
@@ -298,6 +299,7 @@ startInboxTriage();
 startScheduler();
 startConnectionScheduler();
 startSourceProcessing();
+startDefaultDrafts();
 startNotifications();
 startAutonomousDispatch();
 }

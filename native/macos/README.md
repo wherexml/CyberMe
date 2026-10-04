@@ -247,3 +247,5 @@ v44最小断开诊断修复已构建/签名并实际回归；v43自然TTL与v43�
 Inbox 后台生成与图标/提示回归见 [验收旅程](../../docs/journeys/native-inbox-background.md)：生成状态按事项隔离，公开fixture实际GUI不代表真实模型或完整产品评分。
 
 Chat发送状态：长POST同时每秒只读回查原requestId；已确认运行在左侧显示三点气泡，未知/终态停止动画。公开隔离GUI及10项证据复核入口见[Chat规格](../../docs/spec/native-chat-parity.md)，fixture用46264，不连接真实模型。
+
+Inbox已改为自动保存与服务端默认补稿，精简工具栏和迟到/失败/冲突/重启证据见 [热保存旅程](../../docs/journeys/native-inbox-autosave.md)。

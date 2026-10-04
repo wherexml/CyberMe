@@ -23,6 +23,8 @@ pub struct InboxProduct {
     #[serde(default)]
     pub draft_candidate: Option<DraftCandidate>,
     #[serde(default)]
+    pub draft_preparation: Option<Value>,
+    #[serde(default)]
     pub avatar_url: Option<String>,
     #[serde(default)]
     pub triage: Option<Value>,
