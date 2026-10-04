@@ -199,3 +199,5 @@ v19候选将微信语音、视频、文件接入现有exact-message附件API：�
 打开会话、刷新和同根重启均只读发现服务器未确认请求，不要求本机 `outgoing` 或已加载历史消息含该请求。`GET /api/chat/conversations/:id/unresolved` 返回有界元数据及 revision 分页；原生独立 RAM 缓存按会话与可见代次核对，刷新失败保留已有记录和草稿，分页变更要求重读。partial 提示真实写入次数，缺少证据显示未知；执行记录先按原 requestId 读取 receipt，再读原 run，不能生成可重发本机记录。真实 GUI、HTTP 和 Rust 客户端证据见 [Chat 恢复旅程](../../docs/journeys/native-chat-gui-20261003.md)。
 
 - 2026-10-04录音框几何增量：在仓库根运行 `python3 scripts/native-composer-geometry-e2e.py`，默认读取本项目v35实际GUI原图，以真实ICC复现三组四列外壳上缘。失败原图、新包及完整评分边界见 [最终恢复旅程](../../docs/journeys/native-final-resume-20261004.md)。
+
+恢复设置验收从仓库根执行 `python3 scripts/native-settings-resume-readback-e2e.py`，只读既有46214真实probe/模型角色/连接/公开Idea及本机blocked策略，原生18图与失败原件见[恢复旅程](../../docs/journeys/native-final-resume-20261004.md)。不会重新调用模型或重复写入，不计完整评分。
