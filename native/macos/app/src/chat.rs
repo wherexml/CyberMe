@@ -3186,7 +3186,7 @@ impl ChatView {
             + 32.)
     }
 
-    fn render_sessions(&self, docked: bool, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    fn render_sessions(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme().clone();
         let query = self.session_query.read(cx).value().to_lowercase();
         let mut side: Vec<_> = self
@@ -3319,13 +3319,9 @@ impl ChatView {
         let primary = self.primary_id.clone();
         let selected = self.conversation_id == primary;
         v_flex()
-            .when(!docked, |this| {
-                this.absolute()
-                    .top_0()
-                    .left_0()
-                    .bottom(self.composer_clearance())
-            })
-            .when(docked, |this| this.relative().h_full())
+            .relative()
+            .h_full()
+            .flex_shrink_0()
             .w(px(240.))
             .px(px(12.))
             .py(px(16.))
@@ -4156,9 +4152,6 @@ impl Render for ChatView {
                         this.child(self.render_preview(cx))
                     }),
             );
-        let docked = self.panel_open
-            && self.keep_panel_visible
-            && f32::from(_window.bounds().size.width) > 650.;
         div()
             .relative()
             .size_full()
@@ -4166,22 +4159,11 @@ impl Render for ChatView {
             .child(
                 h_flex()
                     .size_full()
-                    .when(docked, |this| {
-                        this.child(
-                            div()
-                                .h_full()
-                                .w(px(240.))
-                                .max_w(relative(0.45))
-                                .flex_shrink_0()
-                                .pb(self.composer_clearance())
-                                .child(self.render_sessions(true, _window, cx)),
-                        )
+                    .when(self.panel_open, |this| {
+                        this.child(self.render_sessions(_window, cx))
                     })
                     .child(column),
             )
-            .when(self.panel_open && !docked, |this| {
-                this.child(self.render_sessions(false, _window, cx))
-            })
             .when_some(
                 self.keyboard_menu.clone(),
                 |this, (menu, position, anchor)| {

@@ -178,3 +178,5 @@ v19候选将微信语音、视频、文件接入现有exact-message附件API：�
 固定v19独立source复核已完成RESOLVED_SOURCE，review `3cefe28665b756c992cd2e1062812b6cb4daa2216fe13fe1454dadc7a57273c1`、artifact `f914d4828bfec2e791a865cead8e1685b61f2c34c2c5276f7a910f850ace41b5`。GET→UI owner→磁盘验证源修复不等于动态取消/真实保存或系统播放；新包GUI仍NOT_RUN，旧报告保留，详见[非图片规格](../../docs/spec/native-product-pages.md)。
 
 2026-10-04 模型设置新增供应商编辑和添加/编辑模型浮层，真实保存地址/协议/密钥及Token/推理/图片参数；设置保留三个交通灯，关闭可用、最小化和缩放置灰禁用、搜索采用固定字号和单行省略。API与GUI证据分别记录，见[旅程](../../docs/journeys/native-model-provider-ui.md)。
+
+2026-10-04 会话侧栏展开采用240pt整高并排列，正文及输入框按剩余宽度共同居中；普通展开/多行/收起/760pt窄窗与重启偏好实际GUI证据见[侧栏旅程](../../docs/journeys/native-chat-sidebar-layout.md)。
