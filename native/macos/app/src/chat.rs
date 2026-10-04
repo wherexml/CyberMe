@@ -2982,7 +2982,7 @@ impl ChatView {
         }
         let bubble = Bubble::new()
             .with_variant(BubbleVariant::Muted)
-            .max_w(relative(0.88))
+            .max_w_full()
             .content(
                 BubbleContent::new()
                     .rounded(px(22.))
@@ -2999,15 +2999,6 @@ impl ChatView {
                     }))
                     .child(inner),
             );
-        let mut message = Message::new()
-            .id(ElementId::Name(format!("msg-{id}").into()))
-            .alignment(if is_user {
-                MessageAlignment::End
-            } else {
-                MessageAlignment::Start
-            })
-            .content(MessageContent::new().bubble(bubble));
-        message = message.with_stack_style(StyleRefinement::default().max_w_full());
         let text = content.to_string();
         let record = id.to_string();
         let record_view = view.clone();
@@ -3015,10 +3006,9 @@ impl ChatView {
         let stopped = outgoing.is_some_and(|o| matches!(&o.state, SendState::Failed { message, retryable: false } if message == "已被新消息打断"));
         let actions = h_flex()
             .absolute()
-            .bottom(px(-21.))
+            .bottom(px(1.))
             .h(px(20.))
-            .when(is_user, |this| this.right(px(3.)))
-            .when(!is_user, |this| this.left(px(3.)))
+            .left(px(16.))
             .gap(px(6.))
             .child(
                 Button::new(ElementId::Name(format!("chat-copy-{id}").into()))
@@ -3056,6 +3046,24 @@ impl ChatView {
                         }),
                 )
             });
+        // Padding keeps the bubble-to-actions path inside the same hover owner.
+        // Anchor to the bubble itself so both roles follow the text inset.
+        let bubble_with_actions = div()
+            .group("chat-message")
+            .relative()
+            .max_w(relative(0.88))
+            .when(outgoing.is_none() || stopped, |this| this.pb(px(22.)))
+            .child(bubble)
+            .when(outgoing.is_none() || stopped, |this| this.child(actions));
+        let mut message = Message::new()
+            .id(ElementId::Name(format!("msg-{id}").into()))
+            .alignment(if is_user {
+                MessageAlignment::End
+            } else {
+                MessageAlignment::Start
+            })
+            .content(MessageContent::new().child(bubble_with_actions));
+        message = message.with_stack_style(StyleRefinement::default().max_w_full());
         if let Some(o) = outgoing {
             let footer = match &o.state {
                 SendState::Sending { attempt } => h_flex().gap_2().child(
@@ -3132,11 +3140,8 @@ impl ChatView {
             message = message.footer(MessageFooter::new().child(footer));
         }
         div()
-            .group("chat-message")
-            .relative()
-            .mb(px(22.))
+            .when(outgoing.is_some() && !stopped, |this| this.mb(px(22.)))
             .child(message)
-            .when(outgoing.is_none() || stopped, |this| this.child(actions))
             .into_any_element()
     }
 
