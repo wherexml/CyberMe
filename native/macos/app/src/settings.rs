@@ -105,6 +105,7 @@ pub struct SettingsView {
     pending_fields: bool,
     history: Option<(String, Value)>,
     memory_edit: Option<String>,
+    memory_recovery_generation: u64,
     delete_confirm: bool,
     identity_edit: bool,
     memory_manage: bool,
@@ -182,7 +183,7 @@ impl SettingsView {
             }),
         ];
         let wechat_query = cx.new(|cx| InputState::new(_window, cx).placeholder(t("查找联系人或当前会话消息")));
-        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,local_save_generation:0,local_saving:false,local_save_error:None,model_probe,model_probe_retry:false,model_probe_status:None,model_probe_saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_capabilities:json!({}),wechat_media:None,wechat_saved:None,wechat_save_busy:false,wechat_save_cancel:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
+        let mut this=Self{client,section:"general".into(),detail:None,data:json!({}),models:json!({}),sync:json!({}),binding:json!({}),permissions:json!({}),qr:None,local:persisted.get("local").cloned().unwrap_or(json!({"appearance":"system","font":15,"reduced":false,"dictation":{"autoSend":false,"cues":true},"filesystem":{"blocked":[]}})),drafts:persisted.get("drafts").cloned().unwrap_or(json!({})),fields:BTreeMap::new(),connection_secret:None,connection_secret_subscription:None,connection_secret_revision:0,saver,local_save_generation:0,local_saving:false,local_save_error:None,model_probe,model_probe_retry:false,model_probe_status:None,model_probe_saver,loading:false,busy:false,error:None,notice:None,visible:true,stale:false,generation:0,pending_fields:true,history:None,memory_edit:None,memory_recovery_generation:0,delete_confirm:false,identity_edit:false,memory_manage:false,soul_details:false,memory_details:false,model_add:false,wechat_query,wechat_applied_query:String::new(),wechat_exact:None,wechat_image:None,wechat_capabilities:json!({}),wechat_media:None,wechat_saved:None,wechat_save_busy:false,wechat_save_cancel:None,wechat_page:json!({}),wechat_chat:None,wechat_messages:json!({}),wechat_loading:false,wechat_generation:0,wechat_selected_message:None,wechat_query_needs_reset:false,wechat_chat_cursors:vec![],wechat_message_cursors:vec![],sync_scope:"all".into(),sync_offset:0,record_kind:"chats".into(),record_offset:0,sync_records:json!({}),sync_loading:false,records_loading:false,sync_generation:0,records_generation:0,expanded:Default::default(),_subscriptions:subs,_tasks:vec![]};
         this.visible = _window.is_owner_visible();
         this.reload(cx);
         if this.model_probe["requestId"].is_string() { this.test_model("standard", true, cx); }
@@ -194,6 +195,7 @@ impl SettingsView {
         }
         self.visible = v;
         if !v {
+            self.memory_recovery_generation = self.memory_recovery_generation.wrapping_add(1);
             self.drop_connection_secret();
             self.invalidate_wechat_reader(false, true);
             // Reopen refreshes canonical connection scope, never auto-reads private history.
@@ -205,6 +207,7 @@ impl SettingsView {
     }
     pub fn section(&mut self, name: &str, cx: &mut Context<Self>) {
         if SECTIONS.iter().any(|x| x.0 == name) {
+            self.memory_recovery_generation = self.memory_recovery_generation.wrapping_add(1);
             self.drop_connection_secret();
             self.invalidate_wechat_reader(true, true);
             self.section = name.into();
@@ -3265,23 +3268,23 @@ impl SettingsView {
                                     "旧草稿未经全文校验，保存已禁用。可保留草稿，或重新读取全文。",
                                     cx,
                                 ))
-                                .child(
-                                    Button::new("memory-reload-full")
-                                        .small()
-                                        .h(px(32.))
-                                        .outline()
-                                        .label(t("重新读取全文（丢弃旧草稿）"))
+                                ;
+                        }
+                        if self.memory_edit.as_deref() != Some("new") {
+                            let full = self.memory_edit.as_ref().is_some_and(|id| {
+                                self.drafts[format!("memory:{id}")]["fullRead"] == true
+                            });
+                            memory = memory.child(
+                                h_flex().flex_wrap().gap_2()
+                                    .child(Button::new("memory-read-keep").small().h(px(32.)).outline()
+                                        .label(t("读取最新版本（保留草稿）"))
+                                        .disabled(self.busy || !full)
+                                        .on_click(cx.listener(|this, _, _, cx| this.read_memory_latest(false, cx))))
+                                    .child(Button::new("memory-read-discard").small().h(px(32.)).ghost()
+                                        .label(t("读取最新版本（丢弃草稿）"))
                                         .disabled(self.busy)
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            if let Some(id) = this.memory_edit.clone() {
-                                                this.drafts
-                                                    .as_object_mut()
-                                                    .map(|a| a.remove(&format!("memory:{id}")));
-                                                this.open_memory(&id, cx);
-                                                this.persist();
-                                            }
-                                        })),
-                                );
+                                        .on_click(cx.listener(|this, _, _, cx| this.read_memory_latest(true, cx)))),
+                            );
                         }
                         memory = memory
                             .child(self.field("memory.category"))
@@ -3297,6 +3300,7 @@ impl SettingsView {
                                             .label(t("取消"))
                                             .disabled(self.busy)
                                             .on_click(cx.listener(|this, _, _, cx| {
+                                                this.memory_recovery_generation = this.memory_recovery_generation.wrapping_add(1);
                                                 this.memory_edit = None;
                                                 cx.notify();
                                             })),
@@ -4741,6 +4745,7 @@ impl SettingsView {
         out.child(important)
     }
     fn open_memory(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.memory_recovery_generation = self.memory_recovery_generation.wrapping_add(1);
         if id != "new" {
             let full = self.data["memories"]
                 .as_array()
@@ -4766,6 +4771,60 @@ impl SettingsView {
         self.fields.remove("memory.category");
         self.fields.remove("memory.content");
         self.pending_fields = true;
+        cx.notify();
+    }
+    fn read_memory_latest(&mut self, discard: bool, cx: &mut Context<Self>) {
+        let Some(id) = self.memory_edit.clone().filter(|id| id != "new") else { return; };
+        if self.busy { return; }
+        let key = format!("memory:{id}");
+        let submitted = self.drafts[&key].clone();
+        self.memory_recovery_generation = self.memory_recovery_generation.wrapping_add(1);
+        let generation = self.memory_recovery_generation;
+        let c = self.client.clone();
+        self.busy = true;
+        self.error = None;
+        self._tasks.push(cx.spawn(async move |this, cx| {
+            let exact_id = id.clone();
+            let result = io(async move { c.product_get(&format!("/api/memories/{exact_id}")).await }).await;
+            _ = this.update(cx, |this, cx| {
+                this.busy = false;
+                if this.memory_recovery_generation != generation || !this.visible
+                    || this.section != "identity" || this.memory_edit.as_deref() != Some(id.as_str()) {
+                    cx.notify();
+                    return;
+                }
+                if this.drafts[&key] != submitted {
+                    this.notice = Some(t("读取期间草稿已更改，已保留；请再次确认读取"));
+                    cx.notify();
+                    return;
+                }
+                match result {
+                    Ok(mut saved) if saved["id"] == id && saved["body"].is_string()
+                        && saved["updatedAt"].as_str().is_some_and(|v| !v.trim().is_empty()) => {
+                        saved["_nativeFull"] = json!(true);
+                        if let Some(items) = this.data["memories"].as_array_mut() {
+                            if let Some(item) = items.iter_mut().find(|m| m["id"] == id) { *item = saved.clone(); }
+                        }
+                        if discard {
+                            this.drafts[&key] = json!({"category":saved["category"],"content":saved["body"],
+                                "baseUpdatedAt":saved["updatedAt"],"fullRead":true});
+                        } else {
+                            this.drafts[&key]["baseUpdatedAt"] = saved["updatedAt"].clone();
+                            this.drafts[&key]["fullRead"] = json!(true);
+                        }
+                        this.fields.remove("memory.category");
+                        this.fields.remove("memory.content");
+                        this.pending_fields = true;
+                        this.notice = Some(t(if discard {"已读取最新全文，未保存任何更改"}
+                            else {"已更新原记忆版本并保留草稿，请核对后再保存"}));
+                        this.persist();
+                    }
+                    Ok(_) => this.error = Some(t("记忆全文尚未读取，已阻止编辑；请重新读取后重试")),
+                    Err(e) => this.error = Some(e.user_text()),
+                }
+                cx.notify();
+            });
+        }));
         cx.notify();
     }
     fn save_memory(&mut self, cx: &mut Context<Self>) {
@@ -4811,12 +4870,19 @@ impl SettingsView {
         let snapshot = json!({"local":self.local,"drafts":self.drafts});
         let c = self.client.clone();
         let mut body = json!({"title":content.lines().next().unwrap_or("").chars().take(100).collect::<String>(),"body":content,"content":content,"category":v["category"],"baseUpdatedAt":v["baseUpdatedAt"]});
+        let submitted = self.drafts[&key].clone();
+        let edit_owner = id.clone();
+        let generation = self.memory_recovery_generation;
         self.busy = true;
         let task = cx.spawn(async move |this, cx| {
             if saver.save_now(snapshot).await.is_err() {
                 _ = this.update(cx, |this, cx| {
                     this.busy = false;
-                    this.error = Some(t("无法保存本机偏好"));
+                    if this.visible && this.section == "identity"
+                        && this.memory_recovery_generation == generation
+                        && this.memory_edit.as_deref() == Some(edit_owner.as_str()) {
+                        this.error = Some(t("无法保存本机偏好"));
+                    }
                     cx.notify();
                 });
                 return;
@@ -4853,13 +4919,33 @@ impl SettingsView {
             _ = this.update(cx, |this, cx| {
                 this.busy = false;
                 match r {
-                    Ok(_) => {
-                        this.memory_edit = None;
-                        this.drafts.as_object_mut().map(|m| m.remove(&key));
+                    Ok(saved) => {
+                        let owns_editor = this.visible && this.section == "identity"
+                            && this.memory_recovery_generation == generation
+                            && this.memory_edit.as_deref() == Some(edit_owner.as_str());
+                        let unchanged = this.drafts.get(&key) == Some(&submitted);
+                        if unchanged && owns_editor {
+                            this.memory_edit = None;
+                            this.drafts.as_object_mut().map(|m| m.remove(&key));
+                        } else if edit_owner != "new" && saved["id"] == edit_owner
+                            && saved["updatedAt"].as_str().is_some_and(|v| !v.trim().is_empty())
+                            && this.drafts.get(&key).is_some() {
+                            // Acknowledgement belongs to the submitted version, not later input.
+                            this.drafts[&key]["baseUpdatedAt"] = saved["updatedAt"].clone();
+                        }
                         this.persist();
                         this.reload(cx);
+                        if owns_editor && !unchanged {
+                            this.notice = Some(t("已保存提交时的版本，后输入仍保留且未保存"));
+                        }
                     }
-                    Err(e) => this.error = Some(e.user_text()),
+                    Err(e) => {
+                        if this.visible && this.section == "identity"
+                            && this.memory_recovery_generation == generation
+                            && this.memory_edit.as_deref() == Some(edit_owner.as_str()) {
+                            this.error = Some(e.user_text());
+                        }
+                    },
                 }
                 cx.notify();
             });
@@ -6441,6 +6527,12 @@ pub fn t(s: &str) -> String {
         "采集部分失败" => "Collection Partially Failed",
         "重新检测" => "Check Again",
         "重新读取全文（丢弃旧草稿）" => "Reload Full Text (Discard Older Draft)",
+        "读取最新版本（保留草稿）" => "Read Latest Version (Keep Draft)",
+        "读取最新版本（丢弃草稿）" => "Read Latest Version (Discard Draft)",
+        "读取期间草稿已更改，已保留；请再次确认读取" => "The draft changed while reading. It was kept; confirm reading again.",
+        "已读取最新全文，未保存任何更改" => "Latest full text loaded. No changes were saved.",
+        "已更新原记忆版本并保留草稿，请核对后再保存" => "Original memory version refreshed and draft kept. Review before saving.",
+        "已保存提交时的版本，后输入仍保留且未保存" => "The submitted version was saved. Later input is kept and remains unsaved.",
         "非紧急通知延后到安静时间结束。" => "Delay nonurgent notifications until quiet hours end.",
         "频道或范围名称" => "Channel or Scope Name",
         "飞书" => "Feishu",

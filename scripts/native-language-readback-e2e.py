@@ -57,7 +57,7 @@ for n, labels in [('03-v41-en-go-menu.ax.txt', ['Go', 'Chat', 'Inbox', 'Ideas', 
     check(n+' actual system menu AX only', all(label in read(n) for label in labels))
 binding = data('source-binding.json')
 check('Frozen actual source and signed binary still match',
-      sha(root/'native/macos/app/src/settings.rs') == binding['sourceSha256']
+      sha(d/'settings-v41-original.rs') == binding['sourceSha256']
       and sha(pathlib.Path(binding['app'])/'Contents/MacOS/opstwin') == binding['signedBinarySha256'])
 frames = []
 for p in sorted(d.glob('*')):
