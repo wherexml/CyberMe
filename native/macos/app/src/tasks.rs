@@ -78,6 +78,7 @@ pub struct TasksView {
     client: Client,
     filter: Filter,
     search: Entity<InputState>,
+    placeholder_locale: String,
     items: Vec<TaskItem>,
     total: u64,
     next_offset: u64,
@@ -138,6 +139,7 @@ impl TasksView {
             client,
             filter: Filter::All,
             search,
+            placeholder_locale: crate::settings::t("任务标题"),
             items: Vec::new(),
             total: 0,
             next_offset: 0,
@@ -889,8 +891,8 @@ impl TasksView {
                         "{}{} · {} · {}",
                         crate::settings::t("服务器："),
                         server.title,
-                        status_label(&server.status),
-                        server.due_date.clone().unwrap_or_else(|| "无截止".into())
+                        crate::settings::t(status_label(&server.status)),
+                        server.due_date.clone().unwrap_or_else(|| crate::settings::t("无截止"))
                     )))
                     .when_some(server.notes.clone().filter(|n| !n.is_empty()), |this, n| {
                         this.child(
@@ -1075,6 +1077,31 @@ fn status_label(s: &str) -> &'static str {
 
 impl Render for TasksView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Restored editors are constructed before the server language arrives.
+        // Update only UI hints when the locale changes; keep draft entities and
+        // values (including their base revision and selection) untouched.
+        let placeholder = crate::settings::t("任务标题");
+        if self.placeholder_locale != placeholder {
+            self.placeholder_locale = placeholder.clone();
+            self.search.update(cx, |input, cx| {
+                input.set_placeholder(crate::settings::t("搜索任务"), window, cx)
+            });
+            if let Some(editor) = &self.editor {
+                editor.title.update(cx, |input, cx| {
+                    input.set_placeholder(placeholder, window, cx)
+                });
+                editor.notes.update(cx, |input, cx| {
+                    input.set_placeholder(crate::settings::t("备注（可选）"), window, cx)
+                });
+                editor.due.update(cx, |input, cx| {
+                    input.set_placeholder(
+                        crate::settings::t("截止日期 YYYY-MM-DD（可选）"),
+                        window,
+                        cx,
+                    )
+                });
+            }
+        }
         let theme = cx.theme().clone();
         let header =
             h_flex()
@@ -1209,11 +1236,11 @@ impl Render for TasksView {
             && self.filter != Filter::All
         {
             list = list.child(div().p_6().text_color(theme.muted_foreground).child(
-                if self.filter == Filter::Deleted {
+                crate::settings::t(if self.filter == Filter::Deleted {
                     "回收站为空"
                 } else {
                     "没有任务"
-                },
+                }),
             ));
         }
         if self.filter != Filter::Deleted && self.filter != Filter::Cancelled {

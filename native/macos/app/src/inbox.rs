@@ -116,12 +116,14 @@ pub struct InboxView {
     source_busy: bool,
     source_error: Option<String>,
     source_generation: u64,
+    source_scroll: ScrollHandle,
     source_preview: Option<(String, String, Result<crate::files::SourcePreview, String>)>,
     source_preview_loading: bool,
     source_preview_generation: u64,
 
     filter: Filter,
     search: Entity<InputState>,
+    placeholder_locale: String,
     items: Vec<InboxSummary>,
     list_presentations:
         BTreeMap<String, (Option<String>, Option<serde_json::Value>, Option<String>)>,
@@ -243,11 +245,13 @@ impl InboxView {
             source_busy: false,
             source_error: None,
             source_generation: 0,
+            source_scroll: ScrollHandle::default(),
             source_preview: None,
             source_preview_loading: false,
             source_preview_generation: 0,
             filter: Filter::Pending,
             search,
+            placeholder_locale: crate::settings::t("搜索收件箱"),
             items: Vec::new(),
             list_presentations: BTreeMap::new(),
             total: 0,
@@ -464,6 +468,7 @@ impl InboxView {
             .cloned()
             .map(|rid| (id.clone(), rid));
         self.selected = Some(id);
+        self.source_scroll.set_offset(point(px(0.), px(0.)));
         self.product = None;
         self.auto_checking = false;
         self.source_history = None;
@@ -2242,12 +2247,18 @@ impl InboxView {
         } else {
             raw_messages.len().saturating_sub(20)
         };
+        // Keep the height cap on the actual viewport. The component helper
+        // also retains max_h on its inner content, hiding the true scroll extent.
         let mut messages = v_flex()
             .id("inbox-source-thread")
             .gap(px(17.))
             .p(px(14.))
             .max_h(px(if self.show_full_messages { 600. } else { 330. }))
-            .overflow_y_scrollbar();
+            .overflow_y_scroll()
+            .track_scroll(&self.source_scroll)
+            .restrict_scroll_to_axis()
+            .relative()
+            .vertical_scrollbar(&self.source_scroll);
         // HTML's 84% is relative to the source row, not intrinsic text width.
         // Resolve it from actual remaining window space before text measurement.
         let source_row_width = (f32::from(window.bounds().size.width)
@@ -2267,6 +2278,7 @@ impl InboxView {
         if raw_messages.is_empty() {
             messages = messages.child(
                 div()
+                    .flex_shrink_0()
                     .text_size(px(13.))
                     .line_height(relative(1.8))
                     .child(source_text(&item.body, "inbox-source-plain".into(), cx)),
@@ -2346,7 +2358,7 @@ impl InboxView {
             let current_time = raw_time.as_deref().and_then(crate::util::parse_ms);
             // Only message groups have the HTML's 17px separation. The time
             // label and its own message have no extra gap between them.
-            let mut message_group = v_flex().w_full().gap_0();
+            let mut message_group = v_flex().w_full().flex_shrink_0().gap_0();
             if let Some(time) = current_time {
                 let current_date = chrono::DateTime::from_timestamp_millis(time)
                     .map(|t| t.with_timezone(&Local).date_naive());
@@ -3385,6 +3397,18 @@ fn status_label(s: &str) -> &'static str {
 
 impl Render for InboxView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Server locale arrives after these persistent inputs are restored.
+        // Changing hints must not emit an edit, reload, or generation attempt.
+        let placeholder = crate::settings::t("搜索收件箱");
+        if self.placeholder_locale != placeholder {
+            self.placeholder_locale = placeholder.clone();
+            self.search.update(cx, |input, cx| {
+                input.set_placeholder(placeholder, window, cx)
+            });
+            self.editor.update(cx, |input, cx| {
+                input.set_placeholder(crate::settings::t("回复草稿（保存后才能发送）"), window, cx)
+            });
+        }
         if self.visible && std::mem::take(&mut self.stale) {
             let handle = cx.entity().downgrade();
             window.defer(cx, move |window, cx| {
