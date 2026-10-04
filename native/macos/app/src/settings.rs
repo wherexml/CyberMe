@@ -5310,6 +5310,9 @@ impl Render for SettingsView {
             .min_w_0()
             .h_full()
             .overflow_y_scrollbar()
+            // One call site renders every section and detail editor. Give each
+            // group its own scroll state so a long editor cannot offset another page.
+            .id(ElementId::Name(format!("settings-content:{}", self.group_key()).into()))
             .px(px(24.))
             .pt(px(18.))
             .pb(px(24.))
