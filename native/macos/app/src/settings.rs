@@ -4872,6 +4872,7 @@ impl SettingsView {
         };
         let snapshot = json!({"local":self.local,"drafts":self.drafts});
         let c = self.client.clone();
+        let submitted_content = content.clone();
         let mut body = json!({"title":content.lines().next().unwrap_or("").chars().take(100).collect::<String>(),"body":content,"content":content,"category":v["category"],"baseUpdatedAt":v["baseUpdatedAt"]});
         let submitted = self.drafts[&key].clone();
         let edit_owner = id.clone();
@@ -4893,45 +4894,88 @@ impl SettingsView {
             let r = io(async move {
                 if let Some(new_id) = created_id {
                     match c.product_get(&format!("/api/memories/{new_id}")).await {
-                        Ok(saved)
-                            if saved["body"] == body["body"]
-                                && saved["category"] == body["category"] =>
-                        {
-                            Ok(saved)
-                        }
-                        Ok(_) => Err(opstwin_api::ApiError::Decode(t(
-                            "原请求已保存不同内容，请核对后继续",
-                        ))),
+                        // The persisted create ID belongs to this original request.
+                        // A previous successful create may contain its submitted
+                        // version while the local draft has later input. Discover
+                        // that canonical version without overwriting it; the UI
+                        // migrates the draft for a subsequent explicit PATCH.
+                        Ok(saved) => Ok((saved, true)),
                         Err(e) if e.status() == Some(404) => {
                             c.product_post("/api/memories/snapshot", json!({})).await?;
                             body["id"] = json!(new_id);
-                            c.product_post("/api/memories", body).await
+                            c.product_post("/api/memories", body).await.map(|saved| (saved, false))
                         }
                         Err(e) => Err(e),
                     }
                 } else {
                     let current = c.product_get(&format!("/api/memories/{id}")).await?;
                     if current["body"] == body["body"] && current["category"] == body["category"] {
-                        return Ok(current);
+                        return Ok((current, false));
                     }
                     c.product_post("/api/memories/snapshot", json!({})).await?;
-                    c.product_patch(&format!("/api/memories/{id}"), body).await
+                    c.product_patch(&format!("/api/memories/{id}"), body).await.map(|saved| (saved, false))
                 }
             })
             .await;
             _ = this.update(cx, |this, cx| {
                 this.busy = false;
                 match r {
-                    Ok(saved) => {
+                    Ok((saved, discovered_existing)) => {
                         let owns_editor = this.visible && this.section == "identity"
                             && this.memory_recovery_generation == generation
                             && this.memory_edit.as_deref() == Some(edit_owner.as_str());
-                        let unchanged = this.drafts.get(&key) == Some(&submitted);
+                        let canonical_id = saved["id"].as_str().unwrap_or("");
+                        let canonical_version = saved["updatedAt"].as_str().unwrap_or("");
+                        let expected_id = if edit_owner == "new" {
+                            submitted["createId"].as_str().unwrap_or("")
+                        } else {
+                            edit_owner.as_str()
+                        };
+                        if canonical_id != expected_id || canonical_version.trim().is_empty() {
+                            if owns_editor {
+                                this.error = Some(t("原请求返回的记忆标识或版本不匹配，草稿已保留"));
+                            }
+                            cx.notify();
+                            return;
+                        }
+                        let canonical_matches_submission = saved["body"].as_str() == Some(submitted_content.as_str())
+                            && saved["category"] == submitted["category"];
+                        let unchanged = this.drafts.get(&key) == Some(&submitted)
+                            && canonical_matches_submission;
+                        let mut migrated_new = false;
+                        if owns_editor {
+                            this.error = None;
+                        }
                         if unchanged && owns_editor {
                             this.memory_edit = None;
                             this.drafts.as_object_mut().map(|m| m.remove(&key));
-                        } else if edit_owner != "new" && saved["id"] == edit_owner
-                            && saved["updatedAt"].as_str().is_some_and(|v| !v.trim().is_empty())
+                        } else if edit_owner == "new" && owns_editor {
+                            // Without the original editor lease, keep memory:new
+                            // intact. Its next explicit Save can discover the
+                            // canonical ID; deleting it would orphan an editor
+                            // still pointing at new after section/hide changes.
+                            let saved_key = format!("memory:{canonical_id}");
+                            let current = this.drafts.get(&key).cloned();
+                            if let Some(mut draft) = current.filter(|draft| {
+                                draft["createId"] == submitted["createId"]
+                            }) {
+                                draft["baseUpdatedAt"] = saved["updatedAt"].clone();
+                                draft["fullRead"] = json!(true);
+                                draft.as_object_mut().map(|m| m.remove("createId"));
+                                // Do not replace another editor's existing draft.
+                                if this.drafts.get(&saved_key).is_none()
+                                    || this.drafts.get(&saved_key) == Some(&draft) {
+                                    this.drafts[&saved_key] = draft;
+                                    this.drafts.as_object_mut().map(|m| m.remove(&key));
+                                    migrated_new = true;
+                                    if owns_editor {
+                                        this.memory_edit = Some(canonical_id.to_string());
+                                    }
+                                } else if owns_editor {
+                                    this.error = Some(t("该记忆已有另一份草稿，请先核对；后输入仍保留"));
+                                }
+                            }
+                        } else if saved["id"] == edit_owner
                             && this.drafts.get(&key).is_some() {
                             // Acknowledgement belongs to the submitted version, not later input.
                             this.drafts[&key]["baseUpdatedAt"] = saved["updatedAt"].clone();
@@ -4939,7 +4983,13 @@ impl SettingsView {
                         this.persist();
                         this.reload(cx);
                         if owns_editor && !unchanged {
-                            this.notice = Some(t("已保存提交时的版本，后输入仍保留且未保存"));
+                            this.notice = Some(t(if edit_owner == "new" && !migrated_new {
+                                "原请求记忆已存在，草稿仍保留，请先核对"
+                            } else if discovered_existing && edit_owner == "new" {
+                                "原请求已创建记忆，草稿已保留并关联，请核对后再次保存"
+                            } else {
+                                "已保存提交时的版本，后输入仍保留且未保存"
+                            }));
                         }
                     }
                     Err(e) => {
@@ -6377,6 +6427,10 @@ pub fn t(s: &str) -> String {
         "按住说话" => "Push to Talk",
         "未设置" => "Not Set",
         "Option + 空格" => "Option + Space",
+        "原请求记忆已存在，草稿仍保留，请先核对" => "The original memory exists. Draft kept; review it first.",
+        "原请求已创建记忆，草稿已保留并关联，请核对后再次保存" => "The original request created this memory. Draft kept and linked; review, then save again.",
+        "原请求返回的记忆标识或版本不匹配，草稿已保留" => "The original memory ID or version did not match. Draft kept.",
+        "该记忆已有另一份草稿，请先核对；后输入仍保留" => "Another draft exists for this memory. Review it first; later input was kept.",
         "记忆内容不能为空" => "Memory Text Is Required",
         "Google 日历" => "Google Calendar",
         "“收到了”、“谢谢”、“正在看”" => "“Received”, “Thanks”, “Looking into it”",
