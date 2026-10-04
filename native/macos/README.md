@@ -187,3 +187,7 @@ v19候选将微信语音、视频、文件接入现有exact-message附件API：�
 2026-10-04 飞书原生本人真实外发已在同隔离根完成唯一发送、丢成功响应GET回查、同状态重启及撤回，原回执保留且精确CLI确认删除；见[飞书旅程](../../docs/journeys/native-feishu-gui.md)。这是实际子旅程，完整85项仍未完成。冻结01fb旧包27组静态Haiku评分91，不能继承给后续整高侧栏/新设置布局。
 
 微信GUI环境用 `node scripts/native-wechat-gui-service.mjs`（46226），同scope `--stop/--resume`严格核路径/owner/自有PID与原token失效；[实际准备与恢复](../../docs/journeys/native-wechat-gui.md)不等于原生Read/Save/Hide通过。Chat真实听写可用 `OPSTWIN_API=http://127.0.0.1:46218 node scripts/native-chat-voice-gui-proxy.mjs`（46219），代理23项协议预检与真实硬件结果分开。
+
+### 直接发送（2026-10-04）
+
+运行中输入与普通发送相同，Enter/上箭头统一 `POST /api/chat` + `interruptCurrent:true`，停止旧回复后继续对话；不自动排队或插入运行。列表滚动条隐藏，滚轮/历史分页保留；遗留待发请求仍可恢复。主动打断为普通状态，完成写入保留原partial记录。可重复HTTP验收：`node scripts/native-chat-interrupt-http-e2e.mjs`（46240/46241公开隔离上游，report.json）；真实原生GUI与真实模型另记。

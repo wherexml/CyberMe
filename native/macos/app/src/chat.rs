@@ -910,11 +910,7 @@ impl ChatView {
         let outgoing = Outgoing {
             context_ids: Vec::new(),
             conversation_id: self.conversation_id.clone(),
-            delivery: if self.conversation_running() {
-                Some("queue".into())
-            } else {
-                None
-            },
+            delivery: None,
             request_id: opstwin_api::new_request_id(),
             text: text.into(),
             attachments: std::mem::take(&mut self.pending_files),
@@ -1313,7 +1309,7 @@ impl ChatView {
                 }
                 posted = true;
                 let (c, r, context) = (client.clone(), req.clone(), context_ids.clone());
-                match io(async move { c.chat_product_context(&r, &context).await }).await {
+                match io(async move { c.chat_product_interrupt_context(&r, &context).await }).await {
                     Ok(response) => {
                         _ = this.update(cx, |this, cx| this.accept_response(&rid, response, cx));
                         return;
@@ -1432,11 +1428,7 @@ impl ChatView {
         self.outgoing.push(Outgoing {
             context_ids,
             conversation_id: self.conversation_id.clone(),
-            delivery: if self.conversation_running() {
-                Some("queue".into())
-            } else {
-                None
-            },
+            delivery: None,
             request_id: rid.clone(),
             text: prompt.into(),
             attachments: Vec::new(),
@@ -1557,13 +1549,6 @@ impl ChatView {
         self.open_conversation(id, window, cx);
     }
 
-    fn conversation_running(&self) -> bool {
-        self.continuation.running
-            || self.outgoing.iter().any(|o| {
-                o.conversation_id == self.conversation_id
-                    && matches!(o.state, SendState::Sending { .. } | SendState::Waiting)
-            })
-    }
 
     fn session_locked(&self, id: &str) -> bool {
         self.primary_id.as_deref() == Some(id)
@@ -1822,39 +1807,6 @@ impl ChatView {
             });
         });
         self._tasks.push(task);
-    }
-
-    fn continue_draft(&mut self, delivery: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let composing = self.input.update(cx, |state, cx| {
-            state.marked_text_range(window, cx).is_some()
-        });
-        if composing || self.initial_loading || self.uploading > 0 || self.switching {
-            return;
-        }
-        let text = self.input.read(cx).value().trim().to_string();
-        if text.is_empty() {
-            return;
-        }
-        if delivery == "steer" && !self.pending_files.is_empty() {
-            self.upload_error = Some("带附件的消息请选择等待完成后发送".into());
-            cx.notify();
-            return;
-        }
-        let rid = opstwin_api::new_request_id();
-        self.outgoing.push(Outgoing {
-            context_ids: Vec::new(),
-            conversation_id: self.conversation_id.clone(),
-            delivery: Some(delivery.into()),
-            request_id: rid.clone(),
-            text: text.into(),
-            attachments: std::mem::take(&mut self.pending_files),
-            state: SendState::Sending { attempt: 1 },
-            generation: 0,
-            created_at_ms: opstwin_store::now_ms(),
-        });
-        self.input.update(cx, |s, cx| s.set_value("", window, cx));
-        self.rebuild_rows(cx);
-        self.run_send(rid, window, cx);
     }
 
     fn queue_action(
@@ -2882,6 +2834,7 @@ impl ChatView {
                         .child(t("原请求仍在运行，等待结果…")),
                 ),
                 SendState::Failed { message, retryable } => {
+                    let interrupted = !*retryable && message == "已被新消息打断";
                     let rid_retry = o.request_id.clone();
                     let rid_dismiss = o.request_id.clone();
                     let rid_clear = o.request_id.clone();
@@ -2891,11 +2844,9 @@ impl ChatView {
                     h_flex()
                         .gap_2()
                         .items_center()
-                        .child(div().text_xs().text_color(theme.danger).child(format!(
-                            "{}{}",
-                            t("发送失败："),
+                        .child(div().text_xs().text_color(if interrupted { theme.muted_foreground } else { theme.danger }).child(if interrupted {
                             t(message)
-                        )))
+                        } else { format!("{}{}", t("发送失败："), t(message)) }))
                         .when(*retryable, |this| {
                             this.child(
                                 Button::new(ElementId::Name(format!("retry-{rid_retry}").into()))
@@ -3655,33 +3606,6 @@ impl ChatView {
             .when(!self.continuation.items.is_empty(), |this| {
                 this.child(pending)
             })
-            .when(self.conversation_running() && !voice, |this| {
-                this.child(
-                    h_flex()
-                        .justify_end()
-                        .gap(px(8.))
-                        .child(
-                            Button::new("chat-steer-draft")
-                                .xsmall()
-                                .ghost()
-                                .label(t("插入当前运行"))
-                                .disabled(blocked || !self.pending_files.is_empty())
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.continue_draft("steer", window, cx)
-                                })),
-                        )
-                        .child(
-                            Button::new("chat-queue-draft")
-                                .xsmall()
-                                .ghost()
-                                .label(t("等待完成后发送"))
-                                .disabled(blocked)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.continue_draft("queue", window, cx)
-                                })),
-                        ),
-                )
-            })
             .when(!self.pending_files.is_empty(), |this| this.child(chips))
             .when(self.uploading > 0, |this| {
                 this.child(
@@ -4098,6 +4022,7 @@ impl Render for ChatView {
                             None => div().into_any_element(),
                         },
                     )
+                    .scrollbar(false)
                     .with_jump_button_label(t("回到最新"))
                     .with_list_style(StyleRefinement::default().px_0().pt(px(24.)).pb(px(12.)))
                     .with_row_style(StyleRefinement::default().px_0().pb_0())

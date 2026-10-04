@@ -59,6 +59,16 @@ impl Client {
             "attachmentIds":req.attachment_ids,"contextIds":context_ids,"preservePrimary":req.conversation_id.is_some()
         }))).await
     }
+    /// A durable new request stops the prior chat before beginning its reply.
+    pub async fn chat_product_interrupt_context(
+        &self, req: &ChatRequest, context_ids: &[String],
+    ) -> Result<ChatResponse, ApiError> {
+        self.send_json(self.stream_http.post(self.url("/api/chat")).json(&json!({
+            "conversationId":req.conversation_id,"message":req.message,"requestId":req.request_id,
+            "attachmentIds":req.attachment_ids,"contextIds":context_ids,
+            "preservePrimary":req.conversation_id.is_some(),"interruptCurrent":true
+        }))).await
+    }
     pub async fn chat_conversations(&self) -> Result<Vec<Conversation>, ApiError> {
         let v: Value = self.get("/api/conversations?limit=200").await?;
         serde_json::from_value(v.get("items").cloned().unwrap_or(v))

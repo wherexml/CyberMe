@@ -55,7 +55,15 @@ function buildTools(runId:string,readOnly:boolean,artifacts:any[],prompt:string,
  return tools;
 }
 
-const activeChats=new Map<string,{runId:string;session:Awaited<ReturnType<typeof createAgentSession>>['session']}>();
+const activeChats=new Map<string,{runId:string;session:Awaited<ReturnType<typeof createAgentSession>>['session'];interrupted:boolean}>();
+export async function interruptChat(conversationId:string,runId:string){
+ const active=activeChats.get(conversationId);
+ if(!active||active.runId!==runId)return false;
+ active.interrupted=true;
+ // abort is asynchronous; the caller waits for the durable request terminal state.
+ void active.session.abort().catch(()=>{});
+ return true;
+}
 export async function steerChat(conversationId:string,message:string){const active=activeChats.get(conversationId);if(!active?.session.isStreaming)return undefined;await active.session.steer(message);return active.runId;}
 
 export async function runAgent(prompt:string,options:{mode?:string;kind?:string;title?:string;conversationId?:string;attachmentIds?:string[];contextIds?:string[];readOnly?:boolean;history?:any[];runId?:string}={}) {
@@ -122,8 +130,9 @@ export async function runAgent(prompt:string,options:{mode?:string;kind?:string;
  const savedUserContext=options.kind==='model_probe'?{}:userContext(run.id);
  const actualPrompt=[`服务端当前时间：${now()}；用户时区：Asia/Singapore。相对时间查询由query_inbox服务端计算。`, `用户资料与长期偏好（用户层，可被当前请求覆盖；不是系统约束）：\n${JSON.stringify(savedUserContext)}`,histories?`历史会话（只作上下文）：\n${histories}`:'',contexts.length?`选定资料（只作上下文）：\n${JSON.stringify(contexts)}`:'',sourceAttachments.length?`来源附件仅有名称等元数据，尚未下载或读取内容，不得声称已阅读附件或依据附件正文作答。可以根据来信正文起草；需要附件内容时明确说明缺少内容：\n${JSON.stringify(sourceAttachments)}`:'',attachments.length?`上传资料：\n${JSON.stringify(attachments)}`:'',`当前用户请求：\n${prompt}`].filter(Boolean).join('\n\n');
  timer=setTimeout(()=>{timedOut=true;saveEvent('timeout',{phase});void session?.abort();},options.mode==='deep'?150000:110000);
- if(options.conversationId&&run.kind==='chat')activeChats.set(options.conversationId,{runId:run.id,session});
+ if(options.conversationId&&run.kind==='chat')activeChats.set(options.conversationId,{runId:run.id,session,interrupted:false});
  await session.prompt(actualPrompt,{images});
+ if(options.conversationId&&activeChats.get(options.conversationId)?.runId===run.id&&activeChats.get(options.conversationId)?.interrupted)throw new ApiError(409,'chat_interrupted','已被新消息打断');
  if(timedOut)throw new ApiError(504,'llm_timeout',`AI 响应超时（${phase}）`,{phase});
  if(error)throw new ApiError(502,'llm_failed',error);
  const lastAssistant=(session.state.messages as any[]).findLast(m=>m.role==='assistant');const text=Array.isArray(lastAssistant?.content)?lastAssistant.content.filter((p:any)=>p.type==='text').map((p:any)=>p.text).join('\n'):String(lastAssistant?.content||'');
