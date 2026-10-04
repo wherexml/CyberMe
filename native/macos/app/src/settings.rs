@@ -7,7 +7,7 @@ use crate::{
 };
 use gpui_kit::{
     component::{
-        ActiveTheme as _, Disableable as _, Selectable as _, Sizable as _,
+        ActiveTheme as _, Disableable as _, Selectable as _, Sizable as _, Icon,
         button::{Button, ButtonVariants as _},
         checkbox::Checkbox,
         h_flex,
@@ -646,7 +646,7 @@ impl SettingsView {
                         if this.model_probe["requestId"] != id { return; }
                         this.busy = false;
                         this.model_probe = Value::Null;
-                        this.error = Some(format!("Unable to persist test; nothing submitted: {e}"));
+                        this.model_probe_status = Some(format!("Unable to persist test; nothing submitted: {e}"));
                         cx.notify();
                     });
                     return;
@@ -665,12 +665,13 @@ impl SettingsView {
                         let status = v["status"].as_str().unwrap_or("unknown");
                         match status {
                             "succeeded" => { this.model_probe_status = Some(t("模型实际调用成功")); this.model_probe = Value::Null; }
-                            "failed" => { this.model_probe_status = Some(t("模型测试失败")); this.error = Some(t("模型测试失败")); this.model_probe = Value::Null; }
+                            "failed" => { this.model_probe_status = Some(t("模型测试失败")); this.model_probe = Value::Null; }
                             "running" => { this.model_probe_status = Some(t("测试仍在运行，请回查原请求")); }
-                            _ => { this.model_probe_status = Some(t("测试结果未知，请回查原请求")); this.error = Some(t("测试结果未知，请回查原请求")); }
+                            _ => { this.model_probe_status = Some(t("测试结果未知，请回查原请求")); }
                         }
                     }
                     Err(e) => {
+                        this.model_probe_status = Some(e.user_text());
                         // GET 404 can race a delayed original POST. Preserve its ID;
                         // the next explicit click may submit that exact payload/ID.
                         if recovering && !resubmit && e.status() == Some(404) {
@@ -679,7 +680,6 @@ impl SettingsView {
                         } else if (!recovering || resubmit) && matches!(e.status(),Some(400 | 409)) {
                             this.model_probe = Value::Null;
                         }
-                        this.error = Some(e.user_text());
                     }
                 }
                 if let Some(s) = &this.model_probe_saver { s.save(this.model_probe.clone()); }
@@ -1600,7 +1600,10 @@ impl SettingsView {
                     .label(label)
                     .dropdown_caret(true)
                     .outline()
-                    .when(business_choice, |button| button.w_full())
+                    // DropdownMenu adds its own intrinsic-size wrapper; percentage
+                    // widths on the trigger cannot size that wrapper. The model
+                    // field and trigger therefore share an explicit control width.
+                    .when(business_choice, |button| button.w(px(240.)).min_w_0())
                     .disabled(locked || self.busy)
                     .dropdown_menu(move |mut menu, _, _| {
                         for (value, label) in &choices {
@@ -3021,7 +3024,6 @@ impl SettingsView {
                     });
             }
             "models" => {
-                if let Some(status) = &self.model_probe_status { out = out.child(note(status, cx)); }
                 if self.detail.is_some() { return self.render_model_provider(cx); }
                 if self.models["version"].is_null() {
                     out = out.child(
@@ -3029,8 +3031,9 @@ impl SettingsView {
                             .child(note("服务端渠道配置暂不可读取，请检查连接后重试。", cx)),
                     );
                 } else {
-                    let mut roles = h_flex().gap_4().items_start();
-                    for (role, title) in [("standard", "当前模型")] {
+                    out = out.w_full().max_w(px(640.)).gap_0();
+                    let mut roles = v_flex().w_full().gap(px(8.));
+                    for role in ["standard"] {
                         let provider_path = format!("{role}.providerId");
                         let providers = self.models["providers"]
                             .as_array()
@@ -3047,18 +3050,10 @@ impl SettingsView {
                             .collect();
                         let p = d[role]["providerId"].as_str().unwrap_or("");
                         let info = providers.iter().find(|x| x["id"].as_str() == Some(p));
-                        let mut c = card(title, cx)
-                            .flex_1()
-                            .child(div().text_size(px(11.)).child(t("服务渠道")))
-                            .child(self.choices(
-                                &provider_path,
-                                &provider_choices,
-                                false,
-                                false,
-                                cx,
-                            ))
-                            .child(div().text_size(px(11.)).child(t("模型")))
-                            ;
+                        let mut c = v_flex().w_full().gap(px(8.))
+                            .child(model_setting_row("服务渠道", self.choices(
+                                &provider_path, &provider_choices, false, false, cx,
+                            )));
                         let mut names = info
                             .and_then(|p| p["models"].as_array())
                             .cloned()
@@ -3084,35 +3079,15 @@ impl SettingsView {
                             .map(|(v, l)| (v.as_str(), l.as_str()))
                             .collect();
                         if !values.is_empty() {
-                            c = c.child(self.choices(
-                                &format!("{role}.model"),
-                                &values,
-                                false,
-                                false,
-                                cx,
-                            ));
+                            c = c.child(model_setting_row("模型", self.choices(
+                                &format!("{role}.model"), &values, false, false, cx,
+                            )));
                         }
-                        if let Some(info) = info {
-                            c = c.child(note(
-                                if info["configured"].as_bool() == Some(true) {
-                                    "凭据已配置"
-                                } else {
-                                    "渠道尚未配置"
-                                },
-                                cx,
-                            ));
-                            c = c.child(note(
-                                &format!(
-                                    "{} · {}",
-                                    info["baseUrl"].as_str().unwrap_or(""),
-                                    info["api"].as_str().unwrap_or("")
-                                ),
-                                cx,
-                            ));
+                        if info.is_some_and(|provider| provider["configured"].as_bool() != Some(true)) {
+                            c = c.child(note("渠道尚未配置", cx));
                         }
                         let r = role.to_string();
-                        c = c.child(
-                            Button::new(ElementId::Name(format!("model-test-{role}").into()))
+                        let test = Button::new(ElementId::Name(format!("model-test-{role}").into()))
                                 .small()
                                 .h(px(32.))
                                 .outline()
@@ -3125,16 +3100,46 @@ impl SettingsView {
                                         return;
                                     }
                                     this.test_model(&r, false, cx)
-                                })),
-                        );
+                                }));
+                        let mut test_row = h_flex().w_full().gap(px(12.)).items_start()
+                            .child(test.flex_shrink_0());
+                        if let Some(status) = &self.model_probe_status {
+                            test_row = test_row.child(div().flex_1().min_w_0().pt(px(7.))
+                                .text_size(px(12.)).text_color(theme.muted_foreground)
+                                .child(status.clone()));
+                        }
+                        c = c.child(test_row.mt(px(8.)));
                         roles = roles.child(c);
                     }
-                    out = out.child(roles).child(self.footer(cx));
-                    out=out.child(h_flex().child(div().flex_1().child(t("供应商"))).child(Button::new("add-model-provider").small().outline().label(t("＋ 新供应商")).on_click(cx.listener(|this,_,_,cx|this.open_model_provider(format!("provider-{}",opstwin_api::new_request_id()),cx)))));
-                    for provider in self.models["providers"].as_array().cloned().unwrap_or_default() {
-                        let id=provider["id"].as_str().unwrap_or("").to_string();
-                        out=out.child(Button::new(ElementId::Name(format!("edit-provider-{id}").into())).small().h(px(44.)).outline().label(provider["name"].as_str().unwrap_or("").to_string()).on_click(cx.listener(move|this,_,_,cx|this.open_model_provider(id.clone(),cx))));
+                    out = out.child(roles);
+                    if self.drafts.get(self.group_key()).is_some_and(|draft|
+                        draft["standard"] != self.models["standard"] || draft["deep"] != self.models["deep"]
+                    ) {
+                        out = out.child(self.footer(cx));
                     }
+                    let mut providers_list = v_flex().w_full().gap(px(4.));
+                    for provider in self.models["providers"].as_array().into_iter().flatten() {
+                        let id = provider["id"].as_str().unwrap_or("").to_string();
+                        let name = provider["name"].as_str().unwrap_or("").to_string();
+                        providers_list = providers_list.child(
+                            Button::new(ElementId::Name(format!("edit-provider-{id}").into()))
+                                .ghost().w_full().h(px(44.)).px(px(12.)).rounded(px(8.))
+                                .accessibility_label(name.clone())
+                                .child(h_flex().w_full().min_w_0().gap(px(12.))
+                                    .child(div().flex_1().min_w_0().text_size(px(13.))
+                                        .text_ellipsis().child(name))
+                                    .child(Icon::new(gpui_kit::assets::IconName::ChevronRight)
+                                        .size(px(14.)).flex_shrink_0().text_color(theme.muted_foreground)))
+                                .on_click(cx.listener(move |this, _, _, cx| this.open_model_provider(id.clone(), cx))),
+                        );
+                    }
+                    out = out.child(v_flex().mt(px(28.)).gap(px(8.))
+                        .child(h_flex().w_full().items_center().gap(px(12.))
+                            .child(div().flex_1().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).child(t("供应商")))
+                            .child(Button::new("add-model-provider").small().h(px(32.)).ghost()
+                                .icon(gpui_kit::assets::IconName::Plus).label(t("添加供应商"))
+                                .on_click(cx.listener(|this, _, _, cx| this.open_model_provider(format!("provider-{}", opstwin_api::new_request_id()), cx)))))
+                        .child(providers_list));
                 }
             }
             "identity" => {
@@ -5774,6 +5779,12 @@ fn document_card(cx: &App) -> Div {
         .border_color(cx.theme().border)
         .bg(cx.theme().muted)
 }
+// Model settings share one label/control geometry, independent of label length.
+fn model_setting_row(label: &str, control: impl IntoElement) -> Div {
+    h_flex().w_full().min_h(px(48.)).gap(px(16.))
+        .child(div().flex_1().min_w_0().text_size(px(13.)).child(t(label)))
+        .child(div().w(px(240.)).flex_shrink_0().min_w_0().child(control))
+}
 fn card(title: &str, cx: &App) -> Div {
     card_heading(title, None, cx)
 }
@@ -6570,6 +6581,7 @@ pub fn t(s: &str) -> String {
         "编辑模型" => "Edit model",
         "供应商名称" => "Provider name",
         "＋ 新供应商" => "+ New provider",
+        "添加供应商" => "Add provider",
         "＋ 添加模型" => "+ Add model",
         "‹ 模型" => "‹ Models",
         "API 格式" => "API format",

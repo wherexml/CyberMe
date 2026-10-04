@@ -71,6 +71,8 @@ cargo build --release --locked  # 产物 target/release/opstwin
 
 ## 行为约定
 
+- 模型设置主页的选择行、测试反馈和供应商列表遵循 [模型布局契约](../../docs/design/native-model-settings-layout.md)。公开 GUI 启动 `node scripts/native-model-layout-fixture.mjs`（项目根），原生连接 `OPSTWIN_API=http://127.0.0.1:46270` 并使用独立 `OPSTWIN_DATA_DIR`；受控响应不证明真实上游调用。
+
 - 启动：`GET /api/native/version` 探测 features；缺 `messages.page` 时降级为 `/api/bootstrap` 切片，缺 `events.sse` 时降级为每 2 秒轮询 `/api/health` revision。
 - 历史：`GET /api/conversations/primary` → `GET /api/conversations/:id/messages?limit=50`；列表滚到顶部（或点「加载更早消息」）用 `before=nextBefore` 取上一页，按 id 合并。
 - 同步：SSE `hello`/`revision` 触发刷新最新一页并按 id 合并；若最新页与已有消息无交集则继续向前翻页补齐（最多 10 页），避免缺漏。断线指数退避重连并携带 `Last-Event-ID`。
