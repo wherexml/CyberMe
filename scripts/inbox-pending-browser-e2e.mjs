@@ -1,16 +1,16 @@
-// Run: ego-browser nodejs < scripts/inbox-pending-browser-e2e.mjs (TaskSpace 7).
-const fs=await import('node:fs/promises');const out='/Users/steve/Projects/opstwin-advance/output/inbox-pending/browser-'+Date.now();await fs.mkdir(out,{recursive:true});const p=(await taskSpace(7)).page('p1'),checks=[];
+// Run: ego-browser nodejs < scripts/inbox-pending-browser-e2e.mjs (creates one TaskSpace).
+const fs=await import('node:fs/promises');const out='/Users/steve/Projects/opstwin-advance/output/inbox-pending/browser-'+Date.now();await fs.mkdir(out,{recursive:true});const p=(await taskSpace('Inbox simplified controls')).page('p1'),checks=[];
 const check=(name,ok)=>{checks.push({name,status:ok?'PASS':'FAIL'});if(!ok)throw Error(name)};
 const open=async id=>{await p.click('button[aria-label="打开 public-'+id+' 的消息"]');await p.waitForFunction(id=>document.querySelector('#draft').dataset.itemId==='public-'+id,id)};
 try{
  await p.goto('http://127.0.0.1:46376/desktop.html');await p.waitForFunction(()=>!document.querySelector('#desktop-boot'));await p.click('button[aria-label="收件箱"]');
  check('four retired cases absent from pending',await p.evaluate(()=>['old','no-reply','low','replied'].every(id=>!document.querySelector('#inbox-items [data-inbox-id="public-'+id+'"]'))));
- check('verification independent entry visible',await p.evaluate(()=>document.querySelector('#inbox-verification').textContent.includes('需要核实')));
+ check('verification banner removed',await p.evaluate(()=>!document.querySelector('#inbox-verification')));
  await p.screenshot({path:out+'/pending.png'});
- await p.click('#inbox-verification button');check('unknown send discoverable',await p.evaluate(()=>!!document.querySelector('[data-inbox-id="public-send-unknown"]')));await open('send-unknown');check('unknown has original send recovery',await p.evaluate(()=>!document.querySelector('#send-reply').disabled&&document.querySelector('#send-reply').textContent==='查看发送状态'));await p.screenshot({path:out+'/verification.png'});
+ await p.click('[data-filter="all"]');check('unknown send discoverable',await p.evaluate(()=>!!document.querySelector('[data-inbox-id="public-send-unknown"]')));await open('send-unknown');check('unknown has original send recovery',await p.evaluate(()=>!document.querySelector('#send-reply').disabled&&document.querySelector('#send-reply').textContent==='查看发送状态'));await p.screenshot({path:out+'/verification.png'});
  await p.click('[data-filter="quiet"]');await open('old');check('expired gives reason and no restoration',await p.evaluate(()=>document.querySelector('#desktop-handling-status').textContent.includes('已超过7天')&&!document.querySelector('#desktop-judgment-status').textContent.includes('仍需处理')));
  await p.click('#desktop-handling-status button');await p.waitForFunction(async()=>(await(await fetch('/api/tasks')).json()).some(t=>t.sourceInboxId==='public-old'));check('explicit expired task conversion',true);
- await p.selectOption('#inbox-reason-filter','no_reply');check('reason filter only shows matching records',await p.evaluate(async()=>{const rows=await(await fetch('/api/inbox')).json();return [...document.querySelectorAll('#inbox-items .inbox-item')].filter(r=>getComputedStyle(r).display!=='none').every(r=>rows.find(x=>x.id===r.dataset.inboxId)?.disposition.reasons.includes('no_reply'))}));
+ check('reason filter removed and quiet records visible',await p.evaluate(()=>!document.querySelector('#inbox-reason-filter')&&['old','no-reply','low','replied'].every(id=>document.querySelector('[data-inbox-id="public-'+id+'"]'))));
  await open('no-reply');check('manual and candidate preserved outside pending',await p.evaluate(()=>document.querySelector('#draft').textContent==='保留草稿 no-reply'&&document.querySelector('.desktop-candidate')?.textContent.includes('保留候选')));await p.screenshot({path:out+'/quiet-manual.png'});
  await p.click('[data-filter="pending"]');await open('medium');
  await p.fetch('/qa/fail-save',{method:'POST'});await p.fill('#draft','公开失败保稿 END-PENDING');await p.waitForFunction(()=>document.querySelector('.desktop-error')?.textContent.includes('公开保存失败'));

@@ -55,14 +55,8 @@
   try{const id='ui-side-'+crypto.randomUUID();await D.createSession(id,'讨论：'+(item.title||item.sender));window.OpsTwinsChatSessions.switchTo(id);go('chat');window.OpsTwinsDesignChat.start({conversationId:id,readOnly:true,contextIds:[...new Set([item.id,...(item.context||[]),...(item.contextIds||[])])],message:'请基于这条收件箱事项核对最新对话是否已结束、是否需要回复，并提出有依据的建议。先读取关联资料，不发送消息或执行外部操作。'});renderChat()}catch(e){toast(e.message)}finally{button.disabled=false}
  };
  function renderPolicyList(){
-  let bar=$('#inbox-verification');if(!bar){bar=node('div','inbox-verification');bar.id='inbox-verification';$('#inbox-items').before(bar)}
-  const count=data.inbox.filter(B.needsInboxVerification).length;
-  bar.replaceChildren();bar.hidden=!count;
-  if(count){const toggle=btn((filter==='verify'?'收起核实事项':'有 '+count+' 项需要核实'),()=>{filter=filter==='verify'?'pending':'verify';selected=undefined;renderInbox()});toggle.setAttribute('aria-expanded',String(filter==='verify'));bar.append(toggle)}
-  let choices=$('#inbox-reason-filter');if(!choices){choices=node('select');choices.id='inbox-reason-filter';choices.setAttribute('aria-label','处理原因');for(const [value,label]of [['','全部原因'],['expired','已超过7天'],['no_reply','无需回复'],['low_priority','低优先级'],['replied','已回复']]){const option=node('option','',label);option.value=value;choices.append(option)}choices.onchange=()=>renderInbox();bar.after(choices)}
-  choices.hidden=!['quiet','all'].includes(filter);if(choices.hidden)choices.value='';
   const rows=[...$('#inbox-items').querySelectorAll('.inbox-item')];const available=data.inbox.filter(x=>filter==='verify'?B.needsInboxVerification(x):filter==='quiet'?x.quiet:filter==='all'||x.attention).filter(x=>[x.title,x.sender,x.body,x.draft].some(t=>String(t||'').toLowerCase().includes(queryInbox.toLowerCase())));
-  rows.forEach((row,i)=>{const item=available[i];if(!item)return;row.dataset.inboxId=item.id;const d=B.dispositionOf(item);row.hidden=!!choices.value&&!d.reasons.includes(choices.value);row.querySelector('.item-copy')?.append(node('small','inbox-placement',B.inboxReasonLabels[d.primaryReason]||''))});
+  rows.forEach((row,i)=>{const item=available[i];if(!item)return;row.dataset.inboxId=item.id;const d=B.dispositionOf(item);row.querySelector('.item-copy')?.append(node('small','inbox-placement',B.inboxReasonLabels[d.primaryReason]||''))});
   if(!rows.length&&filter==='pending'){const empty=$('#inbox-items .data-empty');if(empty){empty.textContent='暂时没有需要处理的事项';empty.append(btn('查看全部',()=>{filter='all';renderInbox()}))}}
  }
  async function createTask(item){
