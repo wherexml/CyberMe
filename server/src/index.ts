@@ -314,4 +314,9 @@ startDefaultDrafts();
 startNotifications();
 startAutonomousDispatch();
 }
+// Allow Inbox-only preparation without enabling schedulers or external delivery.
+if(process.env.OPSTWIN_NO_BACKGROUND==='1'&&process.env.OPSTWIN_INBOX_BACKGROUND==='1'){
+ startInboxTriage();
+ startDefaultDrafts();
+}
 if(process.env.OPSTWIN_NO_LISTEN!=='1'){const port=Number(process.env.OPSTWIN_API_PORT||46110);if(!Number.isInteger(port)||port<10000||port>65535)throw new Error('Use a five-digit API port');const server=serve({fetch:app.fetch,port,hostname:'127.0.0.1'});console.log(`OpsTwin Advance API http://127.0.0.1:${port}`);process.on('SIGTERM',()=>server.close());}

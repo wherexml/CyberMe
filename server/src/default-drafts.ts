@@ -1,10 +1,11 @@
 import {get,list,put,uid,db} from './store';
+import {hasNoReplyDecision,isQuietInbox} from '../../shared/inbox-surfacing';
 import {generateInboxDraft} from './drafts';
 
 // One durable preparation per empty pending item. Failures/unknown outcomes
 // require explicit regeneration; no automatic send and no restart replay.
 function eligible(item:any) {
- return item.status==='pending' && !String(item.draft||'').trim() && !item.editedByUser
+ return !isQuietInbox(item) && !hasNoReplyDecision(item) && item.status==='pending' && !String(item.draft||'').trim() && !item.editedByUser
   && !item.draftCandidate && !item.draftError
   && !['queued','pending','running','interrupted','review'].includes(item.sourceProcessing?.status);
 }
@@ -41,7 +42,7 @@ export async function prepareDefaultDrafts() {
    },{background:true});
    publish('succeeded');
   } catch(error:any) {
-   publish(error?.code==='draft_review_required'?'review':'failed',String(error?.code||'generation_failed'));
+   publish(error?.code==='reply_not_needed'?'skipped':error?.code==='draft_review_required'||error?.code==='draft_judgment_required'?'review':'failed',String(error?.code||'generation_failed'));
   }
  } finally {working=false;}
 }

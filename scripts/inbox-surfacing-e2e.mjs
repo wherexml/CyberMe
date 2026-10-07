@@ -10,7 +10,7 @@ try{
  const own=await create({isMine:true});await req(`/api/inbox/${own.id}/triage`,'POST',{});check('successful quiet projection',(await req('/api/inbox/'+own.id)).surfacing==='quiet');
  await req(`/api/inbox/${own.id}/surface`,'POST',{});check('explicit restore survives refresh',(await req('/api/bootstrap')).inbox.find(i=>i.id===own.id).surfacing==='attention');
  const sensitive=await create({isMine:true,sensitive:true});await req(`/api/inbox/${sensitive.id}/triage`,'POST',{});check('sensitive never quiet',(await req('/api/inbox/'+sensitive.id)).surfacing==='attention');
- const draft=await create({isMine:true,draft:'Preserved review draft'});await req(`/api/inbox/${draft.id}/triage`,'POST',{});check('existing draft retained',(await req('/api/inbox/'+draft.id)).surfacing==='attention');
+ const draft=await create({isMine:true,draft:'Preserved review draft',editedByUser:true});await req(`/api/inbox/${draft.id}/triage`,'POST',{});check('user-edited draft retained',(await req('/api/inbox/'+draft.id)).surfacing==='attention');
  const unknown=await create({body:'Unclear current state'});check('unassessed item retained',(await req('/api/inbox/'+unknown.id)).surfacing==='attention');
  const failed=await create({isMine:true,status:'send_failed'});await req(`/api/inbox/${failed.id}/triage`,'POST',{});check('send failure remains actionable',(await req('/api/inbox/'+failed.id)).surfacing==='attention');
  const first=await create();await req('/api/inbox/'+first.id,'PATCH',{status:'dismissed'});

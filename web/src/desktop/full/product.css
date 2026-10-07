@@ -41,3 +41,9 @@ html.desktop-native,html.desktop-native body{height:100%;overflow:hidden}html.de
 #settings-window .settings-customize-layout{flex-direction:column}#settings-window .settings-customize-main,#settings-window .settings-customize-aside{width:100%;min-width:0}#settings-window .settings-custom-row{flex-wrap:wrap}#settings-window .settings-document{height:auto;min-height:0;overflow:visible}#settings-window .settings-sync-details summary>span[aria-hidden]{display:none}
 #settings-window .settings-custom-form .settings-field{width:auto;min-width:0}#settings-window .settings-segment button[aria-pressed=false]{background:transparent;box-shadow:none}#settings-window .settings-segment button{min-width:0;padding:7px 10px;font-size:13px}#settings-window .settings-custom-permissions{margin-top:16px}
 #settings-window .settings-connection-card:focus-visible,#settings-window .feishu-binding-card:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+/* Empty production drafts contain no fake progress text. */
+#draft[contenteditable="true"]:empty::before{content:attr(data-placeholder);color:var(--muted);pointer-events:none}
+#desktop-judgment-status{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#desktop-judgment-status button{color:var(--blue)}
+#view-inbox .draft-heading[hidden],#view-inbox #draft[hidden]{display:none!important}

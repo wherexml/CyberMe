@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {createRoot,Root} from 'react-dom/client';
 import type {Bootstrap,UIContext} from '../../../../shared/types';
-import {needsInboxAttention} from '../../../../shared/inbox-surfacing';
+import {needsInboxAttention,isQuietInbox,needsNoReply,hasNoReplyDecision} from '../../../../shared/inbox-surfacing';
 import {LanguageContext} from '../../domain/i18n';
 import Identity from './Identity';
 import WechatReader from './WechatReader';
@@ -23,4 +23,4 @@ function Island({options}:{options:any}){
  return <LanguageContext.Provider value={data.settings.identity.language||'zh-CN'}><div className="desktop-island">{notice&&<div role="status" className="desktop-notice">{notice}<button onClick={()=>setNotice('')}>关闭</button></div>}{route==='/settings/connections/wechat-sync-local'?<WechatReader ctx={ctx}/>:options.section==='identity'?<Identity ctx={ctx}/>:options.section==='models'?<Models active embedded/>:options.section==='messages'?<InboxMessages item={options.item} full/>:options.section==='activity'?<Activity ctx={ctx}/>:options.section==='sources'?<Sources ctx={ctx}/>:options.section==='task-manager'?<Tasks ctx={ctx}/>:<Settings ctx={ctx} section={route.split('/')[2]} route={route}/>}</div></LanguageContext.Provider>
 }
 function mount(root:HTMLElement,options:any){let entry=roots.get(root);if(!entry){const reactRoot=createRoot(root);entry={root:reactRoot,render:props=>reactRoot.render(<Island options={props}/>)};roots.set(root,entry)}entry.render(options)}
-w.OpsTwinsBusinessUI={needsInboxAttention,mount,unmount:(root:HTMLElement)=>{roots.get(root)?.root.unmount();roots.delete(root)}};
+w.OpsTwinsBusinessUI={needsInboxAttention,isQuietInbox,needsNoReply,hasNoReplyDecision,mount,unmount:(root:HTMLElement)=>{roots.get(root)?.root.unmount();roots.delete(root)}};
