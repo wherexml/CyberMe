@@ -25,8 +25,16 @@
   if(!summary&&!run.tools?.length&&!record.messageIds)box.append(node('p','record-empty','没有已保存的操作摘要'));
  };
  D.alignChatActions=()=>requestAnimationFrame(()=>{
-  const input=document.querySelector('.composer textarea');if(!input)return;const textLeft=input.getBoundingClientRect().left+parseFloat(getComputedStyle(input).paddingLeft);
-  for(const article of document.querySelectorAll('#messages .message.assistant')){const actions=article.querySelector('.msg-actions');if(actions)actions.style.left=(textLeft-article.getBoundingClientRect().left-5)+'px'}
+  for(const article of document.querySelectorAll('#messages .message')){
+   const bubble=article.querySelector('.bubble'),actions=article.querySelector('.msg-actions'),button=actions?.querySelector('button');
+   if(!bubble||!actions||!button||!bubble.getClientRects().length)continue;
+   const style=getComputedStyle(bubble),textLeft=bubble.getBoundingClientRect().left+parseFloat(style.borderLeftWidth)+parseFloat(style.paddingLeft);
+   // Position the glyph itself at this message's body inset, including right-aligned bubbles.
+   const glyph=button.querySelector('svg,span')||button;
+   const inset=glyph.getBoundingClientRect().left-actions.getBoundingClientRect().left;
+   actions.style.right='auto';
+   actions.style.left=(textLeft-article.getBoundingClientRect().left-inset)+'px';
+  }
  });
  const observer=new ResizeObserver(()=>D.alignChatActions());for(const s of ['.composer','.reading']){const el=document.querySelector(s);if(el)observer.observe(el)}
 })();
