@@ -4,7 +4,7 @@ import {homedir} from 'node:os';
 import {resolve,sep,basename} from 'node:path';
 import sharp from 'sharp';
 import {ApiError,command} from './integrations';
-import {get,list,put,activity,now} from './store';
+import {get,list,put,activity,now,meta,setMeta} from './store';
 import {attachmentKind,exactAttachmentEnabled,inspectWechatAttachment,materializeWechatAttachment,verifyWechatAttachmentCli,type WechatAttachmentKind} from './wechat-attachment-cli';
 import {wechatRuntimeSelection} from './wechat-runtime-selector';
 const ID='wechat-sync-local';
@@ -33,6 +33,7 @@ export async function connectWechat(){
   }catch(error){message=error instanceof ApiError?error.message:'微信连接检测失败，请重试。';}
   if(get('connections',ID)?.updatedAt!==old?.updatedAt)throw new ApiError(409,'connection_changed','连接状态已变更，请刷新后重试。');
   const connection=put('connections',{...old,id:ID,name:'微信',provider:'wechat',type:'CLI',status,permissions:['read'],capabilities:status==='connected'?['wechat.chats.read','wechat.contacts.read','wechat.messages.read','wechat.messages.search','wechat.message.read']:[],config:{adapter:'wechat-sync',readOnly:true},message,evidence,lastTestAt:now()});
+  if(sample&&status==='connected')setMeta('wechatLastReadAt',now());
   clearWechatReader();if(sample&&status==='connected')rememberConversations(rows(sample),sample,connection.updatedAt);
   for(const duplicate of list('connections').filter(c=>c.id!==ID&&/^(wechat|wechat-sync)$/i.test(c.provider||'')))put('connections',{...duplicate,status:'disconnected',supersededBy:ID});
   activity('连接个人微信','connection',status==='connected'?'succeeded':'failed',message,ID);
@@ -48,7 +49,8 @@ function exactId(value:unknown,kind:string){if(typeof value!=='string'||!value||
 function privateQuery(value:unknown,required=false){if(value===undefined&&!required)return '';if(typeof value!=='string'||(required&&!value.trim())||Buffer.byteLength(value)>16384||value.includes('\0'))throw new ApiError(400,'invalid_query','搜索内容不能为空且最多 16 KiB。');return value;}
 function rows(value:any){if(!Array.isArray(value.items))throw new ApiError(502,'wechat_invalid_response','GreenBubbles 列表格式异常。');return value.items;}
 function pageInfo(value:any){return {hasMore:value.page?.hasMore===true,nextCursor:typeof value.page?.nextCursor==='string'?value.page.nextCursor:undefined,page:value.page,consistency:value.consistency,coverageComplete:value.consistency?.coverageComplete===true,hasWarnings:Array.isArray(value.warnings)&&value.warnings.length>0,warnings:Array.isArray(value.warnings)?value.warnings:[],sourceHash:digest(value.source?.identity??null),untrustedSource:true,readOnly:true};}
-async function read(args:string[],stdin?:string){const before=requireConnection();const value=await query(args,stdin);if(requireConnection().updatedAt!==before.updatedAt)throw new ApiError(409,'connection_changed','连接已变更，请重新读取。');return value;}
+async function read(args:string[],stdin?:string){const before=requireConnection();const value=await query(args,stdin);if(requireConnection().updatedAt!==before.updatedAt)throw new ApiError(409,'connection_changed','连接已变更，请重新读取。');setMeta('wechatLastReadAt',now());return value;}
+export function wechatReadStatus(){const c=get('connections',ID);return {connected:c?.status==='connected',lastReadAt:meta('wechatLastReadAt',null)||c?.evidence?.verifiedAt||null,mode:'local-read-only'};}
 // A contact name is never sufficient proof of account ownership.
 async function boundOwner(source:any){try{const value=await read(['contacts','list','--kind','account-holder','--limit','1','--details']);const items=rows(value);if(!source?.identity||!value.source?.identity||digest(value.source?.identity)!==digest(source?.identity)||items.length!==1||items[0].isAccountHolder!==true||typeof items[0].id!=='string')return undefined;return items[0].id;}catch{return undefined;}}
 function message(m:any,owner?:string){

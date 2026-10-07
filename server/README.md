@@ -80,3 +80,5 @@ HTML 多会话增加 `POST /api/conversations/side` 幂等创建，私有 46114 
 - 灵感资料默认折叠且可全文展开，旧长回答显示带时效声明的建议摘录；新生成最多三项，Markdown结论/行动/缺口并优先核最新状态，不把未查到后续判为逾期。折叠不改原请求或授权。见 `docs/journeys/native-idea-decision-reading.md`。
 
 MyGO 桌面通过固定本机网关复用此API；公开隔离服务与正式工作区分开，draft request按事项/原ID精确回查。见 [桌面规格](../docs/spec/mygo-desktop.md)。
+
+设置文档及Google OAuth入口、服务配置和真实授权边界见 [settings-documents-oauth](../docs/spec/settings-documents-oauth.md)。对话与MyGO共享版本化文档API；不得将知识实体全量注入MEMORY。

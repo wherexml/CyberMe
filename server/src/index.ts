@@ -1,8 +1,10 @@
+import {googleStatus,beginGoogle,finishGoogle,checkGoogle,disconnectGoogle} from './google-oauth';
+import {settingsDocument,saveSettingsDocument,settingsDocumentHistory} from './settings-documents';
 import {installSideChats} from './side-chats';
 import {syncOverview,startSync,rescheduleSync} from './connection-sync';
 import {saveSyncSettings,syncedAsset,syncRecords,type SyncScope} from './feishu-sync-data';
 import {beginFeishuBinding,feishuBindingStatus} from './feishu-binding';
-import {connectWechat,wechatChats,wechatMessages,wechatContacts,wechatSearch,wechatMessage,wechatCapabilities,wechatAttachment,wechatAttachmentContent,clearWechatReader} from './wechat-sync';
+import {connectWechat,wechatReadStatus,wechatChats,wechatMessages,wechatContacts,wechatSearch,wechatMessage,wechatCapabilities,wechatAttachment,wechatAttachmentContent,clearWechatReader} from './wechat-sync';
 import { sourceMessageAsset } from './source-message-assets';
 import { presentInbox } from './message-presentation';
 import {inboxSources,setInboxSourceRule} from './inbox-source-rules';
@@ -56,6 +58,11 @@ app.use('*',cors({origin:origin=>webOrigins.includes(origin)?origin:undefined,al
 // Only task-local Web origins may mutate this loopback API. Avoid ambient browser cross-origin writes.
 app.use('/api/*',async(c,next)=>{const origin=c.req.header('origin');if(origin&&!localOrigins.includes(origin))throw new ApiError(403,'origin_blocked','请求来源不被允许');await next();});
 app.onError((e,c)=>{const api=e instanceof ApiError?e:new ApiError(500,'internal_error',String(e));return c.json(publicValue({error:api.code,message:api.message,...(api.detail?{detail:api.detail}:{})}),api.status as any);});
+app.get('/api/wechat/status',c=>c.json(wechatReadStatus()));
+app.get('/api/connections/google/status',c=>c.json(googleStatus()));
+app.post('/api/connections/google/authorize',c=>c.json(beginGoogle()));
+app.post('/api/connections/google/check',async c=>c.json(await checkGoogle()));
+app.get('/api/connections/google/callback',async c=>{c.header('Cache-Control','no-store');c.header('Referrer-Policy','no-referrer');try{await finishGoogle(c.req.query());return c.text('Gmail 已连接。可以关闭此页面并返回 OpsTwins。');}catch(e){return c.text(e instanceof ApiError?e.message:'授权未完成，请返回 OpsTwins 重试。',400);}});
 app.get('/api/feishu/binding',async c=>c.json(await feishuBindingStatus()));
 app.post('/api/feishu/binding',async c=>c.json(await beginFeishuBinding()));
 app.post('/api/feishu/binding/poll',async c=>c.json(await feishuBindingStatus(true)));
@@ -122,6 +129,9 @@ app.post('/api/settings/models/test',async c=>{
  return json(c,await runAgent('Reply with exactly OK.',{kind:'model_probe',title:'Model connection test: '+input.role,mode:input.role==='deep'?'deep':'chat',readOnly:true}));
 });
 app.patch('/api/settings',async c=>{const input=await body(c);if(input.baseSettings!==undefined){if(!input.baseSettings||typeof input.baseSettings!=='object'||Array.isArray(input.baseSettings))throw new ApiError(400,'invalid_baseline','设置基线无效');const current=settings() as any;for(const [group,value] of Object.entries(input.baseSettings)){if(!['identity','autonomy'].includes(group))throw new ApiError(400,'invalid_baseline','设置分组无效');if(hash(current[group])!==hash(value))throw new ApiError(409,'edit_conflict','设置已更新，请读取最新版本并保留输入');}delete input.baseSettings;}if(input.identity && Object.hasOwn(input.identity,'language') && !['en','zh-CN'].includes(input.identity.language))throw new ApiError(400,'invalid_language','Choose English or 简体中文.');for(const key of ['memories','memory','memorySnapshots','memoryHistory'])delete input[key];if(input.autonomy?.levels){for(const value of Object.values(input.autonomy.levels))if(!['observe','draft','send_undo','autonomous','approval','auto'].includes(String(value)))throw new ApiError(400,'invalid_autonomy','自主级别无效');}return json(c,patchSettings(input));});
+app.get('/api/settings/documents/:kind/history',c=>json(c,settingsDocumentHistory(c.req.param('kind'))));
+app.get('/api/settings/documents/:kind',c=>json(c,settingsDocument(c.req.param('kind'))));
+app.patch('/api/settings/documents/:kind',async c=>json(c,saveSettingsDocument(c.req.param('kind'),await body(c))));
 app.get('/api/settings/history',c=>json(c,settingsHistory()));
 app.post('/api/settings/restore',async c=>{const input=await body(c);const row=db.prepare('SELECT data FROM settings_history WHERE id=?').get(String(input.historyId||'')) as any;if(!row)throw new ApiError(404,'history_not_found','历史版本不存在');return json(c,patchSettings(JSON.parse(row.data),'restore'));});
 app.post('/api/import/sibling',c=>json(c,importSibling()));
@@ -165,8 +175,8 @@ app.post('/api/wechat/attachment',async c=>json(c,await wechatAttachment(await b
 app.get('/api/wechat/attachments/:token',async c=>{const result=await wechatAttachmentContent(c.req.param('token'));return c.body(new Uint8Array(result.bytes),200,{'Content-Type':result.mime,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'});});
 app.get('/api/wechat/messages',async c=>json(c,await wechatMessages(c.req.query('conversation')||'',c.req.query('cursor'),c.req.query('limit'))));
 app.post('/api/connections/test',async c=>json(c,await testConnection(await body(c))));
-app.post('/api/connections/:id/test',async c=>{let input={};if(c.req.header('content-length')!=='0'){try{input=await c.req.json();}catch{}}return json(c,await testConnection(input,c.req.param('id')));});
-app.post('/api/connections/:id/disconnect',c=>{const old=need('connections',c.req.param('id'));const connection=put('connections',{...old,status:'disconnected',disconnectedAt:now()});if(old.id==='wechat-sync-local')clearWechatReader();activity(`断开连接：${old.name}`,'connection','succeeded',undefined,old.id);return json(c,connection);});
+app.post('/api/connections/:id/test',async c=>{if(c.req.param('id')==='gmail-oauth')return json(c,{...await checkGoogle(),connection:need('connections','gmail-oauth')});let input={};if(c.req.header('content-length')!=='0'){try{input=await c.req.json();}catch{}}return json(c,await testConnection(input,c.req.param('id')));});
+app.post('/api/connections/:id/disconnect',c=>{const old=need('connections',c.req.param('id'));const connection=put('connections',{...old,status:'disconnected',disconnectedAt:now()});if(old.id==='wechat-sync-local')clearWechatReader();if(old.id==='gmail-oauth')disconnectGoogle();activity(`断开连接：${old.name}`,'connection','succeeded',undefined,old.id);return json(c,connection);});
 app.post('/api/inbox/:id/send',async c=>{const input=await body(c);const originalItem=need('inbox',c.req.param('id'));const followup=normalizeFollowup(input.followup===undefined?originalItem.followup:input.followup);const priorSend=db.prepare('SELECT key FROM send_intents WHERE key=?').get(String(input.idempotencyKey||''));if(!priorSend&&followup?.kind==='calendar'&&new Date(followup.endAt!).getTime()<=Date.now())throw new ApiError(400,'calendar_time_passed','不能安排已经完全过去的日程');const result=await sendItem(c.req.param('id'),{...input,followup,...(followup?.kind==='task'?{addTask:true,taskTitle:followup.title,dueDate:followup.dueDate}:{})});if(followup?.kind==='calendar'){try{const calendar=await createCalendarFromInbox(c.req.param('id'),{followup,allowConflict:input.allowConflict});return json(c,{...result,item:calendar.item,calendarEvent:calendar.event,calendarReceipt:calendar.receipt,calendarRun:calendar.run});}catch(e){const latest=need('inbox',c.req.param('id'));const saved=put('inbox',{...latest,followup,calendarStatus:latest.calendarStatus==='unknown'?'unknown':'failed',calendarError:String(e),calendarCode:e instanceof ApiError?e.code:'calendar_failed',calendarConflicts:e instanceof ApiError?e.detail?.conflicts:undefined});return json(c,{...result,item:saved,calendarStatus:saved.calendarStatus,calendarError:String(e),calendarDetail:e instanceof ApiError?e.detail:undefined});}}return json(c,result);});
 app.post('/api/inbox/:id/undo',async c=>json(c,await undoItem(c.req.param('id'))));
 app.post('/api/inbox/:id/calendar',async c=>json(c,await createCalendarFromInbox(c.req.param('id'),await body(c))));

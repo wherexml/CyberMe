@@ -26,3 +26,5 @@ npm run build        # tsc --noEmit + vite build → ../dist
 Inbox 草稿不再自动生成 Summary.pdf／图表，Autonomy 不再提供自动文件设置；手动附件和原有下载能力保留。行为见 [移除回复自动文件](../docs/journeys/remove-automatic-reply-files.md)。
 
 MyGO 完整桌面适配在 `src/desktop/full/`，继承当前HTML与生产组件；构建和验收入口见 [桌面规格](../docs/spec/mygo-desktop.md)。
+
+MyGO完整身份/记忆编辑器、连接查看和采集尺寸统一遵循 [settings-documents-oauth](../docs/spec/settings-documents-oauth.md)。Google授权使用系统浏览器，缺client显示真实阻塞；旧本机草稿保留并可恢复。

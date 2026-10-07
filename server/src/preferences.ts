@@ -32,5 +32,5 @@ export function userContext(runId:string) {
  const personal=memories.filter(m=>m.kind==='personal').slice(0,50);
  const selected=[...preferences,...personal];
  toolEvidence(runId,'load_user_context',{}, {identityFields:['name','role','about','instructions'],memoryIds:selected.map(m=>m.id),preferenceIds:preferences.map(m=>m.id),interfaceLanguageUsedForReply:false});
- return {replyDefaults:'仅回应当前请求。偏好调整成功时简短确认偏好和保存结果，不回顾历史任务，不罗列未做的发送/草稿/文件，不追加无关建议或澄清。这些表达默认可被用户当前要求覆盖。',identity:{name:identity.name,role:identity.role,about:identity.about,instructions:identity.instructions},preferences:preferences.map(m=>({id:m.id,key:m.preferenceKey,value:m.body,updatedAt:m.updatedAt})),personalMemories:personal.map(m=>({id:m.id,body:String(m.body||'').slice(0,4000),updatedAt:m.updatedAt}))};
+ return {replyDefaults:'仅回应当前请求。偏好调整成功时简短确认偏好和保存结果，不回顾历史任务，不罗列未做的发送/草稿/文件，不追加无关建议或澄清。这些表达默认可被用户当前要求覆盖。',identity:typeof (identity as any).markdown==='string'?{markdown:(identity as any).markdown}:{name:identity.name,role:identity.role,about:identity.about,instructions:identity.instructions},preferences:preferences.map(m=>({id:m.id,key:m.preferenceKey,value:m.body,updatedAt:m.updatedAt})),personalMemories:personal.map(m=>({id:m.id,body:String(m.body||'').slice(0,m.id==='opstwins-memory-document'?200000:4000),updatedAt:m.updatedAt}))};
 }
