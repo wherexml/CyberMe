@@ -49,7 +49,7 @@ export async function fullAssets(root,assets){
  let html=await readFile(resolve(source,'macos-ui-study.html'),'utf8');
  const scripts=[...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m=>m[1]).filter(p=>!p.startsWith('../../'));
  const sequence=[];for(const s of scripts){if(s==='macos-design-chat.js')sequence.push('full/chat.js');else if(s==='macos-inbox-preview.js')sequence.push('full/inbox-preview.js');else sequence.push(s);if(s==='macos-settings-study.js')sequence.push('full/settings.js')}
- sequence.push('full/workspace.js','full/inbox.js');
+ sequence.push('full/records.js','full/workspace.js','full/inbox.js');
  html=html.replace(/<script src="[^"]+"><\/script>/g,'');
  const css=[...bundle.matchAll(/<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g)].map(m=>`<link rel="stylesheet" href="${m[1]}">`).join('');
  html=html.replace('<body>',css+'<link rel="stylesheet" href="full/product.css"><body>');
