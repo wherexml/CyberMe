@@ -39,6 +39,9 @@ export async function fullAssets(root,assets){
  ["q('.chat-layout').classList.toggle('sessions-docked',opened&&state.keepVisible)","q('.chat-layout').classList.toggle('sessions-docked',opened)"],
  ["hooks.select(id,state.drafts[id]||'',target);","hooks.select(id,state.drafts[id]||'',target);window.dispatchEvent(new CustomEvent('desktop-session-selected',{detail:{id,target}}));"]]);
  await patch('macos-ui-study.js',[
+ ["if(!visible.some(x=>x.id===selected))selected=visible[0]?.id;", "if(!data.inbox.some(x=>x.id===selected))selected=visible[0]?.id;"],
+ ["filter==='quiet'?x.quiet:filter==='all'?true:x.attention", "filter==='verify'?window.OpsTwinsBusinessUI.needsInboxVerification(x):filter==='quiet'?x.quiet:filter==='all'?true:x.attention"],
+
  ["function node(tag,cls,text){", "prefs.language=data.settings.identity.language||prefs.language;prefs.font=15;prefs.reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;function node(tag,cls,text){"],
  ["function apply(){", "function apply(){window.OpsTwinsDesktop.localizeStatic?.();"],
  ["else messages=messages.slice(-30);", ""],["if(r.status==='unknown')body.append", "if(r.status==='unknown'&&r.missing)body.append(btn('重试原请求',()=>void window.OpsTwinsDesignChat.retry(r),'chat-retry'));if(['unknown','running'].includes(r.status))body.append"],["appendCards(real,false);appendCards(samples,true);", "appendCards(real,false);if(!real.length)list.append(node('div','data-empty','还没有建议，点击生成建议'));"],
@@ -52,10 +55,11 @@ export async function fullAssets(root,assets){
  sequence.push('full/records.js','full/workspace.js','full/inbox.js');
  html=html.replace(/<script src="[^"]+"><\/script>/g,'');
  const css=[...bundle.matchAll(/<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g)].map(m=>`<link rel="stylesheet" href="${m[1]}">`).join('');
- html=html.replace('<body>',css+'<link rel="stylesheet" href="full/product.css"><body>');
+ html=html.replace('<body>',css+'<link rel="stylesheet" href="full/product.css"><link rel="stylesheet" href="full/inbox-policy.css"><body>');
  html+=`<script>window.OPSTWINS_DESKTOP_MODE=true;window.OPSTWINS_DESKTOP_MANIFEST=${JSON.stringify({islands:island,scripts:sequence})}</script><script src="full/runtime.js"></script><script src="full/bootstrap.js"></script>`;
  await writeFile(resolve(assets,'desktop.html'),html.replaceAll('OpsTwins macOS 设计原型','OpsTwins').replace('OpsTwins · macOS UI study','OpsTwins'));
  await cp(resolve(root,'web/src/desktop/full/product.css'),resolve(assets,'full/product.css'));
+ await cp(resolve(root,'web/src/desktop/full/inbox-policy.css'),resolve(assets,'full/inbox-policy.css'));
  const strings=JSON.parse(await readFile(resolve(root,'web/src/desktop/full/interface-strings.json'),'utf8'));
  await writeFile(resolve(assets,'full/interface-strings.js'),'window.OPSTWINS_INTERFACE_STRINGS='+JSON.stringify(strings)+';');
  // Translate literal interface arguments, never runtime business content.

@@ -1,3 +1,4 @@
+import {needsInboxAttention} from '../../shared/inbox-surfacing';
 import {get,list,put,hash,now,settings,activity,db,publicValue} from './store';
 import {ApiError,connectionPermission,feishuConnection} from './integrations';
 import {sendItem} from './sending';
@@ -11,6 +12,7 @@ function fingerprint(item:any){return hash({title:item.title,body:item.body,send
 function policy(item:any){const s=settings(),c=feishuConnection(),job=jobFor(item),record=job?.semanticAuthorizationId?getSemanticAuthorization(job.semanticAuthorizationId):undefined,category=record?.itemId===item.id&&record.jobId===job.id?record.effectiveCategory:job?.effectiveCategory;return {version:POLICY_VERSION,category,level:item.sensitive||item.category==='sensitive'?'observe':['commit','boss'].includes(item.category)?'draft':s.autonomy.levels[category],transparency:s.autonomy.transparency===true,channel:s.channels.feishu,connection:c?{id:c.id,status:c.status,permissions:c.permissions,scopes:c.config?.scopes,filter:c.config?.filter||'',workingHoursOnly:c.config?.workingHoursOnly,workFrom:c.config?.workFrom,workUntil:c.config?.workUntil,workDays:c.config?.workDays,timezone:c.config?.timezone}:null}}
 function jobFor(item:any){return item?.sourceProcessing?.jobId?get('source_jobs',item.sourceProcessing.jobId):undefined}
 function guards(item:any,job:any){
+ if(item&&!needsInboxAttention(item))throw new ApiError(409,'inbox_not_actionable','The Inbox item is expired, quiet or requires verification');
  if(!item||!job||item.sourceProcessing?.jobId!==job.id||!['succeeded','awaiting_approval'].includes(job.status))throw new ApiError(409,'source_not_ready','A current completed source job is required');
  if(!['ack','meet','docs'].includes(policy(item).category)||item.sensitive)throw new ApiError(403,'category_requires_review','Only explicitly classified low-risk categories can use automatic sending');
  if(job.mode==='summary')throw new ApiError(403,'summary_only','A summary does not authorize a reply');

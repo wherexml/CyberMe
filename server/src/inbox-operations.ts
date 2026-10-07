@@ -1,4 +1,4 @@
-import {needsInboxAttention} from '../../shared/inbox-surfacing';
+import {needsInboxAttention,dispositionOf,compareInboxAttention} from '../../shared/inbox-surfacing';
 import {get,list,put,hash,uid,now,publicValue} from './store';
 import {ApiError} from './integrations';
 import {applicationRequest} from './agent-capabilities';
@@ -15,9 +15,10 @@ export function inboxEventAt(item:any){
  const explicit=timestamp(item.eventAt);if(explicit)values.push(explicit);
  return values.length?new Date(Math.max(...values)).toISOString():undefined;
 }
-export function inboxSummary(item:any){return publicValue({id:item.id,title:item.title,sender:item.sender,status:item.status,channel:item.channel,body:String(item.body||'').slice(0,2200),draft:item.draft,sourceId:item.sourceId,eventAt:inboxEventAt(item),timeKnown:!!inboxEventAt(item),createdAt:item.createdAt,updatedAt:item.updatedAt,receivedAt:item.receivedAt,sourceUpdatedAt:item.sourceUpdatedAt,surfacing:item.surfacing,sensitive:!!item.sensitive});}
-const queryFields=['query','channel','status','ids','includeQuiet','includeDone','before','olderThanDays','offset','limit'];
+export function inboxSummary(item:any){return publicValue({id:item.id,title:item.title,sender:item.sender,status:item.status,channel:item.channel,body:String(item.body||'').slice(0,2200),draft:item.draft,sourceId:item.sourceId,eventAt:inboxEventAt(item),timeKnown:!!inboxEventAt(item),createdAt:item.createdAt,updatedAt:item.updatedAt,receivedAt:item.receivedAt,sourceUpdatedAt:item.sourceUpdatedAt,surfacing:item.surfacing,disposition:item.disposition,triage:item.triage,sensitive:!!item.sensitive});}
+const queryFields=['placement','query','channel','status','ids','includeQuiet','includeDone','before','olderThanDays','offset','limit'];
 function validateQuery(input:any){
+ if(input.placement!==undefined&&!['pending','quiet','history','verify','all'].includes(input.placement))throw new ApiError(400,'invalid_query','Invalid placement');
  if(Object.keys(input).some(k=>!queryFields.includes(k)))throw new ApiError(400,'invalid_query','Unsupported Inbox query');
  for(const k of ['includeQuiet','includeDone'])if(input[k]!==undefined&&!['true','false',true,false].includes(input[k]))throw new ApiError(400,'invalid_query',k+' must be boolean');
  if(input.ids!==undefined&&(!Array.isArray(input.ids)||input.ids.length>1000||input.ids.some((id:any)=>typeof id!=='string')))throw new ApiError(400,'invalid_query','ids must be strings');
@@ -27,12 +28,12 @@ function validateQuery(input:any){
 }
 function candidates(input:any){
  const yes=(v:any)=>v===true||v==='true';const q=String(input.query||'').toLowerCase();
- return list('inbox').filter(i=>!input.ids||input.ids.includes(i.id)).filter(i=>!input.channel||i.channel===input.channel).filter(i=>!input.status||i.status===input.status).filter(i=>input.status||yes(input.includeDone)||(!['sent','delivered','done','dismissed','recalled','cancelled'].includes(i.status))).filter(i=>yes(input.includeQuiet)||input.status||yes(input.includeDone)||needsInboxAttention(i)).filter(i=>!q||[i.title,i.sender,i.body].some(v=>String(v||'').toLowerCase().includes(q)));
+ return list('inbox').filter(i=>!input.ids||input.ids.includes(i.id)).filter(i=>!input.channel||i.channel===input.channel).filter(i=>!input.status||i.status===input.status).filter(i=>input.placement||input.status||yes(input.includeDone)||(!['sent','delivered','done','dismissed','recalled','cancelled'].includes(i.status))).filter(i=>input.placement?(input.placement==='all'||(input.placement==='verify'?dispositionOf(i).recoveryReasons.length>0:dispositionOf(i).placement===input.placement)):yes(input.includeQuiet)||input.status||yes(input.includeDone)||needsInboxAttention(i)).filter(i=>!q||[i.title,i.sender,i.body].some(v=>String(v||'').toLowerCase().includes(q)));
 }
 export function queryInbox(input:any={}){
  validateQuery(input);const at=now(),cutoff=input.before|| (input.olderThanDays!==undefined?new Date(Date.parse(at)-Number(input.olderThanDays)*86400000).toISOString():undefined);
  const source=candidates(input),unknown=source.filter(i=>!inboxEventAt(i));
- const matched=source.filter(i=>!cutoff||(!!inboxEventAt(i)&&inboxEventAt(i)!<cutoff)).sort((a,b)=>(inboxEventAt(b)||'').localeCompare(inboxEventAt(a)||'')||a.id.localeCompare(b.id));
+ const matched=source.filter(i=>!cutoff||(!!inboxEventAt(i)&&inboxEventAt(i)!<cutoff)).sort((a,b)=>!input.includeDone&&!input.includeQuiet&&(!input.placement||input.placement==='pending')?compareInboxAttention(a,b):(inboxEventAt(b)||'').localeCompare(inboxEventAt(a)||'')||a.id.localeCompare(b.id));
  const offset=Number(input.offset)||0,limit=Math.min(Number(input.limit)||50,200),items=matched.slice(offset,offset+limit).map(inboxSummary);
  return {items,total:matched.length,offset,limit,hasMore:offset+items.length<matched.length,nextOffset:offset+items.length,unknownTimeCount:unknown.length,cutoff,evaluatedAt:at,timeZone:'Asia/Singapore',timeBasis:'latest_source_message_or_mail_received_at; importedAt/createdAt/sourceUpdatedAt are not event times'};
 }

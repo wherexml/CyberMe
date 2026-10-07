@@ -1,0 +1,7 @@
+/* Status projection cannot be overridden by reference display:grid rules. */
+#inbox-items .inbox-item[hidden], #inbox-verification[hidden], #inbox-reason-filter[hidden] { display:none !important; }
+.inbox-verification { padding:0 24px 10px; }
+.inbox-verification button { color:var(--muted);font:inherit;font-size:13px;text-align:left;border:0;background:none;cursor:pointer; }
+#inbox-reason-filter { margin:0 24px 12px;max-width:calc(100% - 48px);font:inherit;font-size:13px;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:transparent; }
+.inbox-placement { display:block;font-size:11px;color:var(--muted);margin-top:3px; }
+#desktop-handling-status { display:flex;flex-wrap:wrap;gap:8px;align-items:center; }

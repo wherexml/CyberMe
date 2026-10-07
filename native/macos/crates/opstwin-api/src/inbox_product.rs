@@ -29,6 +29,8 @@ pub struct InboxProduct {
     #[serde(default)]
     pub triage: Option<Value>,
     #[serde(default)]
+    pub disposition: Option<Value>,
+    #[serde(default)]
     pub messages: Vec<Value>,
     #[serde(default)]
     pub source_attachments: Vec<Value>,
@@ -69,7 +71,8 @@ impl Client {
     pub async fn inbox_auto_draft_allowed(&self, product: &InboxProduct) -> Result<bool, ApiError> {
         let item = &product.item;
         let triage = product.triage.as_ref();
-        if item.status != "pending"
+        if product.disposition.as_ref().is_none_or(|d| d["placement"] != "pending" || d["actionType"] != "reply")
+            || item.status != "pending"
             || item.is_self_test
             || item.send_locked()
             || product.is_mine
@@ -264,19 +267,21 @@ impl Client {
         offset: u64,
         limit: u32,
     ) -> Result<InboxQueryPage, ApiError> {
-        let mut value: Value = self
+        let value: Value = self
             .send_json(self.http.get(self.url("/api/inbox/query")).query(&[
-                ("includeQuiet", "true".to_string()),
-                ("includeDone", "true".to_string()),
+                ("placement", "quiet".to_string()),
                 ("query", query.to_string()),
                 ("offset", offset.to_string()),
                 ("limit", limit.to_string()),
             ]))
             .await?;
-        let items = value.get_mut("items").and_then(Value::as_array_mut);
-        if let Some(items) = items {
-            items.retain(|item| item.get("surfacing").and_then(Value::as_str) == Some("quiet"));
-        }
         serde_json::from_value(value).map_err(|e| ApiError::Decode(e.to_string()))
     }
+    pub async fn inbox_verify_query(&self, query: &str, offset: u64, limit: u32) -> Result<InboxQueryPage, ApiError> {
+        self.send_json(self.http.get(self.url("/api/inbox/query")).query(&[
+            ("placement", "verify".to_string()), ("query", query.to_string()),
+            ("offset", offset.to_string()), ("limit", limit.to_string()),
+        ])).await
+    }
+
 }

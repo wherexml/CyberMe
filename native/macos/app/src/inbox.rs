@@ -61,6 +61,7 @@ enum Filter {
     Pending,
     All,
     Quiet,
+    Verify,
 }
 
 impl Filter {
@@ -70,6 +71,7 @@ impl Filter {
             Filter::Pending => "待处理",
             Filter::All => "全部",
             Filter::Quiet => "安静记录",
+            Filter::Verify => "需要核实",
         }
     }
     /// Pending = server default (needs attention, not done). All/Done read
@@ -298,6 +300,14 @@ impl InboxView {
             _debounce: None,
             _search_debounce: None,
         };
+        this._tasks.push(cx.spawn_in(window, async move |this, cx| {
+            loop {
+                sleep(15_000).await;
+                if this.update_in(cx, |this, window, cx| {
+                    if this.visible && !this.loading { this.on_server_change(window, cx); }
+                }).is_err() { break; }
+            }
+        }));
         this.reload(window, cx);
         this
     }
@@ -375,7 +385,9 @@ impl InboxView {
                 let mut last = None;
                 for _ in 0..10 {
                     let limit = if filter == Filter::Quiet { SCAN_PAGE } else { (want as u32).min(200) };
-                    let page = if filter == Filter::Quiet {
+                    let page = if filter == Filter::Verify {
+                        client.inbox_verify_query(&query, off, limit).await?
+                    } else if filter == Filter::Quiet {
                         client.inbox_quiet_query(&query, off, limit).await?
                     } else { client
                         .inbox_query(&InboxQuery {
@@ -426,7 +438,7 @@ impl InboxView {
                         this.load_error = None;
                         let exact_target = this.selected.is_some()
                             && this.external_selection == this.selected;
-                        if !exact_target && this.selected.as_ref().is_none_or(|id|!this.items.iter().any(|item|&item.id==id)) {
+                        if !exact_target && (!keep_count || this.selected.is_none()) && this.selected.as_ref().is_none_or(|id|!this.items.iter().any(|item|&item.id==id)) {
                             if let Some(id) = this.items.first().map(|item|item.id.clone()) {this.select(id,window,cx);} else {this.selected=None;this.detail=None;this.product=None;}
                         }
                         eprintln!(
@@ -1574,6 +1586,7 @@ impl InboxView {
             .pt(px(25.))
             .flex_shrink_0()
             .child(filters)
+            .child(Button::new("inbox-verification-entry").ghost().text_size(px(11.)).child(crate::settings::t("需要核实")).on_click(cx.listener(|this, _, window, cx| this.set_filter(Filter::Verify, window, cx))))
             .child(
                 div()
                     .mx(px(7.))
@@ -2171,6 +2184,20 @@ impl InboxView {
                     .child(crate::settings::t("Jev 回复判断")),
             )
             .child(meters);
+        if let Some(d) = product.and_then(|p| p.disposition.as_ref()) {
+            let reason = match d["primaryReason"].as_str().unwrap_or("") {
+                "expired" => "已超过7天，消息和草稿保留",
+                "no_reply" => "无需回复，已安静记录",
+                "low_priority" => "低优先级，已安静记录",
+                "replied" => "已回复",
+                "action" => "需要处理",
+                "manual" => "已恢复待处理",
+                "completed" => "已完成",
+                "dismissed" => "已忽略",
+                _ => "需要核实，请查看判断或原始记录",
+            };
+            judgment = judgment.child(div().text_size(px(11.)).text_color(theme.muted_foreground).child(crate::settings::t(reason)));
+        }
         if !reliable {
             let status = triage
                 .and_then(|t| t["status"].as_str())
