@@ -6,6 +6,7 @@ export async function fullAssets(root,assets){
  const patch=async(name,changes)=>{let text=await readFile(resolve(source,name),'utf8');for(const [from,to] of changes){if(!text.includes(from))throw Error('Reference changed: '+name+' '+from.slice(0,50));text=text.replace(from,to)}await writeFile(resolve(assets,name),text)};
  await cp(resolve(root,'web/src/desktop/full'),resolve(assets,'full'),{recursive:true,filter:p=>!p.endsWith('.tsx')&&!p.endsWith('.css')});
  await patch('macos-settings-study.js',[
+ [",row('正文大小','',select(ctx.prefs.font,[['14','14 pt'],['15','15 pt'],['16','16 pt']],v=>update('font',Number(v)),'正文大小')),row('减少动态效果','',toggle(ctx.prefs.reduced,v=>update('reduced',v),'减少动态效果'))",""],
  ["const button=(text,fn,cls='ss-button')=>ctx.btn(text,fn,cls);", "const button=(text,fn,cls='ss-button')=>ctx.btn(window.OpsTwinsDesktop.translate(text),fn,cls);"],
  ["function card(title,sub){", "function card(title,sub){title=window.OpsTwinsDesktop.translate(title);sub=window.OpsTwinsDesktop.translate(sub);"],
  ["function field(title,control,sub){", "function field(title,control,sub){title=window.OpsTwinsDesktop.translate(title);sub=window.OpsTwinsDesktop.translate(sub);"],
@@ -38,7 +39,7 @@ export async function fullAssets(root,assets){
  ["q('.chat-layout').classList.toggle('sessions-docked',opened&&state.keepVisible)","q('.chat-layout').classList.toggle('sessions-docked',opened)"],
  ["hooks.select(id,state.drafts[id]||'',target);","hooks.select(id,state.drafts[id]||'',target);window.dispatchEvent(new CustomEvent('desktop-session-selected',{detail:{id,target}}));"]]);
  await patch('macos-ui-study.js',[
- ["function node(tag,cls,text){", "prefs.language=data.settings.identity.language||prefs.language;function node(tag,cls,text){"],
+ ["function node(tag,cls,text){", "prefs.language=data.settings.identity.language||prefs.language;prefs.font=15;prefs.reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;function node(tag,cls,text){"],
  ["function apply(){", "function apply(){window.OpsTwinsDesktop.localizeStatic?.();"],
  ["else messages=messages.slice(-30);", ""],["if(r.status==='unknown')body.append", "if(r.status==='unknown'&&r.missing)body.append(btn('重试原请求',()=>void window.OpsTwinsDesignChat.retry(r),'chat-retry'));if(['unknown','running'].includes(r.status))body.append"],["appendCards(real,false);appendCards(samples,true);", "appendCards(real,false);if(!real.length)list.append(node('div','data-empty','还没有建议，点击生成建议'));"],
  ["$('#attachment-info').onclick=()=>toast('附件入口预览，设计稿不会上传文件');",""],

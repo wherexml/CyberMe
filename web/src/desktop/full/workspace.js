@@ -112,6 +112,7 @@
  D.previewFile=previewFile;
  document.addEventListener('click',e=>{const a=e.target.closest('a');if(!a)return;try{const u=new URL(a.href,location.href);if(u.searchParams.has('run')){e.preventDefault();void api('GET','/api/runs/'+enc(u.searchParams.get('run'))).then(showRecord).catch(x=>toast(x.message))}else if(u.pathname.startsWith('/files/')){e.preventDefault();void previewFile(u.pathname.split('/').at(-1))}else if(u.protocol==='https:'&&window.mygo){e.preventDefault();void window.mygo.call('DesktopFiles.OpenExternal',a.href).catch(x=>toast(x.message))}}catch{}});
  window.addEventListener('desktop-save-error',e=>{let box=$('#desktop-save-error');if(!box){box=errorBox('本机保存失败，草稿仍保留',async()=>{try{await D.retrySave();box.remove()}catch(x){toast(x.message)}});box.id='desktop-save-error';document.body.append(box)}});
+ window.mygo?.on('owner-visible',()=>window.dispatchEvent(new Event('desktop-owner-visible')));
  window.mygo?.on('owner-hidden',()=>{window.OpsTwinsDictation.cancel();attachments.clear();drawAttachments();window.dispatchEvent(new Event('desktop-owner-hidden'));$('#detail-dialog').close()});
  document.addEventListener('visibilitychange',()=>{if(document.hidden){window.OpsTwinsDictation.cancel();attachments.clear();drawAttachments();window.dispatchEvent(new Event('desktop-owner-hidden'))}});
  setInterval(()=>{if(!document.hidden){if(current==='chat'&&!window.OpsTwinsDesignChat.entries().some(r=>r.conversationId===chatConversation&&['prepared','running'].includes(r.status)))void loadChat();else if(current!=='chat')void refresh()}},5000);

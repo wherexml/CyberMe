@@ -15,6 +15,7 @@ import (
 //go:embed all:assets
 var assets embed.FS
 var hidden = mygo.NewEvent[bool]("owner-hidden")
+var shown = mygo.NewEvent[bool]("owner-visible")
 
 type Qualification struct {
 	mu          sync.Mutex
@@ -49,6 +50,8 @@ func (q *Qualification) owner(w *mygo.Window, visible bool) {
 	q.mu.Unlock()
 	if !visible {
 		_ = hidden.Emit(w, true)
+	} else {
+		_ = shown.Emit(w, true)
 	}
 }
 func localURL(raw string) bool {

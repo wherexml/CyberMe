@@ -1,3 +1,4 @@
+import {ChevronLeft} from 'lucide-react';
 const desktopText = (text: string): string => window.OpsTwinsDesktop?.translate?.(text) ?? text;
 import React, { useEffect, useRef, useState } from 'react';
 import type { UIContext } from '../../../../shared/types';
@@ -149,7 +150,7 @@ export default function WechatReader({ ctx }: {
                 setError(e.message);
         }
     }
-    return <main className="settings-page"><button onClick={() => ctx.navigate('/settings/connections')}>{desktopText("\u2039 \u8FD4\u56DE\u8FDE\u63A5")}</button><h1>{desktopText("\u4E2A\u4EBA\u5FAE\u4FE1")}</h1><p>{connected ? desktopText("\u5DF2\u8FDE\u63A5 \u00B7 \u53EA\u8BFB") : desktopText("\u672A\u8FDE\u63A5")}{desktopText("\u00B7 \u901A\u8FC7\u8FD9\u53F0 Mac \u4E0A\u7684 GreenBubbles \u8BFB\u53D6")}</p>{error && <p role="alert">{error}</p>}
+    return <main className="settings-page"><button className="settings-back-link" onClick={() => ctx.navigate('/settings/connections')}><ChevronLeft/>返回连接</button><h1>{desktopText("\u4E2A\u4EBA\u5FAE\u4FE1")}</h1><p>{connected ? desktopText("\u5DF2\u8FDE\u63A5 \u00B7 \u53EA\u8BFB") : desktopText("\u672A\u8FDE\u63A5")}{desktopText("\u00B7 \u901A\u8FC7\u8FD9\u53F0 Mac \u4E0A\u7684 GreenBubbles \u8BFB\u53D6")}</p>{error && <p role="alert">{error}</p>}
  <section className="settings-card"><div className="settings-card-actions"><button disabled={busy} onClick={() => work(async () => {
             const value = await api('POST', '/wechat/connect', {});
             await ctx.refresh();
