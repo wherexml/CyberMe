@@ -24,3 +24,5 @@ npm run build        # tsc --noEmit + vite build → ../dist
 - 浏览器验收使用 ego-browser 单 TaskSpace 独立 Page；并行 Agent 的浏览器动作用 `node scripts/ego-locked.mjs nodejs`。
 
 Inbox 草稿不再自动生成 Summary.pdf／图表，Autonomy 不再提供自动文件设置；手动附件和原有下载能力保留。行为见 [移除回复自动文件](../docs/journeys/remove-automatic-reply-files.md)。
+
+MyGO 完整桌面适配在 `src/desktop/full/`，继承当前HTML与生产组件；构建和验收入口见 [桌面规格](../docs/spec/mygo-desktop.md)。

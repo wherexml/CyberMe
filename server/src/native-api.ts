@@ -34,6 +34,25 @@ function ensureMessageIndex(){
 
 export function mountNativeApi(app:Hono){
  ensureMessageIndex();
+ // Read-only send ledger lookup: recovery must distinguish missing from unknown.
+ app.get('/api/inbox/:id/send-requests/:requestId',c=>{
+  const id=c.req.param('id'),requestId=c.req.param('requestId');
+  if(!/^[\w-]{1,128}$/.test(requestId))throw new ApiError(400,'invalid_request_id','请求 ID 无效');
+  const item=get('inbox',id);if(!item)throw new ApiError(404,'not_found','事项不存在');
+  const row=db.prepare('SELECT item_id,state FROM send_intents WHERE key=?').get(requestId) as {item_id:string;state:string}|undefined;
+  if(!row||row.item_id!==id)throw new ApiError(404,'request_not_found','原发送尚未登记');
+  c.header('Cache-Control','no-store');return json(c,{requestId,itemId:id,status:row.state,item});
+ });
+ // Exact read-only recovery; observing a draft request never executes it again.
+ app.get('/api/inbox/:id/draft-requests/:requestId',c=>{
+  const id=c.req.param('id'),requestId=c.req.param('requestId');
+  if(!/^[\w-]{1,128}$/.test(requestId))throw new ApiError(400,'invalid_request_id','请求 ID 无效');
+  const item=get('inbox',id);if(!item)throw new ApiError(404,'not_found','事项不存在');
+  const row=db.prepare('SELECT state,data FROM draft_requests WHERE id=?').get(requestId) as {state:string;data:string}|undefined;
+  if(!row)throw new ApiError(404,'request_not_found','原请求尚未登记');const saved=JSON.parse(row.data);
+  if(saved.itemId!==id)throw new ApiError(404,'request_not_found','原请求不属于此事项');
+  c.header('Cache-Control','no-store');return json(c,{requestId,status:row.state,itemId:id,runId:saved.runId||saved.run?.id,item});
+ });
  app.get('/api/native/version',c=>json(c,{apiVersion:1,revision:revision(),server:'opstwin-advance',features:['messages.page','events.sse']}));
 
  app.get('/api/conversations/:id/messages',c=>{

@@ -3,13 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -17,12 +19,18 @@ import (
 
 // workspaceRoot is set by the build script; no arbitrary path is accepted from a page.
 var workspaceRoot string
+var clientScope = "mygo-full"
 var bridgeMu sync.Mutex
-var routeRead = regexp.MustCompile(`^/api/(pilot/drafts/[A-Za-z0-9_-]+|health|conversations(?:/primary|/[A-Za-z0-9_-]+/messages)?|chat/requests/[A-Za-z0-9_-]+|chat/conversations/[A-Za-z0-9_-]+/unresolved|inbox(?:/query|/[A-Za-z0-9_-]+)?|settings/models(?:/tests/[A-Za-z0-9_-]+)?|messages/[A-Za-z0-9_-]+|runs/[A-Za-z0-9_-]+)$`)
-var routeWrite = regexp.MustCompile(`^/api/(chat|conversations/side|inbox/[A-Za-z0-9_-]+/(draft|draft-candidate/apply|triage)|settings/models/test)$`)
-var routePatch = regexp.MustCompile(`^/api/(inbox/[A-Za-z0-9_-]+|settings/models(?:/providers)?)$`)
+var serviceScope = "mygo-pilot-public-v2"
+var servicePort = "46310"
+
+func serviceURL() string { return "http://127.0.0.1:" + servicePort }
+func expectedPort() int  { n, _ := strconv.Atoi(servicePort); return n }
 
 type Bridge struct{}
+
+func (b *Bridge) Scope() string { return clientScope }
+
 type WireResponse struct {
 	Status int             `json:"status"`
 	Data   json.RawMessage `json:"data"`
@@ -39,8 +47,8 @@ type Link struct {
 }
 
 // Read through an already-open directory and reject symbolic/hard links and foreign owners.
-func privateRead(name string, limit int64) ([]byte, error) {
-	p, err := privateRoot()
+func privateReadScope(scope, name string, limit int64) ([]byte, error) {
+	p, err := scopeRoot(scope)
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +72,15 @@ func privateRead(name string, limit int64) ([]byte, error) {
 	}
 	return io.ReadAll(io.LimitReader(f, limit+1))
 }
-func privateRoot() (string, error) {
+func privateRead(name string, limit int64) ([]byte, error) {
+	return privateReadScope(clientScope, name, limit)
+}
+func privateRoot() (string, error) { return scopeRoot(clientScope) }
+func scopeRoot(scope string) (string, error) {
 	if workspaceRoot == "" {
 		return "", errors.New("workspace_unconfigured")
 	}
-	p := filepath.Join(workspaceRoot, ".local", "mygo-pilot-public-v2")
+	p := filepath.Join(workspaceRoot, ".local", scope)
 	if err := os.MkdirAll(p, 0700); err != nil {
 		return "", errors.New("local_store_unavailable")
 	}
@@ -136,12 +148,21 @@ func (b *Bridge) SaveState(next LocalState) (LocalState, error) {
 	if err != nil {
 		return current, err
 	}
-	f, err := os.CreateTemp(root, ".state-*")
+	pinned, err := os.OpenRoot(root)
 	if err != nil {
 		return current, errors.New("local_save_failed")
 	}
-	name := f.Name()
-	defer os.Remove(name)
+	defer pinned.Close()
+	nonce := make([]byte, 16)
+	if _, err = rand.Read(nonce); err != nil {
+		return current, err
+	}
+	name := ".state-" + hex.EncodeToString(nonce)
+	f, err := pinned.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
+	if err != nil {
+		return current, errors.New("local_save_failed")
+	}
+	defer pinned.Remove(name)
 	if _, err = f.Write(raw); err == nil {
 		err = f.Sync()
 	}
@@ -149,10 +170,10 @@ func (b *Bridge) SaveState(next LocalState) (LocalState, error) {
 	if err != nil || closeErr != nil {
 		return current, errors.New("local_save_failed")
 	}
-	if err = os.Rename(name, filepath.Join(root, "state.json")); err != nil {
+	if err = pinned.Rename(name, "state.json"); err != nil {
 		return current, errors.New("local_save_failed")
 	}
-	dir, err := os.Open(root)
+	dir, err := pinned.Open(".")
 	if err != nil {
 		return current, errors.New("local_save_unconfirmed")
 	}
@@ -167,27 +188,14 @@ func (b *Bridge) Request(ctx context.Context, method, path string, body json.Raw
 	// Query syntax is bounded and parsed separately; paths cannot contain encoded separators or hosts.
 	split := bytes.SplitN([]byte(path), []byte("?"), 2)
 	route := string(split[0])
-	if len(path) > 4096 || len(body) > 1<<20 || !(method == "GET" && routeRead.MatchString(route) || method == "POST" && routeWrite.MatchString(route) || method == "PATCH" && routePatch.MatchString(route)) {
+	if len(path) > 4096 || len(body) > 1<<20 || !allowedProduct(method, route) {
 		return response, errors.New("route_not_allowed")
 	}
-	root, err := privateRoot()
+	link, err := serviceLink()
 	if err != nil {
 		return response, err
 	}
-	file := filepath.Join(root, "connection.json")
-	st, err := os.Lstat(file)
-	if err != nil || !st.Mode().IsRegular() || st.Mode().Perm() != 0600 || st.Size() > 4096 {
-		return response, errors.New("service_not_connected")
-	}
-	raw, err := privateRead("connection.json", 4096)
-	if err != nil {
-		return response, errors.New("service_not_connected")
-	}
-	var link Link
-	if json.Unmarshal(raw, &link) != nil || link.Port != 46310 || len(link.Token) != 64 {
-		return response, errors.New("service_binding_invalid")
-	}
-	req, err := http.NewRequestWithContext(ctx, method, "http://127.0.0.1:46310"+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, serviceURL()+path, bytes.NewReader(body))
 	if err != nil {
 		return response, errors.New("invalid_request")
 	}

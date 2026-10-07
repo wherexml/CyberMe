@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 )
 
@@ -25,7 +26,7 @@ type Qualification struct {
 func (q *Qualification) State() map[string]any {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return map[string]any{"visible": q.visible, "generation": q.generation, "businessBridge": false, "permissionRequests": q.permissions}
+	return map[string]any{"visible": q.visible, "generation": q.generation, "businessBridge": true, "permissionRequests": q.permissions}
 }
 func (q *Qualification) ChooseFile(ctx context.Context) (string, error) {
 	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: mygo.CallerWindow(ctx), Title: "公开资格验证：选择或取消（不会读取文件）"})
@@ -39,6 +40,10 @@ func (q *Qualification) ChooseFile(ctx context.Context) (string, error) {
 }
 func (q *Qualification) owner(w *mygo.Window, visible bool) {
 	q.mu.Lock()
+	if q.visible == visible {
+		q.mu.Unlock()
+		return
+	}
 	q.generation++
 	q.visible = visible
 	q.mu.Unlock()
@@ -60,23 +65,29 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mygo.App.SetName("OpsTwins MyGO Preview")
+	mygo.App.SetName("OpsTwins MyGO")
 	handler := mygo.FileServer(web)
 	mygo.Protocol.Handle("mygo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/files/") {
+			productProxy(w, r)
+			return
+		}
 		handler.ServeHTTP(w, r)
 	}))
 	q := &Qualification{visible: true}
 	mygo.Bind(q)
 	mygo.Bind(&Bridge{})
+	mygo.Bind(&DesktopFiles{Owner: q})
 	mygo.App.WhenReady(func() {
-		w := mygo.NewWindow(mygo.WindowOptions{Title: "OpsTwins MyGO Preview", URL: "/pilot.html", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
+		w := mygo.NewWindow(mygo.WindowOptions{Title: "OpsTwins MyGO", URL: "/desktop.html", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
 		w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
 			if !localURL(e.URL) {
 				e.PreventDefault()
 			}
 		})
+		w.Page().OnWillDownload(func(e *mygo.DownloadEvent) { e.PreventDefault() })
 		w.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
 		w.Page().SetPermissionHandler(func(r mygo.PermissionRequest) bool {
 			q.mu.Lock()
@@ -92,10 +103,35 @@ func main() {
 			}
 			return true
 		})
+		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+			{Label: "OpsTwins", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, mygo.Separator(), {Label: "隐藏 OpsTwins", Accelerator: "Cmd+H", Click: func(_ *mygo.MenuItem, _ *mygo.Window) { q.owner(w, false); mygo.App.Hide() }}, {Label: "显示 OpsTwins", Click: func(_ *mygo.MenuItem, _ *mygo.Window) {
+				if !w.IsDestroyed() {
+					mygo.App.Show()
+					w.Restore()
+					w.Show()
+					w.Focus()
+				}
+			}}, mygo.Separator(), {Role: mygo.RoleQuit}}},
+			{Role: mygo.RoleEditMenu}, {Role: mygo.RoleWindowMenu},
+		}))
+		mygo.App.OnActivate(func(_ bool) {
+			if !w.IsDestroyed() {
+				mygo.App.Show()
+				w.Restore()
+				w.Show()
+				w.Focus()
+			}
+		})
+		mygo.App.OnDidResignActive(func() {
+			if mygo.App.IsHidden() {
+				q.owner(w, false)
+			}
+		})
+		mygo.App.OnDidBecomeActive(func() { q.owner(w, !mygo.App.IsHidden() && !w.IsDestroyed() && w.IsVisible() && !w.IsMinimized()) })
 		w.OnHide(func() { q.owner(w, false) })
 		w.OnMinimize(func() { q.owner(w, false) })
-		w.OnShow(func() { q.owner(w, true) })
-		w.OnRestore(func() { q.owner(w, true) })
+		w.OnShow(func() { q.owner(w, !mygo.App.IsHidden() && !w.IsDestroyed() && w.IsVisible() && !w.IsMinimized()) })
+		w.OnRestore(func() { q.owner(w, !mygo.App.IsHidden() && !w.IsDestroyed() && w.IsVisible() && !w.IsMinimized()) })
 		w.OnClosed(func() { q.owner(w, false) })
 	})
 	if err := mygo.App.Run(); err != nil {

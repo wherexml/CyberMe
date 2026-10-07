@@ -1,19 +1,21 @@
-# OpsTwins MyGO 先导
+# OpsTwins MyGO
 
-固定 MyGO v0.2.15 / Go 1.27.1。独立 bundle `com.opstwins.mygo.preview`，不覆盖 GPUI。
+当前目标为 macOS 完整产品 + 最新 HTML，原三页先导已扩展；完整交付尚须逐项验收，不能由编译或页面数量推定。
 
-- `node scripts/mygo-build.mjs`：在仓库根目录运行，白名单投影公开HTML，编译并ad-hoc签名至 `.local/apps/OpsTwins MyGO Preview.app`。
-- `node --import tsx scripts/mygo-pilot-service.mjs`：46310生产API隔离数据服务；无后台任务，禁止外发路由。
-- 如需复用已有模型，使用该命令的 `--reuse-model-config`；仅初次将模型配置留在服务端 `.local/mygo-pilot-public-v2/runtime/config.json`，不输出凭据、不复制授权profile。
-- `mygo://localhost/`为公开视觉资格页；`/pilot.html`为逐步接入的生产组件入口。
+固定 MyGO v0.2.15 / Go 1.27.1，保留 GPUI 与旧先导 App。入口为 `mygo://localhost/desktop.html`；`index.html` 仅公开视觉资格，`pilot.html` 仅历史先导诊断。
 
-`.local/mygo-pilot-public-v2/`目录0700，连接token和状态0600。Go桥不接受自选服务器、任意HTTP路径或任意文件路径。草稿与请求先原子落盘，冲突用revision拒绝；本地失败不能发送。所有原型快照/capability禁止打包。
+## 运行
 
-当前能力与未完成项以 `docs/journeys/mygo-pilot.md` 为准；不将资格页、编译或HTTP视为三页/85项完成。
+- `node --import tsx scripts/mygo-pilot-service.mjs`：公开隔离 API 46310，不导入姊妹数据、不运行后台调度、禁止外发。初次需要模型时显式加 `--reuse-model-config`；配置只在服务端私有文件。
+- `node scripts/mygo-build.mjs`：构建并 ad-hoc 签名 `.local/apps/OpsTwins MyGO QA.app`，独立 QA 状态。
+- `node scripts/mygo-desktop-preview.mjs`：公开验收预览 46300，固定同源转发至 46310。
+- `node scripts/mygo-build.mjs --workspace`：构建 `.local/apps/OpsTwins MyGO.app`，连接现有日常工作区；先启动既有 API 46110。
+- `node scripts/mygo-launch.mjs`：启动 46312 本机网关并打开工作区包，网关不复制或创建业务数据库。
 
-- `node_modules/.bin/vite --config web/mygo.vite.config.ts`：46300 `/pilot.html` 同源公开只读布局预览。
-- `node scripts/mygo-pilot-http-e2e.mjs`：服务就绪后复验8项真实HTTP门禁和草稿冲突，证据写 `output/mygo-1007/http-*.json`。
+## 复验
 
-详见 [正式规格](../../docs/spec/mygo-pilot.md)。启动先导后可用 Finder 打开候选App。当前服务需单独运行，未提供发行版后台生命周期管理。
+- `ego-browser nodejs < scripts/mygo-full-browser-e2e.mjs`：使用既有 TaskSpace 1 / p1。
+- `node scripts/mygo-full-http-e2e.mjs`：真实隔离 HTTP。
+- 实际 App 的系统选择器、Hide/恢复、硬件听写及视觉另验；证据留本项目 output，不能把浏览器结果当作原生通过。
 
-- `node scripts/mygo-preview-browser-e2e.mjs 1`：在本目标既有ego TaskSpace 1复验公开预览；其他会话请传自己的既有space ID。不创建新空间，不计原生GUI。
+Go 持连接 token；本机 state 0700/0600 + revision CAS + 原子替换。业务改动经 canonical API，草稿与原请求先耐久。完整契约：[桌面规格](../../docs/spec/mygo-desktop.md)、[验收旅程](../../docs/journeys/mygo-full-copy.md)、[85项表](../../docs/acceptance/mygo-full-copy-matrix.md)。历史先导结论保留于 [mygo-pilot](../../docs/journeys/mygo-pilot.md)。

@@ -1,3 +1,4 @@
+import Models from './Models';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MessageCircle, Inbox as InboxIcon, Settings, ArrowUp, Copy, Check, PanelLeft, RefreshCw, ChevronLeft, Sun, Moon, FileText } from 'lucide-react';
@@ -304,7 +305,7 @@ function Inbox({ active }: {
         await persist(s => { s.drafts['draft-request:' + id] = requestId; });
         let result;
         try {
-            result = await request('POST', `/api/inbox/${enc(id)}/draft`, { requestId, mode: 'quick', baseUpdatedAt: canonical.current[id].updatedAt });
+            result = await request('POST', `/api/inbox/${enc(id)}/draft`, { requestId, mode: 'auto', baseUpdatedAt: canonical.current[id].updatedAt });
         }
         catch (e) {
             if (e instanceof PilotError && e.data?.detail?.item)
@@ -362,110 +363,6 @@ function Inbox({ active }: {
     } }
     const item = rows[selected];
     return <div className="inbox-layout"><aside className="inbox-list"><header><h1>收件箱</h1><button aria-label="刷新收件箱" onClick={() => void load()}><RefreshCw /></button></header><div className="filters">{['pending', 'all'].map(v => <button key={v} aria-pressed={filter === v} onClick={() => setFilter(v)}>{v === 'pending' ? '待处理' : '全部'}</button>)}</div><ErrorLine error={errors.list} retry={() => void load()}/>{items.filter(v => filter === 'all' || needsInboxAttention(v)).map(v => <button className="inbox-item" key={v.id} aria-pressed={selected === v.id} onClick={() => void select(v.id)}><span className="avatar">{v.sender?.slice(-2) || '?'}</span><span><strong>{v.sender || v.title}</strong><p>{v.body}</p></span></button>)}</aside><div className="inbox-detail">{item ? <><div className="inbox-scroll"><h2>{item.sender || item.title}</h2><InboxMessages item={item}/><details><summary>Jev 判断：{item.triage?.status === 'succeeded' ? (item.triage.method === 'rule' ? '规则判断' : '已分析') : '未确认'}</summary><p>{item.triage?.reason || item.triage?.summary || '尚无可用判断，不展示推测概率'}</p><button onClick={() => void analyze(selected)}>分析</button></details><h3>草稿</h3><textarea aria-label="回复草稿" value={drafts[selected] ?? item.draft ?? ''} onChange={e => edit(selected, e.target.value)}/><ErrorLine error={errors[selected]} retry={() => void save(selected)}/>{errors[selected] && <button onClick={() => void rebase(selected)}>读取最新版本，保留草稿</button>}{item.draftCandidate && <div><h3>生成候选</h3><SafeMarkdown text={item.draftCandidate.text}/><button disabled={!!busy[selected]} onClick={() => void adopt(selected)}>采用候选，替换当前草稿</button></div>}</div><footer className="inbox-actions">{currentLocal().drafts['draft-request:' + selected] && <button onClick={() => void recoverDraft(selected)}>回查原生成</button>}<span>{busy[selected] ? '处理中…' : ''}</span><button disabled={!!busy[selected]} onClick={() => void regenerate(selected)}><RefreshCw />重新生成</button></footer></> : <p className="empty">选择一条消息</p>}</div></div>;
-}
-function Models({ active }: {
-    active: boolean;
-}) {
-    const [saved, setSaved] = useState<ModelSettings>(), [choice, setChoice] = useState<ModelSelection>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [probe, setProbe] = useState<Intent>(), [result, setResult] = useState<any>();
-    const [editingProvider, setEditingProvider] = useState(false);
-    const choiceRef = useRef<ModelSelection | undefined>(undefined), loadGen = useRef(0);
-    function setValue(value: ModelSelection) { choiceRef.current = value; setChoice(value); void persist(s => { s.drafts.models = JSON.stringify(value); }).catch(e => setError('本机保存失败：' + e.message)); }
-    async function load() { const gen = ++loadGen.current; try {
-        const model = await request<ModelSettings>('GET', '/api/settings/models');
-        if (gen !== loadGen.current)
-            return;
-        setSaved(model);
-        let next = model.standard;
-        try {
-            next = JSON.parse(currentLocal().drafts.models || 'null') || next;
-        }
-        catch { }
-        choiceRef.current = next;
-        setChoice(next);
-        setError('');
-        const old = Object.values(currentLocal().requests).filter(i => i.kind === 'model').at(-1);
-        if (old) {
-            setProbe(old);
-            void check(old);
-        }
-    }
-    catch (e) {
-        if (gen === loadGen.current)
-            setError((e as Error).message);
-    } }
-    useEffect(() => { if (active)
-        void load(); }, [active]);
-    const dirty = !!saved && !!choice && JSON.stringify(choice) !== JSON.stringify(saved.standard);
-    async function save() { if (!saved || !choice || busy)
-        return; setBusy(true); const submitted = { ...choice }; try {
-        const model = await request<ModelSettings>('PATCH', '/api/settings/models', { version: saved.version, standard: submitted, deep: submitted });
-        setSaved(model);
-        if (JSON.stringify(choiceRef.current) === JSON.stringify(submitted)) {
-            choiceRef.current = model.standard;
-            setChoice(model.standard);
-            await persist(s => { delete s.drafts.models; });
-        }
-        setError('');
-    }
-    catch (e) {
-        setError((e as Error).message);
-    }
-    finally {
-        setBusy(false);
-    } }
-    async function check(intent: Intent) { try {
-        const value = await request('GET', '/api/settings/models/tests/' + enc(intent.id));
-        setResult(value);
-        if (intent.status !== value.status)
-            await persist(s => { if (s.requests[intent.id])
-                s.requests[intent.id].status = value.status; });
-    }
-    catch (e) {
-        setResult({ status: 'unknown' });
-        setError('原测试未确认，保留请求 ID：' + (e as Error).message);
-    } }
-    async function run() {
-        if(browserPreview){setError("这是只读布局预览，请在 MyGO App 中执行真实操作");return;} if (!saved || busy || dirty)
-        return; setBusy(true); try {
-        let intent = probe;
-        if (intent) {
-            try {
-                await request('GET', '/api/settings/models/tests/' + enc(intent.id));
-                await check(intent);
-                return;
-            }
-            catch (e) {
-                if (!(e instanceof PilotError) || e.status !== 404)
-                    throw e;
-            }
-        }
-        else {
-            intent = { id: crypto.randomUUID(), kind: 'model', owner: 'models', status: 'prepared', body: { role: 'standard', version: saved.version } };
-            intent.body.requestId = intent.id;
-            await persist(s => { s.requests[intent!.id] = intent!; });
-            setProbe(intent);
-        }
-        const owned = intent;
-        const poll = setInterval(() => void check(owned), 1800);
-        try {
-            const value = await request('POST', '/api/settings/models/test', owned.body);
-            setResult(value);
-        }
-        finally {
-            clearInterval(poll);
-            await check(owned);
-        }
-    }
-    catch (e) {
-        setError((e as Error).message);
-    }
-    finally {
-        setBusy(false);
-    } }
-    const provider = saved?.providers.find(p => p.id === choice?.providerId);
-    if (editingProvider && saved)
-        return <div className="settings-content"><ProviderEditor model={saved} onSaved={setSaved} onClose={() => setEditingProvider(false)}/></div>;
-    return <div className="settings-layout"><aside className="settings-nav"><h2>设置</h2><button aria-pressed="true"><Settings />模型</button></aside><div className="settings-content"><h1>模型</h1><ErrorLine error={error} retry={() => void load()}/>{saved && choice ? <><div className="setting-row"><label htmlFor="provider">供应商</label><select id="provider" value={choice.providerId} onChange={e => { const p = saved.providers.find(v => v.id === e.target.value)!; setValue({ providerId: p.id, model: p.models[0] || '' }); }}>{saved.providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div><div className="setting-row"><label htmlFor="model">当前模型</label><select id="model" value={choice.model} onChange={e => setValue({ ...choice, model: e.target.value })}>{[...new Set([choice.model, ...(provider?.models || [])])].map(m => <option key={m} value={m}>{m}</option>)}</select></div><div className="setting-row"><span>连接测试</span><div><button className="subtle" disabled={busy || dirty} onClick={() => void run()}>{busy ? '测试中…' : probe ? '回查／原请求重试' : '测试模型'}</button>{result && <span className="probe-result">{({ succeeded: '连接成功', failed: '连接失败', running: '测试中', unknown: '结果未确认' } as Record<string, string>)[result.status] || '未确认'}</span>}</div></div>{probe && <button onClick={() => void check(probe)}>回查原测试</button>}{result && ['succeeded', 'failed'].includes(result.status) && <button onClick={() => { setProbe(undefined); setResult(undefined); }}>准备新的测试</button>}{dirty && <div className="save-bar"><button onClick={() => { setValue(saved.standard); }}>恢复已保存选择</button><button className="primary" disabled={busy} onClick={() => void save()}>保存</button></div>}<h2 className="providers-title">供应商</h2><button onClick={() => setEditingProvider(true)}>管理供应商</button>{saved.providers.map(p => <div className="provider-row" key={p.id}><span>{p.name}</span><span>{p.configured ? '已配置' : '未配置'}</span></div>)}</> : <p className="empty">正在读取模型配置</p>}</div></div>;
 }
 import { InboxMessages } from '../pages/InboxMessages';
 createRoot(document.getElementById('root')!).render(<App />);
