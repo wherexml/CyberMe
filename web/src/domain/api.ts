@@ -2,6 +2,7 @@ export class ApiError extends Error { constructor(public status:number,public da
 async function request<T>(path:string,method:string,body?:unknown,options?:RequestInit):Promise<T>{
  const headers=new Headers(options?.headers); if(body!==undefined&&!(body instanceof FormData))headers.set('Content-Type','application/json');
  const url=path.startsWith('/api/')||path==='/api'||path.startsWith('/files/')?path:'/api'+(path.startsWith('/')?path:'/'+path);
+ if(window.mygo&&location.pathname==='/pilot.html'&&!(body instanceof FormData)){const r=await window.mygo.call('Bridge.Request',method,url,body??null);if(r.status<200||r.status>=300)throw new ApiError(r.status,r.data);return r.data as T;}
  const res=await fetch(url,{...options,method,headers,credentials:'same-origin',body:body===undefined?undefined:body instanceof FormData?body:JSON.stringify(body)});
  const type=res.headers.get('content-type')||'';const data=type.includes('json')?await res.json():await res.text();if(!res.ok)throw new ApiError(res.status,data);return data as T;
 }
