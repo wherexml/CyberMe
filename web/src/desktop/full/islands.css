@@ -9,3 +9,22 @@ body.dark .desktop-island{--bg:#24272e;--text:#eee;--muted:#aaa;--border:#444}bo
 .desktop-wechat-reader{display:grid;grid-template-columns:minmax(130px,30%) 1fr;gap:20px}.desktop-wechat-reader>section{min-width:0;max-height:60vh;overflow:auto}.desktop-wechat-reader form{display:flex;flex-wrap:wrap;gap:8px}.desktop-wechat-reader .wechat-chat-row{display:block;width:100%;text-align:left;margin:5px 0}
 .markdown-document{margin:0 0 28px;padding:0;border:0!important;background:transparent!important}.markdown-document .settings-document-header{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #e7e7eb}.document-actions,.markdown-toolbar{display:flex;align-items:center;gap:8px}.markdown-toolbar{flex-wrap:wrap;padding:10px 0;border-bottom:1px solid #e7e7eb}.markdown-toolbar button{min-height:32px;padding:4px 10px}.markdown-source{display:block;box-sizing:border-box;width:100%;min-height:360px;padding:24px 8px;border:0!important;outline:none;resize:vertical;font:15px/1.8 ui-monospace,monospace;background:transparent;color:inherit}.markdown-document .settings-markdown{padding:20px 0;line-height:1.8;overflow-wrap:anywhere}
 #settings-window .feishu-sync .settings-select,#settings-window .feishu-sync .settings-input{min-height:40px;height:40px;padding:8px 12px;box-sizing:border-box}
+/* Identity documents: compact icons and self-contained Markdown layout. */
+#settings-window .desktop-identity .markdown-document{padding:0;margin:0 0 28px;border-radius:0;box-shadow:none;min-width:0}
+#settings-window .desktop-identity .markdown-toolbar{gap:4px}
+#settings-window .desktop-identity .markdown-toolbar button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:32px;padding:0;border:0;background:transparent;border-radius:6px}
+#settings-window .desktop-identity .markdown-toolbar button:hover{background:var(--subtle)}
+#settings-window .desktop-identity .markdown-toolbar button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+#settings-window .desktop-identity .settings-markdown{padding:16px 0;line-height:1.7;font-size:14px}
+#settings-window .desktop-identity .settings-markdown>:first-child{margin-top:0}
+#settings-window .desktop-identity .settings-markdown>:last-child{margin-bottom:0}
+#settings-window .desktop-identity .settings-markdown h1{font-size:22px;line-height:1.35;margin:24px 0 12px}
+#settings-window .desktop-identity .settings-markdown h2{font-size:19px;line-height:1.4;margin:20px 0 10px}
+#settings-window .desktop-identity .settings-markdown h3{font-size:16px;line-height:1.5;margin:16px 0 8px}
+#settings-window .desktop-identity .settings-markdown ul,#settings-window .desktop-identity .settings-markdown ol{margin:10px 0;padding-left:24px}
+#settings-window .desktop-identity .settings-markdown li{margin:4px 0}
+#settings-window .desktop-identity .settings-markdown blockquote{margin:12px 0;padding:2px 14px;border-left:3px solid var(--line);color:var(--muted)}
+#settings-window .desktop-identity .settings-markdown pre{padding:12px;background:var(--subtle);border-radius:6px;white-space:pre;overflow:auto}
+#settings-window .desktop-identity .settings-markdown .md-table-scroll{overflow-x:auto;max-width:100%}
+#settings-window .desktop-identity .settings-markdown table{border-collapse:collapse;width:100%}
+#settings-window .desktop-identity .settings-markdown th,#settings-window .desktop-identity .settings-markdown td{padding:8px 12px;border:1px solid var(--line);text-align:left}
