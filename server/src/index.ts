@@ -309,18 +309,41 @@ for(const row of db.prepare("SELECT * FROM calendar_intents WHERE state='creatin
 for(const automation of list('automations').filter(row=>row.status==='running'))put('automations',{...automation,status:'failed',lastError:'server_interrupted',nextRun:automation.enabled?nextScheduled(automation.schedule):undefined});
 for(const run of list('runs').filter(row=>row.status==='running'))put('runs',{...run,status:'failed',completedAt:now(),error:'server_interrupted',events:[...(run.events||[]),{type:'server_interrupted',at:now()}]});
 installChatContinuation(app);
+const backgroundTimers: ReturnType<typeof setInterval>[] = [];
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'){
-startInboxTriage();
-startScheduler();
-startConnectionScheduler();
-startSourceProcessing();
-startDefaultDrafts();
-startNotifications();
-startAutonomousDispatch();
+ backgroundTimers.push(startInboxTriage(),startScheduler(),startConnectionScheduler(),
+  startSourceProcessing(),startDefaultDrafts(),startNotifications(),startAutonomousDispatch());
 }
 // Allow Inbox-only preparation without enabling schedulers or external delivery.
 if(process.env.OPSTWIN_NO_BACKGROUND==='1'&&process.env.OPSTWIN_INBOX_BACKGROUND==='1'){
- startInboxTriage();
- startDefaultDrafts();
+ backgroundTimers.push(startInboxTriage(),startDefaultDrafts());
 }
-if(process.env.OPSTWIN_NO_LISTEN!=='1'){const port=Number(process.env.OPSTWIN_API_PORT||46110);if(!Number.isInteger(port)||port<10000||port>65535)throw new Error('Use a five-digit API port');const server=serve({fetch:app.fetch,port,hostname:'127.0.0.1'});console.log(`OpsTwin Advance API http://127.0.0.1:${port}`);process.on('SIGTERM',()=>server.close());}
+if(process.env.OPSTWIN_NO_LISTEN!=='1'){
+ const port=Number(process.env.OPSTWIN_API_PORT||46110);
+ if(!Number.isInteger(port)||port<10000||port>65535)throw new Error('Use a five-digit API port');
+ let stopping=false;
+ const server=serve({fetch:(request,env)=>stopping
+  ?new Response(JSON.stringify({error:'server_stopping',message:'服务正在重启，请稍后回查原请求'}),{status:503,headers:{'Content-Type':'application/json','Connection':'close','Retry-After':'3'}})
+  :app.fetch(request,env),port,hostname:'127.0.0.1'});
+ console.log(`OpsTwin Advance API http://127.0.0.1:${port}`);
+ const shutdown=(signal:string)=>{
+  if(stopping)return;
+  stopping=true;
+  for(const timer of backgroundTimers)clearInterval(timer);
+  console.log(JSON.stringify({event:'api_shutdown',signal,graceMs:3000}));
+  // SSE never ends on its own. Bound the drain, including already active Agent
+  // requests. Their durable ledgers are reconciled on startup, never replayed.
+  const deadline=setTimeout(()=>{
+   console.log(JSON.stringify({event:'api_shutdown_complete',drained:false}));
+   if('closeAllConnections' in server)server.closeAllConnections();
+   process.exit(0);
+  },3000);
+  server.close(()=>{
+   clearTimeout(deadline);
+   console.log(JSON.stringify({event:'api_shutdown_complete',drained:true}));
+   process.exit(0);
+  });
+ };
+ process.on('SIGTERM',()=>shutdown('SIGTERM'));
+ process.on('SIGINT',()=>shutdown('SIGINT'));
+}
