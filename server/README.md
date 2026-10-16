@@ -84,3 +84,5 @@ MyGO 桌面通过固定本机网关复用此API；公开隔离服务与正式工
 设置文档及Google OAuth入口、服务配置和真实授权边界见 [settings-documents-oauth](../docs/spec/settings-documents-oauth.md)。对话与MyGO共享版本化文档API；不得将知识实体全量注入MEMORY。
 
 API SIGTERM/SIGINT 最多3秒关闭，停止后台调度并终止残留SSE；重启沿原持久请求恢复，不能以进程存在判断健康。复验 `node scripts/runtime-shutdown-http-e2e.mjs`（隔离46374）；见 [关闭恢复旅程](../docs/journeys/runtime-shutdown-recovery.md)。
+
+- [飞书助手与收件箱工作方式对齐](../docs/journeys/feishu-assistant-parity.md)：按人/群查询、缩写、双向消息和关联工作核验、覆盖缺口与发送能力边界。

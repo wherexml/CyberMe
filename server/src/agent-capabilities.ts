@@ -52,6 +52,7 @@ export const applicationActions:Action[]=[
  a('connection_window','GET','/api/connections/:id/working-window','预览连接工作时段',['at']),
  a('connection_read','POST','/api/connections/:id/read-resource','读取已授权REST或Skill内容',[],{effect:'read'}),
  a('connection_mcp_call','POST','/api/connections/:id/call-tool','调用已检测且授权的MCP工具，凭据仅服务器注入',['tool','arguments'],{external:true}),
+ a('feishu_context','POST','/api/feishu/context','按姓名/已记录别名/群名查近三天消息；歧义只回候选。双向私聊、跨群发言和明确提及，包含覆盖缺口；默认实时核验，不发送',['query','days','targetId','refresh'],{effect:'read'}),
  a('sync_read','GET','/api/feishu/sync','同步设置、历史和缓存数据大小',['offset']),
  a('sync_records','GET','/api/feishu/sync/records','读取索引缓存资料',['kind','offset','limit']),
  a('sync_update','PATCH','/api/feishu/sync/settings','设置同步窗口与频率',['chatIntervalMinutes','messagesPerChat','chatLimit','meetingEnabled','meetingIntervalMinutes','minutesLimit','minutesMessageLimit','mailEnabled','mailIntervalMinutes','mailLimit','analysisDelayMinutes','sourceChatName','includeAttachments']),

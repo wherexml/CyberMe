@@ -1,3 +1,4 @@
+import {queryFeishuContext} from './feishu-context';
 import {CODE_ROOT,STANDALONE} from './runtime-paths';
 import {inboxTriageVersion} from './store';
 import {dispositionOf,compareInboxAttention} from '../../shared/inbox-surfacing';
@@ -152,6 +153,7 @@ installWorkspaceSearch(app);
 mountChatStatus(app);
 app.get('/api/conversations/primary',c=>{const id=meta<string|undefined>('primaryConversationId',undefined);return json(c,{conversationId:id,conversation:id?get('conversations',id):undefined});});
 app.post('/api/sync/feishu',async c=>json(c,await syncFeishu()));
+app.post('/api/feishu/context',async c=>{c.header('Cache-Control','no-store');return json(c,await queryFeishuContext(await body(c)));});
 app.get('/api/feishu/sync',c=>json(c,syncOverview(Math.max(0,Math.floor(Number(c.req.query('offset'))||0)))));
 app.patch('/api/feishu/sync/settings',async c=>{const saved=saveSyncSettings(await body(c));rescheduleSync();return json(c,saved);});
 app.post('/api/feishu/sync',async c=>{const input=await body(c);return json(c,startSync((input.scope||'all') as SyncScope));});
