@@ -1,0 +1,17 @@
+// Public persistent fixture: controlled replies through the real desktop and store.
+import {mkdir,readFile,writeFile,realpath} from 'node:fs/promises';
+import {resolve,extname} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {Hono} from 'hono';
+import {serve} from '@hono/node-server';
+const port=46404,scope=resolve('.local/acceptance/chat-order-20261017-v3'),assets=resolve('native/mygo/assets');
+await mkdir(scope,{recursive:true,mode:0o700});const db=new DatabaseSync(resolve(scope,'opstwin-advance.db'));db.exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); INSERT OR IGNORE INTO meta VALUES('initialized','true')");db.close();
+Object.assign(process.env,{OPSTWIN_DATA_DIR:scope,OPSTWIN_PRIVATE_DIR:scope,OPSTWIN_NO_BACKGROUND:'1',OPSTWIN_NO_LISTEN:'1',OPSTWIN_NOTIFICATION_DELIVERY:'off',OPSTWIN_AUTONOMOUS_DELIVERY:'off'});
+const S=await import('../server/src/store.ts');S.patchSettings({identity:{name:'公开排序验收',language:'zh-CN'}});S.put('conversations',{id:'order-chat',title:'公开排序验收'});S.setMeta('primaryConversationId','order-chat');
+const {app}=await import('../server/src/index.ts');let saved={posts:0,requests:{}};try{saved=JSON.parse(await readFile(resolve(scope,'receipts.json'),'utf8'))}catch{}
+const persist=()=>writeFile(resolve(scope,'receipts.json'),JSON.stringify(saved));const gate=new Hono();
+gate.use('*',async(c,next)=>{if(c.req.header('host')!==`127.0.0.1:${port}`||c.req.header('origin')&&c.req.header('origin')!==`http://127.0.0.1:${port}`)return c.json({error:'origin_denied'},403);await next()});
+gate.post('/api/chat',async c=>{const b=await c.req.json();saved.posts++;if(saved.requests[b.requestId])return c.json({error:'duplicate_post'},409);const userMessage=S.put('messages',{id:'u-'+b.requestId,requestId:b.requestId,conversationId:b.conversationId,role:'user',content:b.message});const r=saved.requests[b.requestId]={status:'running',conversationId:b.conversationId,userMessage,runId:'r-'+b.requestId};await persist();await new Promise(r=>setTimeout(r,2500));if(b.message.includes('失败')||b.message.includes('部分')){r.status=b.message.includes('失败')?'failed':'partial';await persist();return c.json({error:r.status},503)}const assistantMessage=S.put('messages',{id:'a-'+b.requestId,runId:r.runId,conversationId:b.conversationId,role:'assistant',content:'已收到：'+b.message});r.status='succeeded';r.result={conversationId:b.conversationId,userMessage,assistantMessage,run:{id:r.runId},artifacts:[]};await persist();return c.json(r.result)});
+gate.get('/api/chat/requests/:id',c=>saved.requests[c.req.param('id')]?c.json(saved.requests[c.req.param('id')]):c.json({error:'not_found'},404));
+gate.get('/evidence',c=>c.json(saved));gate.all('/api/*',c=>c.req.method==='GET'?app.fetch(c.req.raw):c.json({error:'fixture_write_denied'},403));
+gate.get('/favicon.ico',c=>c.body(null,204));gate.get('*',async c=>{const p=resolve(assets,'.'+decodeURIComponent(c.req.path==='/'?'/desktop.html':c.req.path));if(!p.startsWith(assets+'/')||await realpath(p)!==p)return c.text('denied',403);c.header('Cache-Control','no-store');c.header('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.json':'application/json'})[extname(p)]||'application/octet-stream');return c.body(await readFile(p))});serve({fetch:gate.fetch,hostname:'127.0.0.1',port});console.log('Public persistent chat fixture '+port);

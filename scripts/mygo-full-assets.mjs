@@ -39,6 +39,7 @@ export async function fullAssets(root,assets){
  ["q('.chat-layout').classList.toggle('sessions-docked',opened&&state.keepVisible)","q('.chat-layout').classList.toggle('sessions-docked',opened)"],
  ["hooks.select(id,state.drafts[id]||'',target);","hooks.select(id,state.drafts[id]||'',target);window.dispatchEvent(new CustomEvent('desktop-session-selected',{detail:{id,target}}));"]]);
  await patch('macos-ui-study.js',[
+ ["renderChatRuns(root);", "renderChatRuns(root);window.OpsTwinsChatTimeline.arrange(root,messages,window.OpsTwinsDesignChat.entries().filter(r=>r.conversationId===chatConversation||!r.conversationId&&chatConversation===window.OpsTwinsChatSessions.main()),appendTime);"],
  ["const details=node('details');details.append(node('summary','',r.title||r.message.slice(0,70)),node('pre','',r.message));context.append(details);", "if(r.ideaId){const details=node('details');details.append(node('summary','',r.title||r.message.slice(0,70)),node('pre','',r.message));context.append(details)}else{context.classList.remove('chat-task-context');context.classList.add('chat-real-text');context.textContent=r.message;}"],
  ["}else{\n   const state=node('div','chat-run-status',r.status==='running'?'正在处理…':r.error||'等待处理');", "}else if(['prepared','running'].includes(r.status)){body.classList.add('chat-thinking');const state=node('span','chat-thinking-dots');state.setAttribute('role','status');state.setAttribute('aria-label',window.OpsTwinsDesktop.translate('正在思考'));for(let i=0;i<3;i++){const dot=node('i');dot.setAttribute('aria-hidden','true');state.append(dot)}body.append(state);}else{\n   const state=node('div','chat-run-status',r.error||'结果未确认');"],
  ["if(!visible.some(x=>x.id===selected))selected=visible[0]?.id;", "if(!data.inbox.some(x=>x.id===selected))selected=visible[0]?.id;"],
@@ -53,7 +54,7 @@ export async function fullAssets(root,assets){
  const island=bundle.match(/<script[^>]*src="([^"]+)"/)[1];
  let html=await readFile(resolve(source,'macos-ui-study.html'),'utf8');
  const scripts=[...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m=>m[1]).filter(p=>!p.startsWith('../../'));
- const sequence=[];for(const s of scripts){if(s==='macos-design-chat.js')sequence.push('full/chat.js');else if(s==='macos-inbox-preview.js')sequence.push('full/inbox-preview.js');else sequence.push(s);if(s==='macos-settings-study.js')sequence.push('full/settings.js')}
+ const sequence=[];for(const s of scripts){if(s==='macos-ui-study.js')sequence.push('full/chat-timeline.js');if(s==='macos-design-chat.js')sequence.push('full/chat.js');else if(s==='macos-inbox-preview.js')sequence.push('full/inbox-preview.js');else sequence.push(s);if(s==='macos-settings-study.js')sequence.push('full/settings.js')}
  sequence.push('full/records.js','full/workspace.js','full/inbox.js');
  html=html.replace(/<script src="[^"]+"><\/script>/g,'');
  const css=[...bundle.matchAll(/<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g)].map(m=>`<link rel="stylesheet" href="${m[1]}">`).join('');
