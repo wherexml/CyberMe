@@ -1,9 +1,10 @@
 /** Presentation-only adaptation of opstwin's sqlite-feishu-store profile resolution.
  * Never writes to the sibling database or changes inbox assessment/workflow state. */
 import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
+import {SOURCE_DATA} from './runtime-paths';
+import {join} from 'node:path';
 import type { InboxItem } from '../../shared/types';
-const sourcePath = fileURLToPath(new URL('../../../opstwin/server/data/dev.db', import.meta.url));
+const sourcePath = join(SOURCE_DATA,'dev.db');
 const parse = (v: any) => { try { return typeof v === 'string' ? JSON.parse(v) : v || {}; } catch { return {}; } };
 export function profileAvatar(p: any = {}): string {
  const value = p.avatar_url || p.avatar_thumb || p.avatarUrl || p.avatar?.avatar_72 || p.avatar?.avatar_240 || p.avatar?.avatar_640 || p.avatar?.avatar_origin || '';

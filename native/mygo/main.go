@@ -59,6 +59,7 @@ func localURL(raw string) bool {
 	return err == nil && u.Scheme == "mygo" && u.Host == "localhost" && u.User == nil
 }
 func main() {
+	if err := configureRuntime(); err != nil { log.Fatal(err) }
 	lock, err := singleInstance()
 	if err != nil {
 		log.Fatal(err)

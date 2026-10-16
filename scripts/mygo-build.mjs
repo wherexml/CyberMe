@@ -36,18 +36,20 @@ const vite=spawnSync(resolve(root,'node_modules/.bin/vite'),['build','--config',
 await cp(resolve(root,'.local/mygo-web'),assets,{recursive:true});
 await fullAssets(root,assets);
 await cp(resolve(root,'native/mygo/licenses'),resolve(assets,'licenses'),{recursive:true});
-const live=process.argv.includes('--workspace');
-const app=resolve(root,live?'.local/apps/OpsTwins MyGO.app':'.local/apps/OpsTwins MyGO QA.app');
+const standalone=process.argv.includes('--standalone');
+const live=standalone||process.argv.includes('--workspace');
+const app=resolve(root,standalone?'.local/apps/OpsTwins Standalone.app':live?'.local/apps/OpsTwins MyGO.app':'.local/apps/OpsTwins MyGO QA.app');
 await mkdir(resolve(app,'Contents/MacOS'),{recursive:true});
 await mkdir(resolve(app,'Contents/Resources'),{recursive:true});
 const iconset=resolve(root,'.local/mygo-brand.iconset'),sharp=(await import('sharp')).default;
 await mkdir(iconset,{recursive:true});
 for(const size of [16,32,128,256,512])for(const scale of [1,2])await sharp(resolve(root,'native/macos/assets/opstwins.svg')).resize(size*scale,size*scale).png().toFile(resolve(iconset,`icon_${size}x${size}${scale===2?'@2x':''}.png`));
 const iconResult=spawnSync('iconutil',['-c','icns',iconset,'-o',resolve(app,'Contents/Resources/OpsTwins.icns')],{stdio:'inherit'});if(iconResult.status!==0)throw Error('Application icon build failed');
-const result=spawnSync('go',['build','-trimpath',`-ldflags=-X github.com/egoist/mygo.production=1 -X main.workspaceRoot=${root} -X main.runtimeNode=${process.execPath} -X main.serviceScope=${live?'mygo-desktop':'mygo-pilot-public-v2'} -X main.servicePort=${live?'46312':'46310'} -X main.clientScope=${live?'mygo-workspace':'mygo-full-qa'}`,'-o',resolve(app,'Contents/MacOS/opstwins-mygo.next'),'.'],{cwd:resolve(root,'native/mygo'),env:{...process.env,GOTOOLCHAIN:'go1.27.1'},stdio:'inherit'});
+const result=spawnSync('go',['build','-trimpath',`-ldflags=-X github.com/egoist/mygo.production=1 -X main.workspaceRoot=${standalone?'':root} -X main.runtimeNode=${standalone?'':process.execPath} -X main.runtimeMode=${standalone?'standalone':'workspace'} -X main.serviceScope=${live?'mygo-desktop':'mygo-pilot-public-v2'} -X main.servicePort=${live?'46312':'46310'} -X main.clientScope=${live?'mygo-workspace':'mygo-full-qa'}`,'-o',resolve(app,'Contents/MacOS/opstwins-mygo.next'),'.'],{cwd:resolve(root,'native/mygo'),env:{...process.env,GOTOOLCHAIN:'go1.27.1'},stdio:'inherit'});
 if(result.status!==0)process.exit(result.status||1);
 await rename(resolve(app,'Contents/MacOS/opstwins-mygo.next'),resolve(app,'Contents/MacOS/opstwins-mygo'));
 await writeFile(resolve(app,'Contents/Info.plist'),`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.opstwins.mygo.${live?'full':'qa'}</string><key>CFBundleName</key><string>OpsTwins MyGO${live?'':' QA'}</string><key>CFBundleExecutable</key><string>opstwins-mygo</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleIconFile</key><string>OpsTwins.icns</string><key>CFBundleVersion</key><string>1</string><key>NSHighResolutionCapable</key><true/><key>NSMicrophoneUsageDescription</key><string>OpsTwins 使用麦克风进行听写；录音仅在内存中转写。</string></dict></plist>`);
+if(standalone){const pack=spawnSync(process.execPath,[resolve(root,'scripts/mygo-package-runtime.mjs'),app],{cwd:root,stdio:'inherit'});if(pack.status!==0)process.exit(pack.status||1);}
 const sign=spawnSync('codesign',['--force','--deep','--sign','-',app],{stdio:'inherit'});if(sign.status!==0)process.exit(sign.status||1);
 const bytes=await readFile(resolve(app,'Contents/MacOS/opstwins-mygo'));
 await mkdir(resolve(root,'output/mygo-1007'),{recursive:true});

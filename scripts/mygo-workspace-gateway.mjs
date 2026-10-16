@@ -1,9 +1,10 @@
 // Connect the desktop to the existing workspace API. Does not import, copy, or open its database.
+import {homedir} from 'node:os';
 import {createServer} from 'node:http';
 import {mkdir,writeFile,lstat,realpath} from 'node:fs/promises';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {resolve,dirname} from 'node:path';import {fileURLToPath} from 'node:url';
-const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),scope=resolve(root,'.local/mygo-desktop');
+const root=process.env.OPSTWIN_STANDALONE==='1'?resolve(homedir(),'Library/Application Support/OpsTwins'):resolve(dirname(fileURLToPath(import.meta.url)),'..'),scope=resolve(root,'.local/mygo-desktop');
 await mkdir(scope,{recursive:true,mode:0o700});const st=await lstat(scope);if(await realpath(scope)!==scope||st.uid!==process.getuid()||(st.mode&0o777)!==0o700)throw Error('Invalid desktop scope');
 const token=randomBytes(32).toString('hex'),allowed=/^\/(api\/(health|bootstrap|diagnostics|agent|chat|conversations|inbox|inbox-source-rules|ideas|tasks|projects|memories|settings|connections|feishu|wechat|sources|source-message-assets|runs|messages|activities|activity|artifacts|files|voice|calendar|automations|autonomous-dispatches|notifications|workspace|native)(\/|$)|files\/[A-Za-z0-9_-]+$)/;
 const server=createServer(async(req,res)=>{try{

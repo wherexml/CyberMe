@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { realpathSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
-const root=fileURLToPath(new URL('../../../opstwin/server/data',import.meta.url));
+import {SOURCE_DATA} from './runtime-paths';
+const root=SOURCE_DATA;
 /** Resolve only attachment descriptors already indexed by the sibling, inside its data root. */
 export function sourceMessageAsset(messageId:string,fileKey:string) {
  const source=new DatabaseSync(resolve(root,'dev.db'),{readOnly:true});

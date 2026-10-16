@@ -17,6 +17,43 @@ import (
 
 // Set at build time: Finder does not inherit an interactive shell's PATH.
 var runtimeNode string
+var runtimeMode string
+var runtimeCodeRoot string
+
+func configureRuntime() error {
+	if runtimeMode != "standalone" {
+		runtimeCodeRoot = workspaceRoot
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	runtimeCodeRoot = filepath.Clean(filepath.Join(filepath.Dir(executable), "../Resources/runtime"))
+	runtimeNode = filepath.Join(runtimeCodeRoot, "bin/node")
+	workspaceRoot = filepath.Join(home, "Library/Application Support/OpsTwins")
+	if err = os.MkdirAll(workspaceRoot, 0700); err != nil {
+		return err
+	}
+	actual, err := filepath.EvalSymlinks(workspaceRoot)
+	if err != nil || actual != workspaceRoot {
+		return errors.New("invalid_standalone_state_path")
+	}
+	st, err := os.Stat(workspaceRoot)
+	if err != nil {
+		return err
+	}
+	native, ok := st.Sys().(*syscall.Stat_t)
+	if !ok || native.Uid != uint32(os.Getuid()) || st.Mode().Perm() != 0700 {
+		return errors.New("invalid_standalone_state_permissions")
+	}
+	return nil
+}
+
 var runtimeMu sync.Mutex
 var runtimeChecked time.Time
 var runtimeFailure error
@@ -33,11 +70,12 @@ func runtimeHealth(port string, token string) bool {
 	}
 	defer res.Body.Close()
 	var body struct {
-		OK       bool   `json:"ok"`
-		Name     string `json:"name"`
-		Database string `json:"database"`
+		OK          bool   `json:"ok"`
+		Name        string `json:"name"`
+		Database    string `json:"database"`
+		RuntimeMode string `json:"runtimeMode"`
 	}
-	return res.StatusCode == 200 && json.NewDecoder(io.LimitReader(res.Body, 8192)).Decode(&body) == nil && body.OK && body.Name == "OpsTwin Advance" && body.Database == "independent"
+	return res.StatusCode == 200 && json.NewDecoder(io.LimitReader(res.Body, 8192)).Decode(&body) == nil && body.OK && body.Name == "OpsTwin Advance" && body.Database == "independent" && (runtimeMode != "standalone" || body.RuntimeMode == "standalone")
 }
 func runtimeGatewayHealthy() bool {
 	link, err := readServiceLink()
@@ -75,7 +113,7 @@ func runtimeStart(root *os.Root, name, entry string) error {
 	if st, err := os.Stat(runtimeNode); err != nil || !st.Mode().IsRegular() || st.Mode()&0111 == 0 {
 		return errors.New("node_runtime_missing")
 	}
-	if st, err := os.Stat(filepath.Join(workspaceRoot, entry)); err != nil || !st.Mode().IsRegular() {
+	if st, err := os.Stat(filepath.Join(runtimeCodeRoot, entry)); err != nil || !st.Mode().IsRegular() {
 		return errors.New("workspace_runtime_missing")
 	}
 	logFile, err := runtimePrivateFile(root, name+".log")
@@ -93,15 +131,18 @@ func runtimeStart(root *os.Root, name, entry string) error {
 		args = []string{"--import", "tsx", entry}
 	}
 	cmd := exec.Command(runtimeNode, args...)
-	cmd.Dir = workspaceRoot
+	cmd.Dir = runtimeCodeRoot
 	// Do not inherit fixture ports, alternate data roots or test-only configuration.
 	for _, v := range os.Environ() {
-		if !strings.HasPrefix(v, "OPSTWIN_") && !strings.HasPrefix(v, "NODE_OPTIONS=") && !strings.HasPrefix(v, "PATH=") {
+		if !strings.HasPrefix(v, "OPSTWIN_") && !strings.HasPrefix(v, "NODE_OPTIONS=") && !strings.HasPrefix(v, "NODE_PATH=") && !strings.HasPrefix(v, "PATH=") {
 			cmd.Env = append(cmd.Env, v)
 		}
 	}
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(runtimeNode)+":"+os.Getenv("HOME")+"/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
 	cmd.Env = append(cmd.Env, "OPSTWIN_NO_BACKGROUND=1", "OPSTWIN_INBOX_BACKGROUND=1", "OPSTWIN_API_PORT=46110")
+	if runtimeMode == "standalone" {
+		cmd.Env = append(cmd.Env, "OPSTWIN_STANDALONE=1")
+	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

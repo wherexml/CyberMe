@@ -1,3 +1,4 @@
+import {CODE_ROOT,STANDALONE} from './runtime-paths';
 import {inboxTriageVersion} from './store';
 import {dispositionOf,compareInboxAttention} from '../../shared/inbox-surfacing';
 import {googleStatus,beginGoogle,finishGoogle,checkGoogle,disconnectGoogle} from './google-oauth';
@@ -98,7 +99,7 @@ function validate(type:string,input:any,old:any={}) {
  return data;
 }
 
-app.get('/api/health',c=>json(c,{ok:true,name:'OpsTwin Advance',timestamp:now(),revision:revision(),database:'independent'}));
+app.get('/api/health',c=>json(c,{ok:true,name:'OpsTwin Advance',timestamp:now(),revision:revision(),database:'independent',runtimeMode:STANDALONE?'standalone':'workspace'}));
 app.get('/api/agent/capabilities',c=>json(c,capabilityCatalog()));
 app.get('/api/inbox/query',c=>json(c,queryInbox(c.req.query())));
 app.post('/api/inbox/bulk-status',async c=>json(c,await bulkInboxStatus(await body(c))));
@@ -109,7 +110,7 @@ app.post('/api/artifacts/:id/restore',c=>{const item=need('artifacts',c.req.para
 app.get('/api/voice/status',c=>json(c,voiceStatus()));
 app.post('/api/voice/transcribe',async c=>{let form:FormData;try{form=await c.req.formData();}catch{throw new ApiError(400,'voice_form_required','语音上传需要multipart表单');}return json(c,await transcribeVoice(form.get('file') as File,c.req.raw.signal));});
 app.get('/api/bootstrap',c=>json(c,bootstrap()));
-app.get('/api/diagnostics',async c=>{const config=llmConfig();let auth:any;try{auth=await feishuAuth(true);}catch(e){auth={ready:false,error:String(e)};}return json(c,{pi:{installed:true,version:JSON.parse(readFileSync(ROOT+'/node_modules/@earendil-works/pi-coding-agent/package.json','utf8')).version,engine:'PI',restrictedTools:true},llm:{configured:!!config,baseUrl:config?.baseUrl,model:config?.model,deepModel:config?.deepModel},feishu:auth,import:meta<any>('sources',{}).counts||{},revision:revision(),runtime:{apiPort:46110,host:'127.0.0.1',scheduler:true}});});
+app.get('/api/diagnostics',async c=>{const config=llmConfig();let auth:any;try{auth=await feishuAuth(true);}catch(e){auth={ready:false,error:String(e)};}return json(c,{pi:{installed:true,version:JSON.parse(readFileSync(CODE_ROOT+'/node_modules/@earendil-works/pi-coding-agent/package.json','utf8')).version,engine:'PI',restrictedTools:true},llm:{configured:!!config,baseUrl:config?.baseUrl,model:config?.model,deepModel:config?.deepModel},feishu:auth,import:meta<any>('sources',{}).counts||{},revision:revision(),runtime:{apiPort:46110,host:'127.0.0.1',scheduler:true}});});
 app.get('/api/autonomous-dispatches',c=>json(c,autonomousState()));
 app.post('/api/autonomous-dispatches/tick',async c=>{await tickAutonomousDispatches();return json(c,autonomousState());});
 app.post('/api/autonomous-dispatches/:id/cancel',c=>json(c,cancelAutonomousDispatch(c.req.param('id'))));

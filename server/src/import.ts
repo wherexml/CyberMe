@@ -1,3 +1,4 @@
+import {SOURCE_DATA} from './runtime-paths';
 import { extractMessageText } from './feishu-visible-text';
 import { presentMessage } from './message-presentation';
 import { DatabaseSync } from 'node:sqlite';
@@ -10,7 +11,7 @@ export function textContent(value:any):string {if(typeof value==='string'){try {
 export function mailBody(payload:any) {const content=payload.body_plain_text||payload.body?.plain_text||payload.body?.text||payload.body||'';if(typeof content!=='string')return textContent(content);if(payload.body_plain_text&&/^[A-Za-z0-9+/_=\-\s]+$/.test(content)){try{const decoded=Buffer.from(content,'base64url').toString('utf8');if(decoded&&!decoded.includes('�')&&Buffer.from(decoded,'utf8').length>0)return decoded;}catch{}}return content;}
 
 export function importSibling() {
- const sourcePath=join(ROOT,'../opstwin/server/data/dev.db');
+ const sourcePath=join(SOURCE_DATA,'dev.db');
  if(!existsSync(sourcePath)) {const result={status:'setup_required',path:sourcePath,importedAt:now(),message:'姊妹项目数据库不存在'};setMeta('sources',result);return result;}
  const source=new DatabaseSync(sourcePath,{readOnly:true});source.exec('PRAGMA query_only=ON; BEGIN;');
  const errors:any[]=[];const counts:Record<string,number>={};let imported=0,retained=0;
@@ -56,6 +57,6 @@ export function sourceDetail(kind:string,id:string) {const canonical=kind==='mai
 
 /** Read-only lazy source history; does not initialize the sibling app or replay its jobs. */
 export function sourceChatMessages(id:string,offset=0,limit=80){
- if(!Number.isInteger(offset)||offset<0||!Number.isInteger(limit)||limit<1||limit>200)throw new Error('Message pagination requires offset>=0 and limit=1–200');const sources=meta<any>('sources',{});const chat=(sources.chats||[]).find((row:any)=>row.id===id||`chat-${row.id}`===id);if(!chat)return undefined;const path=join(ROOT,'../opstwin/server/data/dev.db');if(!existsSync(path))throw new Error('Sibling source database is unavailable');const source=new DatabaseSync(path,{readOnly:true});source.exec('PRAGMA query_only=ON; BEGIN;');
+ if(!Number.isInteger(offset)||offset<0||!Number.isInteger(limit)||limit<1||limit>200)throw new Error('Message pagination requires offset>=0 and limit=1–200');const sources=meta<any>('sources',{});const chat=(sources.chats||[]).find((row:any)=>row.id===id||`chat-${row.id}`===id);if(!chat)return undefined;const path=join(SOURCE_DATA,'dev.db');if(!existsSync(path))throw new Error('Sibling source database is unavailable');const source=new DatabaseSync(path,{readOnly:true});source.exec('PRAGMA query_only=ON; BEGIN;');
  try{const totalCount=Number((source.prepare('SELECT COUNT(*) AS count FROM feishu_messages WHERE chat_id=?').get(chat.id) as any).count);const selected=source.prepare('SELECT id,chat_id,sent_at,payload FROM feishu_messages WHERE chat_id=? ORDER BY sent_at DESC,id DESC LIMIT ? OFFSET ?').all(chat.id,limit,offset) as any[];const names=new Map((sources.persons||[]).map((person:any)=>[person.openId||person.id,typeof person.name==='string'?person.name:person.name?.['zh-CN']||person.name?.zh||person.name?.en||person.id]));const messages=selected.map(row=>{try{const value=parse(row.payload);const senderId=value.sender?.id||value.sender_id||'';return {id:row.id,sentAt:row.sent_at,text:extractMessageText(value.body?.content||value.content||value.text||'',value.msg_type||value.type,value.mentions||[]),type:value.msg_type||value.type||'text',senderId,senderName:value.sender?.name||names.get(senderId)||senderId,sourceSystem:'opstwin',sourceId:row.id,body:value.body,attachments:(value.local_attachments||[]).map((a:any)=>({name:a.name||a.file_key,mimeType:a.mime_type||'application/octet-stream',sizeBytes:a.size_bytes||0,url:`/api/source-message-assets/${encodeURIComponent(row.id)}/${encodeURIComponent(a.file_key)}`}))};}catch(e){return {id:row.id,sentAt:row.sent_at,error:String(e),sourceSystem:'opstwin',sourceId:row.id};}});return {chatId:chat.id,sourceSystem:'opstwin',sourceRead:'read_only_sqlite',sourceReadAt:now(),totalCount,loadedCount:messages.length,offset,limit,order:'sent_at_desc_id_desc',hasMore:offset+messages.length<totalCount,nextOffset:offset+messages.length,messages:messages.map(m=>presentMessage(m))};}finally{try{source.exec('ROLLBACK');}finally{source.close();}}
 }

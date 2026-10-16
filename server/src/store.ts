@@ -5,11 +5,11 @@ import { normalizeInboxAttachments } from '../../shared/attachments';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {ROOT} from './runtime-paths';
+export {ROOT} from './runtime-paths';
 import { randomUUID, createHash } from 'node:crypto';
 import type { Bootstrap, Settings } from '../../shared/types';
 
-export const ROOT = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 export const DATA = process.env.OPSTWIN_DATA_DIR ? resolve(process.env.OPSTWIN_DATA_DIR) : join(ROOT, 'data');
 if (!DATA.startsWith(ROOT + '/')) throw new Error('Data directory must stay inside this project');
 mkdirSync(DATA, { recursive: true, mode: 0o700 });
