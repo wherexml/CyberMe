@@ -39,12 +39,14 @@ export async function fullAssets(root,assets){
  ["q('.chat-layout').classList.toggle('sessions-docked',opened&&state.keepVisible)","q('.chat-layout').classList.toggle('sessions-docked',opened)"],
  ["hooks.select(id,state.drafts[id]||'',target);","hooks.select(id,state.drafts[id]||'',target);window.dispatchEvent(new CustomEvent('desktop-session-selected',{detail:{id,target}}));"]]);
  await patch('macos-ui-study.js',[
+ ["const details=node('details');details.append(node('summary','',r.title||r.message.slice(0,70)),node('pre','',r.message));context.append(details);", "if(r.ideaId){const details=node('details');details.append(node('summary','',r.title||r.message.slice(0,70)),node('pre','',r.message));context.append(details)}else{context.classList.remove('chat-task-context');context.classList.add('chat-real-text');context.textContent=r.message;}"],
+ ["}else{\n   const state=node('div','chat-run-status',r.status==='running'?'正在处理…':r.error||'等待处理');", "}else if(['prepared','running'].includes(r.status)){body.classList.add('chat-thinking');const state=node('span','chat-thinking-dots');state.setAttribute('role','status');state.setAttribute('aria-label',window.OpsTwinsDesktop.translate('正在思考'));for(let i=0;i<3;i++){const dot=node('i');dot.setAttribute('aria-hidden','true');state.append(dot)}body.append(state);}else{\n   const state=node('div','chat-run-status',r.error||'结果未确认');"],
  ["if(!visible.some(x=>x.id===selected))selected=visible[0]?.id;", "if(!data.inbox.some(x=>x.id===selected))selected=visible[0]?.id;"],
  ["filter==='quiet'?x.quiet:filter==='all'?true:x.attention", "filter==='verify'?window.OpsTwinsBusinessUI.needsInboxVerification(x):filter==='quiet'?x.quiet:filter==='all'?true:x.attention"],
 
  ["function node(tag,cls,text){", "prefs.language=data.settings.identity.language||prefs.language;prefs.font=15;prefs.reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;function node(tag,cls,text){"],
  ["function apply(){", "function apply(){window.OpsTwinsDesktop.localizeStatic?.();"],
- ["else messages=messages.slice(-30);", ""],["if(r.status==='unknown')body.append", "if(r.status==='unknown'&&r.missing)body.append(btn('重试原请求',()=>void window.OpsTwinsDesignChat.retry(r),'chat-retry'));if(['unknown','running'].includes(r.status))body.append"],["appendCards(real,false);appendCards(samples,true);", "appendCards(real,false);if(!real.length)list.append(node('div','data-empty','还没有建议，点击生成建议'));"],
+ ["else messages=messages.slice(-30);", ""],["if(r.status==='unknown')body.append", "if(r.status==='unknown'&&r.missing)body.append(btn('重试原请求',()=>void window.OpsTwinsDesignChat.retry(r),'chat-retry'));if(r.status==='unknown')body.append"],["appendCards(real,false);appendCards(samples,true);", "appendCards(real,false);if(!real.length)list.append(node('div','data-empty','还没有建议，点击生成建议'));"],
  ["$('#attachment-info').onclick=()=>toast('附件入口预览，设计稿不会上传文件');",""],
  ]);
  const bundle=await readFile(resolve(assets,'desktop-islands.html'),'utf8');

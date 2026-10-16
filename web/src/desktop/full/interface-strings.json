@@ -928,5 +928,6 @@
   "此格式可以保存后查看": "Save this format to view it.",
   "关闭设置": "Close settings",
   "设置分组": "Settings sections",
-  "当前对话没有已保存消息": "No saved messages in this conversation"
+  "当前对话没有已保存消息": "No saved messages in this conversation",
+  "正在思考": "Thinking"
 }
