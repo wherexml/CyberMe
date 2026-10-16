@@ -64,6 +64,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer lock.Close()
+	go func() { if err := ensureDesktopRuntime(); err != nil { log.Printf("desktop startup: %v", err) } }()
 	web, err := fs.Sub(assets, "assets")
 	if err != nil {
 		log.Fatal(err)

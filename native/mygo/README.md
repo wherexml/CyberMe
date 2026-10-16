@@ -19,3 +19,7 @@
 - 实际 App 的系统选择器、Hide/恢复、硬件听写及视觉另验；证据留本项目 output，不能把浏览器结果当作原生通过。
 
 Go 持连接 token；本机 state 0700/0600 + revision CAS + 原子替换。业务改动经 canonical API，草稿与原请求先耐久。完整契约：[桌面规格](../../docs/spec/mygo-desktop.md)、[验收旅程](../../docs/journeys/mygo-full-copy.md)、[85项表](../../docs/acceptance/mygo-full-copy-matrix.md)。历史先导结论保留于 [mygo-pilot](../../docs/journeys/mygo-pilot.md)。
+
+## Installed app automatic startup (2026-10-16)
+
+The workspace build now starts the missing API (46110) and capability gateway (46312) itself, waits for health and reuses existing services. Finder launch does not need `mygo-launch.mjs`. Services survive normal Quit; the next request recovers a stopped service without replaying business POSTs. QA builds retain manual isolated services. This local installation still requires this repository and the absolute Node executable captured at build time. Logs are private under `.local/mygo-runtime/`. See [managed startup journey](../../docs/journeys/mygo-managed-startup.md) for failure boundaries and installed-app evidence. The build script produces an ad-hoc candidate; release signing/notarization must follow for newly built bytes.

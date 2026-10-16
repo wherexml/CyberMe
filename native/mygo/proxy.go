@@ -26,6 +26,12 @@ func allowedProduct(method, path string) bool {
 	return false
 }
 func serviceLink() (Link, error) {
+	if err := ensureDesktopRuntime(); err != nil {
+		return Link{}, err
+	}
+	return readServiceLink()
+}
+func readServiceLink() (Link, error) {
 	raw, err := privateReadScope(serviceScope, "connection.json", 4096)
 	if err != nil {
 		return Link{}, errors.New("service_not_connected")
@@ -48,7 +54,9 @@ func productProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	link, err := serviceLink()
 	if err != nil {
-		http.Error(w, "service_not_connected", 503)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(503)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "desktop_startup_failed", "message": "本机服务未就绪，请重试连接。" + err.Error()})
 		return
 	}
 	target := url.URL{Scheme: "http", Host: "127.0.0.1:" + servicePort, Path: r.URL.Path, RawQuery: r.URL.RawQuery}

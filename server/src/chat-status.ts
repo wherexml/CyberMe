@@ -45,6 +45,6 @@ export function mountChatStatus(app:Hono){
   return c.json(publicValue({requestId:id,status,conversationId:saved.conversationId,runId:saved.runId,
    userMessage:saved.userMessage,...(status==='succeeded'?{result:saved.result}:{}),
    ...(status==='partial'?{completedWrites:saved.completedWrites}:{}),
-   ...(status==='failed'?{error:'agent_failed'}:{}),runStatus:run?.status}));
+   ...(status==='failed'?{error:'agent_failed',failureCode:/GoUsageLimitError|usage limit exceeded|insufficient_quota/i.test(String(run?.error||''))?'model_quota_exceeded':'agent_failed'}:{}),runStatus:run?.status}));
  });
 }
