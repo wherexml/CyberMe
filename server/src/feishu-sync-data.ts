@@ -78,6 +78,26 @@ export async function collectFeishu(scope:SyncScope='chats',progress:(patch:any)
  const fail=(stage:string,e:any,sourceId?:string)=>{result.failures.push({stage,...safeError(e),...(sourceId?{sourceId}: {})});progress({failures:result.failures,counts:result.counts});};
  const call=async(args:string[],timeout=45000)=>{check();let e:any;if(args[0]==='mail'){const r=await command(process.env.OPSTWIN_LARK_CLI||'/Users/steve/.local/bin/lark-cli',[...args,'--as','user','--format','json'],timeout);let parsed:any;try{parsed=JSON.parse(r.stdout)}catch{throw new ApiError(502,'invalid_mail_response','邮箱返回格式无效')}if(r.exitCode!==0||parsed.ok===false||parsed.error)throw new ApiError(502,parsed.error?.subtype||'mail_read_failed','邮箱读取失败');e=parsed.ok===true?parsed:{data:parsed};}else e=await lark([...args,'--as','user','--format','json'],timeout);check();result.receivedBytes+=Buffer.byteLength(JSON.stringify(e.data??{}));return e;};
  async function pages(args:string[],limit:number,label:string){const out:any[]=[];let token:string|undefined;const seen=new Set<string>();do{const e=await call([...args,...(token?['--page-token',token]:[])]);const pageRows=rows(e),remaining=limit-out.length;if(pageRows.length>remaining)result.truncated.push(label);out.push(...pageRows.slice(0,remaining));const p=pagination(e);token=p.more?p.token:undefined;if(p.more&&!token)throw new ApiError(502,'missing_cursor','分页游标缺失');if(token&&seen.has(token))throw new ApiError(502,'repeated_cursor','分页游标重复');if(token)seen.add(token);if(token&&out.length>=limit){result.truncated.push(label);break;}}while(token);return out;}
+ // The convenience command formats create_time in a timezone-less display
+ // string and can omit resource keys. Join exact IDs to the raw read endpoint;
+ // never guess a timezone or match attachments by filename/order.
+ async function chatMessages(chatId:string,limit:number){
+  const display=await pages(['im','+chat-messages-list','--chat-id',chatId,'--order','desc','--page-size','50','--no-reactions'],limit,'messages');
+  const exact=new Map<string,any>(),seen=new Set<string>();let token:string|undefined;
+  do{const e=await call(['api','GET','/open-apis/im/v1/messages','--params',JSON.stringify({container_id_type:'chat',container_id:chatId,page_size:Math.min(50,limit-exact.size),sort_type:'ByCreateTimeDesc',...(token?{page_token:token}:{})})]);
+   const page=rows(e);for(const m of page)if(m.message_id)exact.set(m.message_id,m);
+   const p=pagination(e);token=p.more?p.token:undefined;
+   if(p.more&&(!token||!page.length||seen.has(token)))throw new ApiError(502,'invalid_message_cursor','消息原始数据分页无效');
+   if(token)seen.add(token);
+  }while(token&&exact.size<limit);
+  const merged=[];
+  for(const m of display){const id=m.message_id||m.id;let raw=exact.get(id);
+   if(!raw){const e=await call(['api','GET','/open-apis/im/v1/messages/'+encodeURIComponent(id)]);raw=rows(e).find(x=>x.message_id===id);}
+   if(!raw||raw.chat_id&&raw.chat_id!==chatId)throw new ApiError(502,'message_identity_mismatch','消息原始数据未匹配当前会话');
+   merged.push({...m,...raw,sender:{...m.sender,...raw.sender},text:raw.deleted?'':extractMessageText(raw.body?.content||raw.content,raw.msg_type||raw.type,raw.mentions||[])});
+  }
+  return merged;
+ }
  async function attachment(m:any){
   if(!config.includeAttachments)return [];
   const content=m.body?.content??m.content??'',refs=new Map<string,{key:string;name:string;type:string}>();
@@ -112,7 +132,7 @@ export async function collectFeishu(scope:SyncScope='chats',progress:(patch:any)
   const initial=feishuConnection()?.config||{};result.unresolved=unresolvedScopes(chats,initial);const selected=chats.filter(c=>selectedChatScope(c,chats,initial));result.selected=selected.length;result.skipped=chats.length-selected.length;
   for(const chat of selected){const id=chat.chat_id||chat.id;if(!id)continue;try{
    check();if(!selectedChatScope(chat,chats,feishuConnection()?.config||{}))continue;
-   progress({phase:'chats',counts:result.counts});const raw=await pages(['im','+chat-messages-list','--chat-id',id,'--order','desc','--page-size','50','--no-reactions'],config.messagesPerChat,'messages');
+   progress({phase:'chats',counts:result.counts});const raw=await chatMessages(id,config.messagesPerChat);
    const messages:any[]=[];for(const m of raw){const attachments=await attachment(m);messages.push({id:m.message_id||m.id,sentAt:m.create_time||m.createdAt,text:m.text||extractMessageText(m.body?.content||m.content,m.msg_type||m.type,m.mentions||[]),avatarUrl:profileAvatar(m.sender)||profileAvatar(m),senderName:m.sender?.name||m.sender_name||m.sender?.id||'联系人',senderId:m.sender?.id,isMine:m.sender?.id&&auth.openId?m.sender.id===auth.openId:undefined,type:m.msg_type||m.type,replyToId:m.parent_id||m.reply_to_message_id,deleted:m.deleted||m.is_deleted,recalled:m.recalled,attachments});}
    check();const latest=feishuConnection()?.config||{},selectedScope=selectedChatScope(chat,chats,latest);if(!selectedScope)continue;
    const matching=messages.filter(m=>matchesConnectionFilter(chat,m,latest.filter));result.filtered+=messages.length-matching.length;

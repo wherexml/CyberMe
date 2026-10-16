@@ -319,6 +319,11 @@ if(process.env.OPSTWIN_NO_BACKGROUND!=='1'){
 if(process.env.OPSTWIN_NO_BACKGROUND==='1'&&process.env.OPSTWIN_INBOX_BACKGROUND==='1'){
  backgroundTimers.push(startInboxTriage(),startDefaultDrafts());
 }
+// Desktop reads and prepares configured sources independently of automation,
+// notifications and autonomous delivery. Keep the user's saved sync intervals.
+if(process.env.OPSTWIN_NO_BACKGROUND==='1'&&process.env.OPSTWIN_CONNECTION_BACKGROUND==='1'){
+ backgroundTimers.push(startConnectionScheduler(),startSourceProcessing());
+}
 if(process.env.OPSTWIN_NO_LISTEN!=='1'){
  const port=Number(process.env.OPSTWIN_API_PORT||46110);
  if(!Number.isInteger(port)||port<10000||port>65535)throw new Error('Use a five-digit API port');

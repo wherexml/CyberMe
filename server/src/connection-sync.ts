@@ -28,7 +28,7 @@ export function startConnectionScheduler(){
  for(const run of interrupted)put('feishu_sync_runs',{...run,status:'interrupted',completedAt:now(),error:{code:'server_interrupted',message:'服务重启中断了同步，可以重新执行'}});
  if(feishuConnection()?.sync?.status==='running')mark({status:'interrupted',completedAt:now(),error:'server_interrupted'});
  const intervals=schedules(),saved=meta<any>('feishuScheduleIntervals',{}),next=meta<any>('feishuNextRuns',{});
- if(interrupted.length||JSON.stringify(intervals)!==JSON.stringify(saved)||Object.values(next).some(v=>v!==null&&!Number.isFinite(Date.parse(String(v)))))rescheduleSync();
+ if(interrupted.length||JSON.stringify(intervals)!==JSON.stringify(saved)||Object.entries(intervals).some(([scope,minutes])=>minutes?typeof next[scope]!=='string'||!Number.isFinite(Date.parse(next[scope])):next[scope]!=null))rescheduleSync();
  else mark({interval:feishuConnection()?.config?.syncInterval||'manual',nextAt:next.chats||null});
  const tick=()=>{const intervals=schedules();if(JSON.stringify(intervals)!==JSON.stringify(meta('feishuScheduleIntervals',{})))rescheduleSync();if(running)return;const next:any=meta('feishuNextRuns',{});for(const scope of ['chats','minutes','mail'] as SyncScope[]){if(next[scope]&&Date.parse(next[scope])<=Date.now()){void syncFeishu('schedule',scope).catch(()=>{});break;}}};
  const timer=setInterval(tick,2000);timer.unref();return timer;

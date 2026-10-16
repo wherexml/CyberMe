@@ -6,7 +6,7 @@
  function project(){for(const item of data.inbox){item.quiet=B.isQuietInbox(item);item.attention=B.needsInboxAttention(item)}}
  const previousRender=renderInbox;
  renderInbox=()=>{
-  project();data.inbox.sort(B.compareInboxAttention);previousRender();renderPolicyList();const item=data.inbox.find(x=>x.id===selected);if(!item)return;
+  project();data.inbox.sort(filter==='pending'?B.compareInboxAttention:(a,b)=>(sourceTime(b)?.getTime()||0)-(sourceTime(a)?.getTime()||0)||a.id.localeCompare(b.id));previousRender();renderPolicyList();const item=data.inbox.find(x=>x.id===selected);if(!item)return;
   const disposition=B.dispositionOf(item);
   const noReply=B.hasNoReplyDecision(item)&&!manualReplies.has(item.id)&&!item.editedByUser&&!item.draftCandidate&&!Object.hasOwn(local.drafts,item.id),closed=terminal.has(item.status),locked=['sending','send_unknown','sent','delivered','recalled'].includes(item.status);
   const draft=$('#draft');draft.hidden=noReply||closed;draft.contentEditable=String(!locked&&!noReply&&!closed);
