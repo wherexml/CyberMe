@@ -10,13 +10,14 @@ const task = await taskSpace(globalThis.OPSTWIN_MOCK_SPACE ? Number(globalThis.O
 const page = task.page('p1');
 const results=[];
 const check=(name,pass,detail)=>{results.push({name,status:pass?'PASS':'FAIL',detail});if(!pass)throw Error(name)};
+async function choose(selector,value){const item=await page.evaluate(({selector,value})=>{const s=document.querySelector(selector);return {id:s.dataset.selectNative,index:[...s.options].findIndex(o=>o.value===value)}},{selector,value});await page.click(`[data-vm-id="${item.id}"]`);await page.click(`[data-vm-option="${item.index}"]`);}
 const read=()=>page.evaluate(()=>window.OpsTwinsMock.getState());
 const click=action=>page.click(`${['notes','export'].includes(action)?'.studio-bar ':''}[data-action="${action}"]`);
 const shot=name=>page.screenshot({path:path.join(out,name+'.png')});
-async function screen(id){const visible=await page.evaluate(()=>document.querySelector('#screen-picker').getBoundingClientRect().width>0);if(visible)await page.selectOption('#screen-picker',id);else await page.goto('http://127.0.0.1:46400/#'+id);await page.waitForFunction(id=>window.OpsTwinsMock?.getScreen()===id,id)}
+async function screen(id){const visible=await page.evaluate(()=>document.querySelector('[data-vm-id=screen-picker]')?.getBoundingClientRect().width>0);if(visible)await choose('#screen-picker',id);else await page.goto('http://127.0.0.1:46400/#'+id);await page.waitForFunction(id=>window.OpsTwinsMock?.getScreen()===id,id)}
 async function persistProof(){
  const hashes={};
- for(const file of ['index.html','app.js','pages.js','settings.js','ui.js','data.js','styles.css','fidelity.css','assets/product-icons.js'])hashes[file]=crypto.createHash('sha256').update(await fs.readFile(path.join(root,'mock/opstwins',file))).digest('hex');
+ for(const file of ['index.html','app.js','pages.js','settings.js','ui.js','data.js','styles.css','fidelity.css','assets/product-icons.js','components/select.js','components/select.css','components/common.css','components/adapter.js','inbox-automation.js'])hashes[file]=crypto.createHash('sha256').update(await fs.readFile(path.join(root,'mock/opstwins',file))).digest('hex');
  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({taskSpace:task.spaceId,page:'p1',url:'http://127.0.0.1:46400/',scope:'public local mock only',results,hashes},null,2));
 }
 try{
@@ -39,7 +40,7 @@ try{
   await shot(String(i+1).padStart(2,'0')+'-'+id.replaceAll('/','-'));
   await fs.writeFile(path.join(out,id.replaceAll('/','-')+'.ax.txt'),snapshot);
  }
- await screen('settings/models');check('设置900×640与225侧栏和240控件',await page.evaluate(()=>{const w=document.querySelector('.settings-window'),n=document.querySelector('.settings-nav'),s=document.querySelector('select[name=model]');return w.offsetWidth===900&&w.offsetHeight===640&&n.offsetWidth===225&&s.offsetWidth===240}));check('模型无修改隐藏保存',await page.evaluate(()=>document.querySelector('form[data-kind=model] .form-actions').hidden));await page.selectOption('[name=model]','示例推理模型');check('修改显示保存',await page.evaluate(()=>!document.querySelector('form[data-kind=model] .form-actions').hidden));await click('cancel-setting');
+ await screen('settings/models');check('设置900×640与225侧栏和240控件',await page.evaluate(()=>{const w=document.querySelector('.settings-window'),n=document.querySelector('.settings-nav'),s=document.querySelector('select[name=model]');return w.offsetWidth===900&&w.offsetHeight===640&&n.offsetWidth===225&&s.nextElementSibling.offsetWidth===240&&s.nextElementSibling.offsetHeight===40}));check('模型无修改隐藏保存',await page.evaluate(()=>document.querySelector('form[data-kind=model] .form-actions').hidden));await choose('[name=model]','示例推理模型');check('修改显示保存',await page.evaluate(()=>!document.querySelector('form[data-kind=model] .form-actions').hidden));await click('cancel-setting');
  await screen('chat');await click('overview');check('统一返回导航',await page.evaluate(()=>!!document.querySelector('.overview')));await click('overview');
  // Distinct drafts, recording cancel, attachments, readable local reply.
  await screen('chat');

@@ -55,3 +55,5 @@ ego-browser nodejs < scripts/opstwins-mock-browser-e2e.mjs
 设计范围与边界见 [产品 Mock 规格](../docs/design/opstwins-product-mock.md)。Mock 验收不改变真实产品、85 项功能或原生评分的状态。
 
 Inbox紧凑调整：Jev以42px单行保留三项判断，右侧草稿入口明确“重新生成”；保存提示只显示“已保存”，悬停说明本浏览器范围。局部复验：`scripts/opstwins-mock-inbox-compact-e2e.mjs`。
+
+共享组件位于 `opstwins/components/`，复用voice-input标准下拉及通用控件；原生select保留表单语义。第一个主会话自动呈现收件箱分析过程、判断和待回复内容；Inbox“主会话分析”跳回对应结果。记录只在本Mock持久化，刷新未知不自动重跑，侧会话与缩略图不承载全局流程。规格见 [共享组件和主会话](../docs/design/mock-shared-components-main-inbox.md)。

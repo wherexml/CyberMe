@@ -1,0 +1,72 @@
+/* Semantic tokens and control measurements adapted from
+   voice-input/mock/auto-send.html, lines 56-96 and 726-758. */
+:root {
+  --text-primary:var(--ink);--text-secondary:var(--ink);--text-tertiary:var(--muted);
+  --surface-raised:var(--bg);--surface-sunken:#f5f5f5;--surface-group:#f5f5f5;
+  --surface-hover:rgb(0 0 0 / .04);--surface-selected:rgb(0 0 0 / .06);
+  --border-medium:rgb(0 0 0 / .10);--border-heavy:rgb(0 0 0 / .20);--border-light:rgb(0 0 0 / .08);
+  --switch-on:#7477d4;--font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;
+  --font-mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+:root[data-theme=dark] {
+  --surface-sunken:#262626;--surface-group:#28282c;--surface-hover:rgb(255 255 255 / .05);
+  --surface-selected:rgb(255 255 255 / .09);--border-medium:rgb(255 255 255 / .16);
+  --border-heavy:rgb(255 255 255 / .28);--border-light:rgb(255 255 255 / .10);
+}
+.settings-content .vm-select {width:240px;max-width:100%;font-size:13px}
+.settings-content .field>.vm-select {width:100%;max-width:100%}
+.settings-content .row-control {max-width:65%}
+.settings-content form[data-kind=model] .row-control {width:240px}
+.studio-location .vm-select {width:168px;height:30px;background:transparent;border-color:transparent;font-size:12px}
+.studio-location .vm-select .vm-chevron {width:12px;height:12px}
+.vm-select-menu {font-size:calc(13px * var(--vm-scale,1));padding:calc(5px * var(--vm-scale,1));border-radius:calc(12px * var(--vm-scale,1))}
+.vm-select-menu [role=option] {padding:calc(9px * var(--vm-scale,1)) calc(10px * var(--vm-scale,1));min-height:calc(38px * var(--vm-scale,1));border-radius:calc(8px * var(--vm-scale,1))}
+.vm-select-menu .vm-group {font-size:calc(12px * var(--vm-scale,1))}
+.vm-select-menu .vm-check {width:calc(16px * var(--vm-scale,1))}
+.settings-content .field>input,.settings-content .field>textarea,.modal .field>input,.modal .field>textarea {
+  border-color:var(--border-medium);border-radius:8px;background:var(--surface-raised);padding:8px 10px;font-size:13px;
+}
+.settings-content .field>input {height:40px}
+.settings-content input:hover,.modal .field>input:hover {border-color:var(--border-heavy)}
+.settings-content input:focus-visible,.settings-content textarea:focus-visible {outline:2px solid #7477d4;outline-offset:2px}
+.settings-content .switch {width:36px;height:22px}
+.settings-content .switch input {width:36px;height:22px}
+.settings-content .switch span {width:36px;height:22px;background:var(--border-medium)}
+.settings-content .switch span:after {width:18px;height:18px;box-shadow:0 1px 2px rgb(0 0 0 / .25)}
+.settings-content .switch input:checked+span {background:var(--switch-on)}
+.settings-content .switch input:checked+span:after {transform:translateX(14px)}
+.settings-content .primary,.modal .form-actions .primary {border:1px solid transparent;background:var(--ink);color:var(--bg);border-radius:8px;min-height:30px;padding:4px 11px;font-size:12.5px;font-weight:500}
+.settings-content .secondary,.modal .secondary {border:1px solid var(--border-medium);border-radius:8px;min-height:30px;padding:4px 11px;font-size:12.5px;background:var(--surface-raised)}
+.settings-content .secondary:hover {border-color:var(--border-heavy);background:var(--surface-hover)}
+.segmented {background:var(--surface-sunken);border-radius:8px;padding:3px;gap:3px;box-shadow:inset 0 0 0 .5px var(--border-light)}
+.segmented button {border-radius:6px;font-size:12.5px}
+.segmented .active {background:var(--surface-raised);box-shadow:0 0 0 .5px var(--border-medium),0 1px 2px #0000000d}
+.check-row input[type=checkbox],.settings-content input[type=checkbox]:not(.switch input) {width:16px;height:16px;accent-color:#7477d4}
+.modal {border-radius:16px;border-color:var(--border-medium)}
+#notice {border-radius:10px;font-size:12.5px;box-shadow:0 6px 20px #00000014,0 1px 3px #0000000d}
+@media(max-width:760px){.studio-location .vm-select{width:130px}}
+
+.inbox-automation {margin:20px 0 24px;scroll-margin-top:12px}
+.automation-caption {display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-bottom:14px}
+.automation-caption>.icon {width:15px;height:15px}
+.automation-caption>.tiny {margin-left:auto;font-size:10px}
+.attention-result {background:var(--hover);border-radius:16px;padding:18px 20px;margin:0 0 14px;font-size:14px;line-height:1.7}
+.attention-source {display:flex;align-items:center;gap:8px;font-size:11px;margin-bottom:12px}
+.attention-source .muted {font-size:10px}
+.attention-result h3 {font-size:15px;font-weight:550;margin-bottom:9px}
+.attention-conclusion {font-size:13px;line-height:1.8;color:var(--ink)}
+.attention-draft {border-left:2px solid #7477d455;padding:8px 0 8px 12px;margin:13px 0 10px}
+.attention-draft p {font-size:13px;white-space:pre-wrap;line-height:1.8;margin-top:5px;overflow-wrap:anywhere}
+.attention-progress {display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;min-height:34px}
+.attention-progress .thinking {display:inline-flex;gap:4px;margin:0;padding:0}
+.attention-progress .thinking i {width:4px;height:4px}
+.attention-trace {margin-top:12px;font-size:11px;color:var(--muted)}
+.attention-trace summary {font-size:11px}
+.attention-trace ol {padding-left:20px;margin:8px 0;line-height:1.9}
+.attention-actions {display:flex;gap:12px;margin-top:12px}
+.attention-actions button {padding:3px 0;font-size:11px;color:var(--muted)}
+.attention-actions button svg {width:13px;height:13px}
+.attention-warning {font-size:12px;color:var(--muted);line-height:1.8}
+.attention-complete {font-size:10px;margin-left:auto;color:var(--muted)}
+.person-heading>.subtle {white-space:nowrap;font-size:11px;color:var(--muted);gap:4px;padding:4px}
+.person-heading>.subtle svg {width:14px;height:14px}
