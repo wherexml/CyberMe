@@ -31,3 +31,7 @@ Use `node scripts/mygo-build.mjs --standalone` for distribution. It bundles Node
 ## Pi Agent SDK 1.3.0（2026-10-17）
 
 当前使用官方精确1.3.0；standalone包内含SDK及Node。真实模型、业务工具、主动打断、失败与partial恢复，以及重新签名安装证据见 [升级旅程](../../docs/journeys/pi-sdk-upgrade-20261017.md)。升级时须重打包，修改工作区依赖不会自动更新安装版。
+
+## 会话与自动记忆
+
+独立App内嵌生产后端，启动时开启`OPSTWIN_MEMORY_BACKGROUND=1`；Chat的记忆入口读取同一工作区的真实持久状态。安装、真实模型和原生UI证据见[2026-10-17记忆旅程](../../docs/journeys/conversation-memory-20261017.md)。

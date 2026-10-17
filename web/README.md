@@ -28,3 +28,7 @@ Inbox 草稿不再自动生成 Summary.pdf／图表，Autonomy 不再提供自�
 MyGO 完整桌面适配在 `src/desktop/full/`，继承当前HTML与生产组件；构建和验收入口见 [桌面规格](../docs/spec/mygo-desktop.md)。
 
 MyGO完整身份/记忆编辑器、连接查看和采集尺寸统一遵循 [settings-documents-oauth](../docs/spec/settings-documents-oauth.md)。Google授权使用系统浏览器，缺client显示真实阻塞；旧本机草稿保留并可恢复。
+
+## MyGO 自动记忆
+
+桌面`src/desktop/full/memory.js`通过真实API显示摘要、来源、自动记忆撤销/忘记与失败重试；不写手动MEMORY、不缓存记忆正文到localStorage。完整契约及验收见[会话记忆](../docs/spec/conversation-memory.md)。

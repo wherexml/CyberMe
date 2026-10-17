@@ -90,3 +90,7 @@ API SIGTERM/SIGINT 最多3秒关闭，停止后台调度并终止残留SSE；重
 ## Pi Agent SDK 1.3.0（2026-10-17）
 
 当前使用官方精确1.3.0；standalone包内含SDK及Node。真实模型、业务工具、主动打断、失败与partial恢复，以及重新签名安装证据见 [升级旅程](../docs/journeys/pi-sdk-upgrade-20261017.md)。升级时须重打包，修改工作区依赖不会自动更新安装版。
+
+## 会话记忆
+
+`conversation-memory.ts`为产品层持久摘要、按需召回和自动记忆；MyGO独立包通过`OPSTWIN_MEMORY_BACKGROUND=1`开启后台队列。真实模型与恢复验收分别运行 `node scripts/conversation-memory-live-e2e.mjs`、`node scripts/conversation-memory-recovery-e2e.mjs`（从仓库根目录）；详见[规格](../docs/spec/conversation-memory.md)。

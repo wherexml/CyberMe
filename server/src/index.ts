@@ -1,3 +1,4 @@
+import {mountMemory,enqueueMemory,startMemory} from './conversation-memory';
 import {queryFeishuContext} from './feishu-context';
 import {CODE_ROOT,STANDALONE} from './runtime-paths';
 import {inboxTriageVersion} from './store';
@@ -62,6 +63,7 @@ app.use('*',cors({origin:origin=>webOrigins.includes(origin)?origin:undefined,al
 // Only task-local Web origins may mutate this loopback API. Avoid ambient browser cross-origin writes.
 app.use('/api/*',async(c,next)=>{const origin=c.req.header('origin');if(origin&&!localOrigins.includes(origin))throw new ApiError(403,'origin_blocked','请求来源不被允许');await next();});
 app.onError((e,c)=>{const api=e instanceof ApiError?e:new ApiError(500,'internal_error',String(e));return c.json(publicValue({error:api.code,message:api.message,...(api.detail?{detail:api.detail}:{})}),api.status as any);});
+mountMemory(app);
 app.get('/api/wechat/status',c=>c.json(wechatReadStatus()));
 app.get('/api/connections/google/status',c=>c.json(googleStatus()));
 app.post('/api/connections/google/authorize',c=>c.json(beginGoogle()));
@@ -213,7 +215,7 @@ app.post('/api/chat',async c=>{
  }
  const older=(db.prepare("SELECT data FROM chat_requests WHERE state='running' AND rowid < (SELECT rowid FROM chat_requests WHERE id=?)").all(requestId) as any[]).some(row=>JSON.parse(row.data).conversationId===conversation.id);
  if(older)throw new ApiError(409,'interrupt_timeout','旧回复尚未确认停止，请回查原请求');
- const result=await runAgent(message,{mode:input.mode||'chat',conversationId:conversation.id,history:previous,attachmentIds:input.attachmentIds,contextIds:input.contextIds,readOnly:input.readOnly===true,runId:run.id});const assistantMessage=put('messages',{id:uid('message'),conversationId:conversation.id,role:'assistant',content:result.text,runId:result.run.id,attachments:result.artifacts.map(a=>a.id),contextIds:input.contextIds||[]});put('conversations',{...get('conversations',conversation.id),lastRunId:result.run.id,lastMessageAt:now(),status:'active'});activity('完成 Twin 对话','chat','succeeded',undefined,conversation.id);const output={conversationId:conversation.id,userMessage,assistantMessage,run:result.run,artifacts:result.artifacts,requestId};db.prepare('UPDATE chat_requests SET state=?,data=?,updated_at=? WHERE id=?').run('succeeded',JSON.stringify({...intent,result:output}),now(),requestId);return json(c,output);}catch(e){put('conversations',{...get('conversations',conversation.id),status:'failed',lastError:String(e)});let failedRun=(e instanceof ApiError?e.detail?.run:undefined)||get('runs',run.id);if(failedRun?.status==='running')failedRun=put('runs',{...failedRun,status:'failed',completedAt:now(),error:String(e)});const completedWrites=completedAgentWrites(failedRun);db.prepare('UPDATE chat_requests SET state=?,data=?,updated_at=? WHERE id=?').run(completedWrites.length?'partial':'failed',JSON.stringify({...intent,run:failedRun,completedWrites}),now(),requestId);if(completedWrites.length)throw new ApiError(409,'partial_run_requires_review','原运行已有完成的本地写入，请检查结果后继续',{conversationId:conversation.id,userMessage,requestId,run:failedRun,completedWrites});if(e instanceof ApiError)e.detail={...(e.detail||{}),conversationId:conversation.id,userMessage,requestId};throw e;}
+ const result=await runAgent(message,{mode:input.mode||'chat',conversationId:conversation.id,history:previous,attachmentIds:input.attachmentIds,contextIds:input.contextIds,readOnly:input.readOnly===true,runId:run.id});const assistantMessage=put('messages',{id:uid('message'),conversationId:conversation.id,role:'assistant',content:result.text,runId:result.run.id,attachments:result.artifacts.map(a=>a.id),contextIds:input.contextIds||[]});put('conversations',{...get('conversations',conversation.id),lastRunId:result.run.id,lastMessageAt:now(),status:'active'});activity('完成 Twin 对话','chat','succeeded',undefined,conversation.id);const output={conversationId:conversation.id,userMessage,assistantMessage,run:result.run,artifacts:result.artifacts,requestId};db.prepare('UPDATE chat_requests SET state=?,data=?,updated_at=? WHERE id=?').run('succeeded',JSON.stringify({...intent,result:output,memoryPending:input.readOnly!==true}),now(),requestId);try{enqueueMemory(requestId);}catch{}return json(c,output);}catch(e){put('conversations',{...get('conversations',conversation.id),status:'failed',lastError:String(e)});let failedRun=(e instanceof ApiError?e.detail?.run:undefined)||get('runs',run.id);if(failedRun?.status==='running')failedRun=put('runs',{...failedRun,status:'failed',completedAt:now(),error:String(e)});const completedWrites=completedAgentWrites(failedRun);db.prepare('UPDATE chat_requests SET state=?,data=?,updated_at=? WHERE id=?').run(completedWrites.length?'partial':'failed',JSON.stringify({...intent,run:failedRun,completedWrites}),now(),requestId);if(completedWrites.length)throw new ApiError(409,'partial_run_requires_review','原运行已有完成的本地写入，请检查结果后继续',{conversationId:conversation.id,userMessage,requestId,run:failedRun,completedWrites});if(e instanceof ApiError)e.detail={...(e.detail||{}),conversationId:conversation.id,userMessage,requestId};throw e;}
 });
 app.get('/api/inbox/:id/feedback',c=>json(c,inboxFeedback(need('inbox',c.req.param('id')))));
 app.get('/api/inbox-source-rules',c=>json(c,{sources:inboxSources(c.req.query('query')||''),rules:list('inbox_source_rules')}));
@@ -312,6 +314,7 @@ for(const row of db.prepare("SELECT * FROM calendar_intents WHERE state='creatin
 for(const automation of list('automations').filter(row=>row.status==='running'))put('automations',{...automation,status:'failed',lastError:'server_interrupted',nextRun:automation.enabled?nextScheduled(automation.schedule):undefined});
 for(const run of list('runs').filter(row=>row.status==='running'))put('runs',{...run,status:'failed',completedAt:now(),error:'server_interrupted',events:[...(run.events||[]),{type:'server_interrupted',at:now()}]});
 installChatContinuation(app);
+const stopMemory=startMemory(runAgent,process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_MEMORY_BACKGROUND==='1');
 const backgroundTimers: ReturnType<typeof setInterval>[] = [];
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'){
  backgroundTimers.push(startInboxTriage(),startScheduler(),startConnectionScheduler(),
@@ -336,7 +339,7 @@ if(process.env.OPSTWIN_NO_LISTEN!=='1'){
  console.log(`OpsTwin Advance API http://127.0.0.1:${port}`);
  const shutdown=(signal:string)=>{
   if(stopping)return;
-  stopping=true;
+  stopping=true;stopMemory();
   for(const timer of backgroundTimers)clearInterval(timer);
   console.log(JSON.stringify({event:'api_shutdown',signal,graceMs:3000}));
   // SSE never ends on its own. Bound the drain, including already active Agent
