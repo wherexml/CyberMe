@@ -53,3 +53,5 @@ ego-browser nodejs < scripts/opstwins-mock-browser-e2e.mjs
 产物位于 `output/mock-product-20261017/<运行时间>/`：32 页截图与 AX、异常场景和三个窄窗尺寸截图、迭代包、断言结果和源码 SHA256（包含 fidelity.css 与原始图标模块）。脚本保留原型页供继续检查；工作完成后由调用者 finish 保留结果页。
 
 设计范围与边界见 [产品 Mock 规格](../docs/design/opstwins-product-mock.md)。Mock 验收不改变真实产品、85 项功能或原生评分的状态。
+
+Inbox紧凑调整：Jev以42px单行保留三项判断，右侧草稿入口明确“重新生成”；保存提示只显示“已保存”，悬停说明本浏览器范围。局部复验：`scripts/opstwins-mock-inbox-compact-e2e.mjs`。

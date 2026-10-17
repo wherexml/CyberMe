@@ -52,7 +52,7 @@ try{
  check('消息在本地会话保存',(await read()).sessions.find(x=>x.id==='main').messages.some(x=>x.text===marker+'主会话'));
  await page.reload();await page.waitForSelector('[name=message]');check('刷新恢复消息',(await read()).sessions.find(x=>x.id==='main').messages.some(x=>x.text===marker+'主会话'));
  // Inbox autosave and explicit send preview.
- await screen('inbox');await page.fill('#reply-draft',marker+'草稿');await page.waitForFunction(()=>document.querySelector('#draft-status').textContent==='已保存到本地 Mock');await click('item:i2');await click('item:i1');
+ await screen('inbox');await page.fill('#reply-draft',marker+'草稿');await page.waitForFunction(()=>document.querySelector('#draft-status').textContent==='已保存');await click('item:i2');await click('item:i1');
  check('Inbox按事项保存',await page.evaluate(()=>document.querySelector('#reply-draft').value.includes('公开E2E-')));
  await click('reply');await shot('send-preview');await click('confirm-go');
  check('发送只记本地预览',(await read()).log.some(x=>x.label==='预览发送回复'));

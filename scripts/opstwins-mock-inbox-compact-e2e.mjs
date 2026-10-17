@@ -1,0 +1,42 @@
+// Run through ego-browser nodejs; prepend globalThis.OPSTWIN_MOCK_SPACE=66 to resume.
+const fs=await import('node:fs/promises');
+const crypto=await import('node:crypto');
+const root='/Users/steve/Projects/opstwin-advance';
+const out=root+'/output/mock-inbox-compact-20261017/'+Date.now();
+await fs.mkdir(out,{recursive:true});
+const task=await taskSpace(globalThis.OPSTWIN_MOCK_SPACE||'OpsTwins Inbox compact E2E');
+const page=task.page('p1'),results=[];
+const check=(name,pass,detail)=>{results.push({name,status:pass?'PASS':'FAIL',detail});if(!pass)throw Error(name)};
+const click=a=>page.click(`[data-action="${a}"]`);
+const state=()=>page.evaluate(()=>window.OpsTwinsMock.getState());
+try{
+ await page.cdp('Emulation.setDeviceMetricsOverride',{width:1198,height:961,deviceScaleFactor:1,mobile:false});
+ await page.goto('http://127.0.0.1:46400/?v=3#inbox');
+ await page.waitForSelector('.judgment');
+ const baseline=(await state()).inbox.find(x=>x.id==='i1').draft;
+ const theme=(await state()).prefs.theme;
+ check('判断区域42px',await page.evaluate(()=>document.querySelector('.judgment').offsetHeight===42));
+ check('三项判断与真实示例值保留',await page.evaluate(()=>[...document.querySelectorAll('[role=meter]')].map(x=>x.getAttribute('aria-valuenow')).join(',')==='90,78,32'));
+ check('重新生成有明确文字',await page.evaluate(()=>document.querySelector('[data-action=regenerate]').textContent==='重新生成'));
+ check('保存状态简短且保留说明',await page.evaluate(()=>document.querySelector('#draft-status').textContent==='已保存'&&document.querySelector('#draft-status').title.includes('当前浏览器')));
+ await click('analysis');check('分析入口可用',await page.evaluate(()=>document.querySelector('.modal h2').textContent==='分析过程'));await click('close');
+ await click('regenerate');check('生成仍更新本地草稿',(await state()).inbox.find(x=>x.id==='i1').draft.startsWith('本轮先确认核心流程'));
+ await page.fill('#reply-draft',baseline+'\n公开紧凑验收');
+ await page.waitForFunction(()=>document.querySelector('#draft-status').textContent==='已保存');
+ await click('item:i2');await click('item:i1');check('按事项保存保留',await page.evaluate(()=>document.querySelector('#reply-draft').value.endsWith('公开紧凑验收')));
+ await page.reload();await page.waitForSelector('#reply-draft');check('刷新恢复保留',await page.evaluate(()=>document.querySelector('#reply-draft').value.endsWith('公开紧凑验收')));
+ await page.fill('#reply-draft',baseline);await page.waitForFunction(()=>document.querySelector('#draft-status').textContent==='已保存');
+ await click('scenario:error');await click('regenerate');check('失败保留草稿',(await state()).inbox.find(x=>x.id==='i1').draft===baseline);await click('scenario:normal');
+ await click('filter:all');await click('item:i3');check('未知未伪造百分比',await page.evaluate(()=>document.querySelectorAll('.judgment [role=meter]').length===0&&document.querySelectorAll('.judgment-unknown').length===3));
+ await page.screenshot({path:out+'/unknown.png'});await click('item:i1');await click('filter:pending');
+ await click('tweaks');await click('theme:dark');await click('close');await page.screenshot({path:out+'/dark.png'});check('深色紧凑条无溢出',await page.evaluate(()=>document.querySelector('.judgment').scrollWidth<=document.querySelector('.judgment').clientWidth));
+ await click('tweaks');await click('theme:'+theme);await click('close');
+ await page.cdp('Emulation.setDeviceMetricsOverride',{width:660,height:850,deviceScaleFactor:1,mobile:false});await page.screenshot({path:out+'/scaled-660.png'});
+ check('缩放后保持1000逻辑窗口和42条高',await page.evaluate(()=>document.querySelector('.prototype-canvas').offsetWidth===1000&&document.querySelector('.judgment').offsetHeight===42&&document.documentElement.scrollWidth<=innerWidth));
+ await page.cdp('Emulation.setDeviceMetricsOverride',{width:1198,height:961,deviceScaleFactor:1,mobile:false});
+ await page.waitForFunction(()=>!document.querySelector('#notice').classList.contains('show'));
+ await page.screenshot({path:out+'/final.png'});await fs.writeFile(out+'/final.ax.txt',await page.snapshot());
+ const hashes={};for(const file of ['pages.js','app.js','fidelity.css'])hashes[file]=crypto.createHash('sha256').update(await fs.readFile(root+'/mock/opstwins/'+file)).digest('hex');
+ await fs.writeFile(out+'/result.json',JSON.stringify({scope:'public mock only',spaceId:task.spaceId,results,hashes},null,2));
+ console.log({spaceId:task.spaceId,passed:results.length,out});
+}catch(error){await fs.writeFile(out+'/failure.json',JSON.stringify({results,error:String(error)},null,2));await page.screenshot({path:out+'/failure.png'});throw error}
