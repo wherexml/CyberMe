@@ -86,3 +86,7 @@ MyGO 桌面通过固定本机网关复用此API；公开隔离服务与正式工
 API SIGTERM/SIGINT 最多3秒关闭，停止后台调度并终止残留SSE；重启沿原持久请求恢复，不能以进程存在判断健康。复验 `node scripts/runtime-shutdown-http-e2e.mjs`（隔离46374）；见 [关闭恢复旅程](../docs/journeys/runtime-shutdown-recovery.md)。
 
 - [飞书助手与收件箱工作方式对齐](../docs/journeys/feishu-assistant-parity.md)：按人/群查询、缩写、双向消息和关联工作核验、覆盖缺口与发送能力边界。
+
+## Pi Agent SDK 1.3.0（2026-10-17）
+
+当前使用官方精确1.3.0；standalone包内含SDK及Node。真实模型、业务工具、主动打断、失败与partial恢复，以及重新签名安装证据见 [升级旅程](../docs/journeys/pi-sdk-upgrade-20261017.md)。升级时须重打包，修改工作区依赖不会自动更新安装版。

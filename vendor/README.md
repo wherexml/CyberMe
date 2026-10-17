@@ -1,7 +1,7 @@
-# PI SDK 固定发行物
+# PI SDK 发行物
 
-本目录的 PI coding-agent 0.86.1 tarball 来源为官方 npm 发行物，同名包的 SDK 源码、资源、版本与许可证声明保持原样，仅移除发行物里的 `npm-shrinkwrap.json`。原 shrinkwrap 在本项目的 npm overrides 下仍锁定有公开 DoS 漏洞的 brace-expansion 5.0.9，使 npm update/audit fix 无法更新。
+当前使用官方 npm `@earendil-works/pi-coding-agent@1.3.0`，精确版本与完整依赖树由根 package.json / package-lock.json 固定；不再使用本目录的 0.86.1 tarball。1.3.0 的 pi-agent-core 与 pi-ai 同为精确 1.3.0。
 
-依赖仍由本项目 package-lock 固定，brace-expansion 与 undici 应用根 overrides 的已修复版本。此处不是修改 Agent 实现或自行升级 API。原始官方 tarball保留在 output/dependency-inspection，构建和真实 PI E2E需在处理依赖后重跑。
+历史 0.86.1 tarball 保留以便核验：其来源为官方 npm 发行物，仅移除 `npm-shrinkwrap.json`，用于解除有漏洞的 brace-expansion 5.0.9 锁定；没有修改 SDK 源码。新版本可直接从官方 registry 安装，不沿用旧包重打包方式。根 overrides 仍由 npm 审计验证。
 
-重新产生：官方 `npm pack @earendil-works/pi-coding-agent@0.86.1`，在本项目 output 内解包，仅删除 package/npm-shrinkwrap.json，再用 `npm pack --ignore-scripts` 打包至 vendor。本发行物仅用于本项目本地依赖安装，没有发布到外部注册表。
+升级、真实模型/工具/打断/恢复与安装包证据见 [Pi 1.3.0 升级旅程](../docs/journeys/pi-sdk-upgrade-20261017.md)。

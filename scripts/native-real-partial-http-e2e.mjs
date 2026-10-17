@@ -14,8 +14,9 @@ const stamp=new Date().toISOString().replaceAll(':','-'),id=randomUUID(),marker=
 const out=join(root,'output/native-parity-20261003/real-partial',stamp),data=join(root,'.local/acceptance/native-real-partial',stamp),privateDir=join(root,'.local/private-runtime/native-real-partial-'+id);
 await mkdir(out,{recursive:true});await mkdir(data,{recursive:true,mode:0o700});await mkdir(privateDir,{recursive:true,mode:0o700});
 if(!(await realpath(privateDir)).startsWith((await realpath(join(root,'.local')))+'/'))throw Error('private runtime outside local');
-const mainHash=sha(await readFile(join(root,'.local/config.json')));
-await copyFile(join(root,'.local/config.json'),join(privateDir,'config.json'));await chmod(join(privateDir,'config.json'),0o600);
+const configSource=process.env.OPSTWIN_QA_CONFIG||join(root,'.local/config.json');
+const mainHash=sha(await readFile(configSource));
+await copyFile(configSource,join(privateDir,'config.json'));await chmod(join(privateDir,'config.json'),0o600);
 const seed=new DatabaseSync(join(data,'opstwin-advance.db'));seed.exec('CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)');seed.prepare('INSERT INTO meta VALUES(?,?)').run('initialized','true');seed.close();
 const harness=join(data,'server.ts'),deny=join(data,'deny-external.mjs');
 await writeFile(deny,'#!/usr/bin/env node\nprocess.exit(89);\n',{mode:0o700});
@@ -59,10 +60,10 @@ try{
  const before={tasks:count('tasks'),runs:count('runs'),messages:count('messages')};
  const replay=await req('/api/chat','POST',payload);check('original POST refuses partial without new model or SQL writes',replay.status===409&&replay.data.error==='partial_run_requires_review'&&sha(before)===sha({tasks:count('tasks'),runs:count('runs'),messages:count('messages')}),{http:replay.status,errorCode:replay.data.error,counts:before});
  const state=await req('/api/chat/conversations/state?ids='+conversationId);const item=state.data.items?.find(x=>x.id===conversationId);check('partially written conversation remains locked',state.status===200&&item?.partial===true&&item?.locked===true,{state:item});
- check('main model config and no outbound ledgers unchanged',mainHash===sha(await readFile(join(root,'.local/config.json')))&&db.prepare('SELECT COUNT(*) n FROM send_intents').get().n===0&&db.prepare('SELECT COUNT(*) n FROM calendar_intents').get().n===0);
+ check('main model config and no outbound ledgers unchanged',mainHash===sha(await readFile(configSource))&&db.prepare('SELECT COUNT(*) n FROM send_intents').get().n===0&&db.prepare('SELECT COUNT(*) n FROM calendar_intents').get().n===0);
  report.status='PASS';report.keepServer=process.argv.includes('--keep-server');if(report.keepServer)report.runningChildPid=child.pid;
 }catch(e){if(report.status!=='NOT_TRIGGERED')report.status='FAIL';report.error=String(e.message);process.exitCode=1;}
 finally{
- if(!report.keepServer)await stop();db?.close();report.mainUnchanged=mainHash===sha(await readFile(join(root,'.local/config.json')));report.pass=checks.filter(x=>x.status==='PASS').length;report.fail=checks.filter(x=>x.status==='FAIL').length;report.outputHash=sha(output);await save();console.log(JSON.stringify({status:report.status,pass:report.pass,fail:report.fail,manifest:join(out,'manifest.json'),keepServer:report.keepServer||false}));
+ if(!report.keepServer)await stop();db?.close();report.mainUnchanged=mainHash===sha(await readFile(configSource));report.pass=checks.filter(x=>x.status==='PASS').length;report.fail=checks.filter(x=>x.status==='FAIL').length;report.outputHash=sha(output);await save();console.log(JSON.stringify({status:report.status,pass:report.pass,fail:report.fail,manifest:join(out,'manifest.json'),keepServer:report.keepServer||false}));
 }
 if(report.keepServer){process.on('SIGTERM',async()=>{await stop();process.exit(0);});await once(child,'exit');}

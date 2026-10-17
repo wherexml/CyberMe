@@ -27,3 +27,7 @@ The workspace build now starts the missing API (46110) and capability gateway (4
 ## Standalone release (2026-10-16)
 
 Use `node scripts/mygo-build.mjs --standalone` for distribution. It bundles Node, backend, gateway, dependencies and policy/assets under Resources/runtime, and uses `~/Library/Application Support/OpsTwins` for private state. It requires neither the project directory nor system Node at runtime. The older `--workspace` mode remains a development option. One-time migration, signing and actual no-project sandbox acceptance are documented in [standalone journey](../../docs/journeys/mygo-standalone.md). Never include user state in the notarization upload. External configured integrations keep their own authorization and runtime requirements.
+
+## Pi Agent SDK 1.3.0（2026-10-17）
+
+当前使用官方精确1.3.0；standalone包内含SDK及Node。真实模型、业务工具、主动打断、失败与partial恢复，以及重新签名安装证据见 [升级旅程](../../docs/journeys/pi-sdk-upgrade-20261017.md)。升级时须重打包，修改工作区依赖不会自动更新安装版。
