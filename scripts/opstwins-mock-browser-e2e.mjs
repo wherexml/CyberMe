@@ -16,7 +16,7 @@ const shot=name=>page.screenshot({path:path.join(out,name+'.png')});
 async function screen(id){const visible=await page.evaluate(()=>document.querySelector('#screen-picker').getBoundingClientRect().width>0);if(visible)await page.selectOption('#screen-picker',id);else await page.goto('http://127.0.0.1:46400/#'+id);await page.waitForFunction(id=>window.OpsTwinsMock?.getScreen()===id,id)}
 async function persistProof(){
  const hashes={};
- for(const file of ['index.html','app.js','pages.js','settings.js','ui.js','data.js','styles.css'])hashes[file]=crypto.createHash('sha256').update(await fs.readFile(path.join(root,'mock/opstwins',file))).digest('hex');
+ for(const file of ['index.html','app.js','pages.js','settings.js','ui.js','data.js','styles.css','fidelity.css','assets/product-icons.js'])hashes[file]=crypto.createHash('sha256').update(await fs.readFile(path.join(root,'mock/opstwins',file))).digest('hex');
  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({taskSpace:task.spaceId,page:'p1',url:'http://127.0.0.1:46400/',scope:'public local mock only',results,hashes},null,2));
 }
 try{
@@ -30,6 +30,7 @@ try{
  await fs.writeFile(path.join(out,'overview.ax.txt'),await page.snapshot());
  await page.click('a[aria-label="进入对话"]');
  await click('tweaks');await click('reset-confirm');await click('confirm-go');
+ check('正常预览为1000×700且不放大',await page.evaluate(()=>{const r=document.querySelector('.desktop-window').getBoundingClientRect();return r.width===1000&&r.height===700}));
  const ids=await page.evaluate(()=>window.OpsTwinsMock.screens);
  for(const [i,id] of ids.entries()){
   await screen(id);
@@ -38,6 +39,7 @@ try{
   await shot(String(i+1).padStart(2,'0')+'-'+id.replaceAll('/','-'));
   await fs.writeFile(path.join(out,id.replaceAll('/','-')+'.ax.txt'),snapshot);
  }
+ await screen('settings/models');check('设置900×640与225侧栏和240控件',await page.evaluate(()=>{const w=document.querySelector('.settings-window'),n=document.querySelector('.settings-nav'),s=document.querySelector('select[name=model]');return w.offsetWidth===900&&w.offsetHeight===640&&n.offsetWidth===225&&s.offsetWidth===240}));check('模型无修改隐藏保存',await page.evaluate(()=>document.querySelector('form[data-kind=model] .form-actions').hidden));await page.selectOption('[name=model]','示例推理模型');check('修改显示保存',await page.evaluate(()=>!document.querySelector('form[data-kind=model] .form-actions').hidden));await click('cancel-setting');
  await screen('chat');await click('overview');check('统一返回导航',await page.evaluate(()=>!!document.querySelector('.overview')));await click('overview');
  // Distinct drafts, recording cancel, attachments, readable local reply.
  await screen('chat');
@@ -79,7 +81,7 @@ try{
  await click('tweaks');await click('theme:dark');await click('density:compact');await shot('dark-compact');check('外观与密度应用',await page.evaluate(()=>document.documentElement.dataset.theme==='dark'&&document.body.dataset.density==='compact'));await click('theme:light');await click('density:standard');await click('close');
  for(const width of [900,660,390]){
   await page.cdp('Emulation.setDeviceMetricsOverride',{width,height:850,deviceScaleFactor:1,mobile:false});
-  for(const id of ['chat','inbox','ideas','tasks','settings/models','settings/provider']){await screen(id);if(id==='inbox')await click('item:i2');await shot('width-'+width+'-'+id.replaceAll('/','-'));check(width+'无横向溢出 '+id,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
+  for(const id of ['chat','inbox','ideas','tasks','settings/models','settings/provider']){await screen(id);if(id==='inbox')await click('item:i2');await shot('width-'+width+'-'+id.replaceAll('/','-'));check(width+'保持桌面比例 '+id,await page.evaluate(()=>{const c=document.querySelector('.prototype-canvas'),r=c.getBoundingClientRect();return c.offsetWidth===1000&&c.offsetHeight===700&&Math.abs(r.width/r.height-10/7)<.001&&r.right<=innerWidth+1}));check(width+'无横向溢出 '+id,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
  }
  await page.cdp('Emulation.setDeviceMetricsOverride',{width:1680,height:969,deviceScaleFactor:1,mobile:false});
  check('浏览器无脚本异常',await page.evaluate(()=>window.__mockErrors.length===0));

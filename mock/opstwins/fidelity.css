@@ -1,0 +1,174 @@
+/* MyGO source alignment. Canonical values: native/mygo/main.go,
+   docs/design/macos-{ui-study,navigation-rail,workspace-refinement,chat-sessions}.css
+   and web/src/desktop/full/product.css. The production files remain untouched. */
+:root {
+  --desk:#e9ecf1; --ink:#252831; --muted:#626a76; --line:#e7e9ee;
+  --panel:#f4f5f7; --hover:#f5f6f8; --selected:#e8effd;
+  --blue:#356ee8; --accent:#cce5ff; --bubble:#ececee;
+  --sidebar:var(--panel); --gap:18px; --row:56px;
+  -webkit-font-smoothing:antialiased;
+}
+:root[data-theme=dark] {
+  --desk:#15181e; --bg:#20232a; --panel:#1b1e24; --ink:#ebedf2;
+  --muted:#a1a7b2; --line:#333742; --hover:#282c34; --selected:#2b3c59;
+  --blue:#8aafff; --accent:#2d4b6e; --bubble:#30343d;
+}
+body[data-density=compact] {--gap:14px;--row:48px}
+body[data-density=standard] {--gap:18px;--row:56px}
+body[data-density=relaxed] {--gap:24px;--row:64px}
+.studio-bar {height:48px;padding:0 24px;gap:20px}
+.studio-brand {font-size:13px}
+.studio-brand img {width:23px;height:23px}
+.studio-brand>span {font-size:8px}
+.studio-actions {gap:5px}
+.studio-button {font-size:11px}
+.scene-bar {height:30px;margin:0 24px;padding-bottom:5px}
+.scene-hint {font-size:10px}
+#app {padding:12px 24px 20px}
+.prototype-stage {position:relative;margin:0 auto}
+.prototype-canvas {
+  position:relative;width:1000px;height:700px;
+  transform:scale(var(--window-scale,1));transform-origin:top left;
+}
+.desktop-window {
+  width:100%;height:100%;min-height:0;border-radius:13px;
+  border:1px solid #aab3c54a;box-shadow:0 22px 65px #25344d1c;
+  container:product / inline-size;
+}
+.rail {width:96px;background:#fcfcfd;border-right:0}
+:root[data-theme=dark] .rail {background:#22252b}
+.traffic {top:18px;left:16px;gap:8px}
+.traffic i {width:12px;height:12px}
+.rail nav {position:absolute;inset:98px 0 122px;align-items:center;justify-content:center;margin:0;transform:none;gap:12px}
+.rail-button {color:var(--ink)}
+.rail-button.selected {background:#edeef1;color:var(--ink)}
+:root[data-theme=dark] .rail-button.selected {background:#3a3f48}
+.rail-button svg {stroke-width:1.8}
+.rail footer {gap:12px;bottom:10px}
+.rail footer button {width:44px;height:44px;color:var(--ink)}
+.rail footer svg {width:24px;height:24px;stroke-width:1.8}
+.chat-heading {height:58px;padding:12px 13px;gap:16px;font-size:13px}
+.session-toggle {height:36px;padding:0 16px 0 14px;border-radius:22px;font-size:15px;box-shadow:0 4px 16px #17223514;color:var(--ink)}
+.session-toggle svg {width:18px;height:18px}
+.timeline {padding:24px 28px 112px;scroll-padding-bottom:112px}
+.reading {max-width:680px}
+.message {margin-bottom:22px;font-size:15px;line-height:1.65}
+.message .bubble {padding:12px 16px 24px;border-radius:19px;max-width:88%;background:var(--bubble)}
+.message.user .bubble {background:var(--accent)}
+.bubble p {line-height:1.65}
+.bubble .md-gap {height:8px}
+.message-actions {left:16px}
+.composer-wrap {bottom:20px;left:28px;right:28px}
+.composer {gap:10px;padding:12px 16px;min-height:60px;border-radius:34px;box-shadow:0 5px 24px #1722350e,0 1px 6px #17223506;border:1px solid #e9edf155}
+.composer textarea {height:34px;padding:5px 1px;line-height:24px;font-size:15px}
+.composer .icon-button,.composer .send {width:34px;height:34px;padding:6px}
+.composer .icon-button svg,.composer .send svg {width:22px;height:22px;stroke-width:1.8}
+.composer-caption {display:none}
+.sessions {width:240px;padding:16px 12px;background:var(--bg);box-shadow:8px 0 22px #17223514}
+.content-page {padding:32px 36px;max-width:800px}
+.page-heading {margin-bottom:26px}
+.page-heading h1 {font-size:23px;letter-spacing:-.5px}
+.ideas-page {max-width:980px;padding:34px 42px}
+.ideas-page h1 {font-size:24px}
+.idea-prompt {margin:20px 0 18px;padding:10px 13px;border-radius:13px}
+.idea-prompt input {font-size:12px}
+.idea-prompt button {color:var(--blue);font-size:11px}
+.pills {margin-bottom:16px}
+.pills button {border-radius:7px;font-size:11px;padding:6px 11px}
+.idea-card {padding:var(--gap) 0;gap:18px}
+.idea-card>img {width:44px;height:44px}
+.idea-copy h3 {font-size:16px;line-height:1.55;letter-spacing:-.2px;margin-bottom:6px}
+.idea-copy>p {line-height:1.65}
+.idea-actions {margin-top:8px;min-height:26px}
+.idea-actions button {font-size:12px;min-height:26px;padding:3px 0}
+.idea-actions button:first-child {color:var(--blue)}
+.task-group {margin-bottom:24px}
+.task-group-head {font-size:13px;font-weight:550;min-height:32px}
+.task-group-head .count {padding:2px 6px;border-radius:6px;background:var(--hover);font-size:11px;min-width:23px}
+.task-group:not(:first-of-type) {border-top:1px solid var(--line);padding-top:8px}
+.task-title {padding:12px 0}
+.inbox-list {width:265px}
+.filterbar {padding:25px 13px 13px;gap:3px}
+.filterbar button {font-size:11px;padding:6px 8px;border-radius:6px}
+.list-search {margin:0 17px 17px;border:1px solid var(--line);background:var(--bg)}
+.inbox-item {padding:13px 9px}
+.avatar {width:30px;height:30px;font-size:11px;border:1px solid var(--line)}
+.item-meta time,.item-copy>strong,.source-label {font-size:11px}
+.item-copy>strong {font-weight:500}
+.detail-scroll {padding:24px 21px;overscroll-behavior:contain}
+.person-heading {gap:10px;margin-bottom:23px}
+.person-heading .avatar {width:34px;height:34px}
+.person-heading h2 {font-size:15px;letter-spacing:0}
+.person-heading p {font-size:11px}
+.judgment {background:transparent;border:1px solid var(--line);padding:14px 16px;margin-bottom:19px}
+.judgment-heading {margin-bottom:17px;font-size:11px;font-weight:550}
+.meters {gap:16px}
+.meters span {font-size:11px}
+.meter {height:6px;margin-top:10px;background:var(--hover)}
+.meter i {background:var(--blue)}
+.original-card {border:1px solid var(--line);border-radius:11px;margin-bottom:19px;overflow:hidden}
+.original-card>.section-heading {margin:0;padding:12px 15px;border-bottom:1px solid var(--line);color:var(--muted)}
+.source-thread {padding:14px;max-height:330px;margin:0}
+.source-message {gap:8px;margin-bottom:17px}
+.source-message>div:last-child {border-radius:15px;padding:9px 12px;font-size:12px;line-height:1.7}
+.reply-draft {font-size:13px;padding:15px 17px;background:var(--hover);min-height:120px;line-height:1.85}
+.inbox-actions {min-height:62px;padding:12px 21px;gap:8px}
+.inbox-actions button {font-size:13px;padding:7px 11px;min-height:32px;color:var(--ink)}
+.inbox-actions .primary {background:var(--blue);color:white}
+.settings-window {width:900px;height:640px;max-height:none;box-shadow:0 22px 70px #0f172a33,0 0 0 .5px #0000002e}
+.settings-nav {width:225px;padding:40px 16px 16px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;gap:4px}
+.settings-nav>h2,.settings-nav>.nav-label {display:none}
+.settings-lights {left:16px;top:13px;gap:8px}
+.settings-lights button,.settings-lights i {width:12px;height:12px}
+.settings-lights i {background:#d7dbe1!important}
+.settings-nav>button {height:34px;min-height:34px;padding:7px 10px;font-size:14px;flex:none}
+.settings-nav>button.selected {background:var(--hover)}
+.settings-content {padding:18px 24px 24px;font-size:14px;max-width:688px}
+.settings-content h1 {font-size:20px;margin:0;letter-spacing:0}
+.settings-content .page-heading {margin-bottom:24px;min-height:24px}
+.setting-row {min-height:48px;padding:8px 0}
+.setting-row>div:first-child>span {font-size:14px}
+.setting-row small {font-size:12px}
+.settings-section>h3 {font-size:13px}
+.connection-card {min-height:64px}
+.connection-card strong {font-size:14px}
+.connection-card small {font-size:12px}
+.settings-content form[data-kind=model] select {width:240px}
+.settings-content form[data-kind=model] .form-actions {margin-top:8px}
+.model-test {margin:10px 0 28px}
+.sticky-back {top:-18px;margin:0 0 18px;padding:12px 0}
+.sticky-back button {font-size:14px}
+.sticky-back svg {width:20px;height:20px;stroke-width:1.75}
+.prototype-canvas>.modal-backdrop {position:absolute;inset:0;padding:24px;border-radius:13px}
+.prototype-canvas .modal {max-height:620px}
+.prototype-canvas .search-modal {width:640px;margin-top:58px}
+.prototype-canvas .search-results {max-height:400px}
+.prototype-canvas .modal-backdrop:has(#task-form) {padding:0;justify-content:flex-end;align-items:stretch;backdrop-filter:none;background:#17223516}
+.prototype-canvas .modal:has(#task-form) {width:460px;max-height:100%;border-radius:0 13px 13px 0;padding:24px;box-shadow:-12px 0 45px #16213816}
+.prototype-canvas .modal:has(#task-form) .field:first-child input {font-size:20px;font-weight:550}
+.mini-viewport {aspect-ratio:10/7}
+.mini-viewport iframe {width:1000px;height:700px}
+.overview {max-width:1200px;padding:16px 0}
+.overview-heading {margin:6px 0 24px}
+.overview-heading h1 {font-size:26px;margin:10px 0}
+.overview-heading b {font-size:36px}
+.screen-grid {grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.embedded .desktop-window {width:100%;height:100dvh;border:0;border-radius:0;box-shadow:none}
+.embedded .settings-window {width:900px;height:640px}
+.embedded .modal-backdrop {position:fixed}
+@media(max-width:760px) {
+  .studio-bar {padding:0 12px;gap:8px}
+  .scene-bar {margin:0 12px}
+  #app {padding:12px 12px 16px}
+  .studio-brand {font-size:12px}
+  .studio-brand>span {display:none}
+  .overview {padding:16px 4px}
+  .screen-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+  .has-notes #app {padding-right:12px}
+}
+@media(max-width:480px) {.screen-grid {grid-template-columns:1fr}}
+
+[hidden]{display:none!important}
+.provider-row {width:100%;height:44px;border-radius:0;border-bottom:1px solid var(--line);padding:8px 0;display:flex;justify-content:space-between;font-size:14px;text-align:left}
+.provider-row>span {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.provider-row svg {width:16px;height:16px;color:var(--muted)}
