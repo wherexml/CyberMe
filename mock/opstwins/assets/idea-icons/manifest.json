@@ -1,0 +1,74 @@
+[
+  {
+    "id": "report",
+    "label": "周报",
+    "file": "report.svg",
+    "accent": "#829fc2"
+  },
+  {
+    "id": "meeting",
+    "label": "会议",
+    "file": "meeting.svg",
+    "accent": "#90a3a8"
+  },
+  {
+    "id": "briefing",
+    "label": "每日摘要",
+    "file": "briefing.svg",
+    "accent": "#ccac67"
+  },
+  {
+    "id": "followup",
+    "label": "客户跟进",
+    "file": "followup.svg",
+    "accent": "#98ac92"
+  },
+  {
+    "id": "automation",
+    "label": "自动化",
+    "file": "automation.svg",
+    "accent": "#90a4bd"
+  },
+  {
+    "id": "insight",
+    "label": "洞察",
+    "file": "insight.svg",
+    "accent": "#cbb16c"
+  },
+  {
+    "id": "research",
+    "label": "资料研究",
+    "file": "research.svg",
+    "accent": "#93a7b7"
+  },
+  {
+    "id": "reminder",
+    "label": "后续提醒",
+    "file": "reminder.svg",
+    "accent": "#cda778"
+  },
+  {
+    "id": "files",
+    "label": "文件整理",
+    "file": "files.svg",
+    "accent": "#97a8b9"
+  },
+  {
+    "id": "workflow",
+    "label": "流程优化",
+    "file": "workflow.svg",
+    "accent": "#b2a0bb"
+  },
+  {
+    "id": "privacy",
+    "label": "权限与安全",
+    "file": "privacy.svg",
+    "accent": "#97ac9a"
+  },
+  {
+    "id": "finance",
+    "label": "费用与账单",
+    "file": "finance.svg",
+    "accent": "#c4ac88"
+  }
+]
