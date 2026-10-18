@@ -2,7 +2,7 @@
 import {cp,mkdir,rm,writeFile,readdir,lstat,readlink,realpath} from 'node:fs/promises';
 import {resolve,join,relative,isAbsolute,dirname} from 'node:path';
 const root=resolve(import.meta.dirname,'..'),app=resolve(process.argv[2]||'');
-if(app!==join(root,'.local/apps/OpsTwins Standalone.app'))throw Error('Unexpected build destination');
+if(app!==join(root,'.local/apps/OpsTwins Standalone.app') && !(app===join(root,'.local/apps/.build-transaction/staged.app') && process.env.OPSTWIN_BUILD_OUTPUT===app))throw Error('Unexpected build destination');
 const dest=join(app,'Contents/Resources/runtime');await rm(dest,{recursive:true,force:true});await mkdir(dest,{recursive:true});
 for(const name of ['server/src','server/agent','server/assets','shared','node_modules'])await cp(join(root,name),join(dest,name),{recursive:true,verbatimSymlinks:true});
 await mkdir(join(dest,'scripts'),{recursive:true});await cp(join(root,'scripts/mygo-workspace-gateway.mjs'),join(dest,'scripts/mygo-workspace-gateway.mjs'));

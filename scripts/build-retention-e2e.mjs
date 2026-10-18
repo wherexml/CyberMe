@@ -1,0 +1,36 @@
+import {mkdirSync,writeFileSync,readFileSync,existsSync,renameSync,cpSync,symlinkSync,rmSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {spawnSync} from 'node:child_process';
+import assert from 'node:assert/strict';
+import {retainedBuild} from './build-retention.mjs';
+const out=resolve('output/build-retention-'+new Date().toISOString().replace(/[:.]/g,'-'));
+mkdirSync(out,{recursive:true});
+const child=resolve(out,'builder.mjs');
+writeFileSync(child,`import {mkdirSync,writeFileSync,copyFileSync} from 'node:fs';import {spawnSync} from 'node:child_process';
+const app=process.env.OPSTWIN_BUILD_OUTPUT;mkdirSync(app+'/Contents/MacOS',{recursive:true});
+writeFileSync(app+'/Contents/Info.plist','<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>demo</string><key>CFBundleIdentifier</key><string>local.retention.e2e</string></dict></plist>');
+copyFileSync('/usr/bin/true',app+'/Contents/MacOS/demo');mkdirSync(app+'/Contents/Resources',{recursive:true});writeFileSync(app+'/Contents/Resources/version',process.argv[2]);
+if(process.argv[2]==='fail')process.exit(9);
+if(process.argv[2]!=='unsigned'){const r=spawnSync('codesign',['--force','--sign','-',app],{stdio:'inherit'});process.exit(r.status??1);}
+`);
+const name='OpsTwins Standalone.app', apps=resolve(out,'.local/apps'), current=resolve(apps,name), previous=resolve(apps,'previous',name);
+const checks=[];
+function check(label,fn){fn();checks.push({label,status:'PASS'});}
+const version=p=>readFileSync(resolve(p,'Contents/Resources/version'),'utf8');
+const build=v=>retainedBuild(out,name,process.execPath,[child,v]);
+build('1');build('2');build('3');
+check('three signed builds retain only current 3 and previous 2',()=>{assert.equal(version(current),'3');assert.equal(version(previous),'2');assert(!existsSync(resolve(apps,'.build-transaction')));});
+check('failed child preserves both generations',()=>{assert.throws(()=>build('fail'));assert.equal(version(current),'3');assert.equal(version(previous),'2');});
+check('unsigned bundle cannot replace current',()=>{assert.throws(()=>build('unsigned'));assert.equal(version(current),'3');assert.equal(version(previous),'2');});
+const lock=resolve(apps,'.build-lock');mkdirSync(lock);writeFileSync(resolve(lock,'pid'),String(process.pid));
+check('active build lock rejects concurrency',()=>assert.throws(()=>build('4'),/already running/));rmSync(lock,{recursive:true});
+const tx=resolve(apps,'.build-transaction');
+mkdirSync(tx);writeFileSync(resolve(tx,'transaction.json'),JSON.stringify({name}));renameSync(current,resolve(tx,'prior.app'));mkdirSync(resolve(tx,'staged.app'));
+check('interruption before publish restores original',()=>{assert.throws(()=>build('fail'));assert.equal(version(current),'3');assert.equal(version(previous),'2');});
+mkdirSync(tx);writeFileSync(resolve(tx,'transaction.json'),JSON.stringify({name}));renameSync(current,resolve(tx,'prior.app'));cpSync(previous,current,{recursive:true});writeFileSync(resolve(current,'Contents/Resources/version'),'4');
+check('interruption after publish finishes rollback rotation',()=>{assert.throws(()=>build('fail'));assert.equal(version(current),'4');assert.equal(version(previous),'3');});
+const other=resolve(out,'external');mkdirSync(other);writeFileSync(resolve(other,'sentinel'),'keep');renameSync(previous,resolve(apps,'kept.app'));symlinkSync(other,previous);
+check('symlink rollback rejected without touching destination',()=>{assert.throws(()=>build('5'),/Symlink/);assert.equal(readFileSync(resolve(other,'sentinel'),'utf8'),'keep');assert.equal(version(current),'4');});
+rmSync(previous);renameSync(resolve(apps,'kept.app'),previous);
+writeFileSync(resolve(out,'report.json'),JSON.stringify({at:new Date().toISOString(),checks,scope:'Real filesystem and signed fixture child processes; not full Go/Rust compilation'},null,2));
+console.log(JSON.stringify({out,passed:checks.length}));

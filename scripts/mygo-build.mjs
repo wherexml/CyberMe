@@ -5,6 +5,9 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+if(!process.env.OPSTWIN_BUILD_OUTPUT){
+ const run=spawnSync(process.execPath,[resolve(root,'scripts/build-retention.mjs'),'mygo',...process.argv.slice(2)],{stdio:'inherit'});process.exit(run.status??1);
+}
 const source=resolve(root,'docs/design'), assets=resolve(root,'native/mygo/assets');
 await mkdir(assets,{recursive:true});
 for(const name of await readdir(assets))if(name!=='.gitkeep')await rm(resolve(assets,name),{recursive:true,force:true});
@@ -38,12 +41,14 @@ await fullAssets(root,assets);
 await cp(resolve(root,'native/mygo/licenses'),resolve(assets,'licenses'),{recursive:true});
 const standalone=process.argv.includes('--standalone');
 const live=standalone||process.argv.includes('--workspace');
-const app=resolve(root,standalone?'.local/apps/OpsTwins Standalone.app':live?'.local/apps/OpsTwins MyGO.app':'.local/apps/OpsTwins MyGO QA.app');
+const currentApp=resolve(root,standalone?'.local/apps/OpsTwins Standalone.app':live?'.local/apps/OpsTwins MyGO.app':'.local/apps/OpsTwins MyGO QA.app');
+const app=process.env.OPSTWIN_BUILD_OUTPUT;
+if(app!==resolve(root,'.local/apps/.build-transaction/staged.app'))throw Error('Invalid build staging path');
 await mkdir(resolve(app,'Contents/MacOS'),{recursive:true});
 await mkdir(resolve(app,'Contents/Resources'),{recursive:true});
 const iconset=resolve(root,'.local/mygo-brand.iconset'),sharp=(await import('sharp')).default;
 await mkdir(iconset,{recursive:true});
-for(const size of [16,32,128,256,512])for(const scale of [1,2])await sharp(resolve(root,'native/macos/assets/opstwins.svg')).resize(size*scale,size*scale).png().toFile(resolve(iconset,`icon_${size}x${size}${scale===2?'@2x':''}.png`));
+for(const size of [16,32,128,256,512])for(const scale of [1,2])await sharp(resolve(root,'native/mygo/brand/opstwins.svg')).resize(size*scale,size*scale).png().toFile(resolve(iconset,`icon_${size}x${size}${scale===2?'@2x':''}.png`));
 const iconResult=spawnSync('iconutil',['-c','icns',iconset,'-o',resolve(app,'Contents/Resources/OpsTwins.icns')],{stdio:'inherit'});if(iconResult.status!==0)throw Error('Application icon build failed');
 const result=spawnSync('go',['build','-trimpath',`-ldflags=-X github.com/egoist/mygo.production=1 -X main.workspaceRoot=${standalone?'':root} -X main.runtimeNode=${standalone?'':process.execPath} -X main.runtimeMode=${standalone?'standalone':'workspace'} -X main.serviceScope=${live?'mygo-desktop':'mygo-pilot-public-v2'} -X main.servicePort=${live?'46312':'46310'} -X main.clientScope=${live?'mygo-workspace':'mygo-full-qa'}`,'-o',resolve(app,'Contents/MacOS/opstwins-mygo.next'),'.'],{cwd:resolve(root,'native/mygo'),env:{...process.env,GOTOOLCHAIN:'go1.27.1'},stdio:'inherit'});
 if(result.status!==0)process.exit(result.status||1);
@@ -56,7 +61,7 @@ await mkdir(resolve(root,'output/mygo-1007'),{recursive:true});
 const builtAt=new Date().toISOString();
 const files=[];async function scan(dir,prefix=''){for(const name of (await readdir(dir)).sort()){const path=resolve(dir,name),rel=prefix+name;const stat=await (await import('node:fs/promises')).lstat(path);if(stat.isDirectory())await scan(path,rel+'/');else if(stat.isFile()){const raw=await readFile(path);files.push({path:rel,sha256:createHash('sha256').update(raw).digest('hex')})}else throw Error('Unexpected asset type')}}
 await scan(assets);
-const record=JSON.stringify({at:builtAt,mygo:'v0.2.15',go:'1.27.1',app,bundleExecutableSHA256:createHash('sha256').update(bytes).digest('hex'),sourceDesignAssets:manifest,embeddedAssets:files},null,2);
+const record=JSON.stringify({at:builtAt,mygo:'v0.2.15',go:'1.27.1',app:currentApp,bundleExecutableSHA256:createHash('sha256').update(bytes).digest('hex'),sourceDesignAssets:manifest,embeddedAssets:files},null,2);
 await mkdir(resolve(root,'output/mygo-1007/builds'),{recursive:true});
 await writeFile(resolve(root,'output/mygo-1007/builds',builtAt.replaceAll(':','-')+'.json'),record);
 await writeFile(resolve(root,'output/mygo-1007/build.json'),record);

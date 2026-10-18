@@ -2,7 +2,7 @@
 
 当前目标为 macOS 完整产品 + 最新 HTML，原三页先导已扩展；完整交付尚须逐项验收，不能由编译或页面数量推定。
 
-固定 MyGO v0.2.15 / Go 1.27.1，保留 GPUI 与旧先导 App。入口为 `mygo://localhost/desktop.html`；`index.html` 仅公开视觉资格，`pilot.html` 仅历史先导诊断。
+固定 MyGO v0.2.15 / Go 1.27.1，当前唯一桌面客户端为 MyGO；GPUI 已于 2026-10-18 退役，Logo 位于 brand/opstwins.svg。入口为 `mygo://localhost/desktop.html`；`index.html` 仅公开视觉资格，`pilot.html` 仅历史先导诊断。
 
 ## 运行
 
