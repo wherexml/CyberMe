@@ -1,3 +1,4 @@
+import {startInboxChat} from './inbox-chat';
 import {mountMemory,enqueueMemory,startMemory} from './conversation-memory';
 import {queryFeishuContext} from './feishu-context';
 import {CODE_ROOT,STANDALONE} from './runtime-paths';
@@ -316,6 +317,7 @@ for(const run of list('runs').filter(row=>row.status==='running'))put('runs',{..
 installChatContinuation(app);
 const stopMemory=startMemory(runAgent,process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_MEMORY_BACKGROUND==='1');
 const backgroundTimers: ReturnType<typeof setInterval>[] = [];
+if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_INBOX_BACKGROUND==='1'||process.env.OPSTWIN_CONNECTION_BACKGROUND==='1'||process.env.OPSTWIN_INBOX_CHAT_BACKGROUND==='1')backgroundTimers.push(startInboxChat());
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'){
  backgroundTimers.push(startInboxTriage(),startScheduler(),startConnectionScheduler(),
   startSourceProcessing(),startDefaultDrafts(),startNotifications(),startAutonomousDispatch());

@@ -1,3 +1,4 @@
+import {entityChanged} from './entity-events';
 import {communicationMessages} from './communication-context';
 import {connectionCredentialValues} from './connection-credentials-policy';
 import { presentInbox } from './message-presentation';
@@ -49,8 +50,8 @@ export function put<T extends Record<string,any>>(type:string,value:T,local=true
    put('inbox',{...child,messages:data.messages,body:data.body,sourceScope:data.sourceScope,sourceUpdatedAt:data.sourceUpdatedAt,sourceChangedAt:now(),approved:false,sensitiveApproved:false,attentionOverride:false});
   }
  }
- return data as T & {id:string;createdAt:string;updatedAt:string};}
-export function remove(type:string,id:string) {db.prepare('UPDATE entities SET deleted=1,local_edited=1 WHERE type=? AND id=?').run(type,id);bump();}
+ entityChanged(type,data.id);return data as T & {id:string;createdAt:string;updatedAt:string};}
+export function remove(type:string,id:string) {db.prepare('UPDATE entities SET deleted=1,local_edited=1 WHERE type=? AND id=?').run(type,id);bump();entityChanged(type,id);}
 export function restore(type:string,id:string) {db.prepare('UPDATE entities SET deleted=0,local_edited=1 WHERE type=? AND id=?').run(type,id);bump();return get(type,id);}
 export function importEntity(type:string,id:string,value:Record<string,any>) {if(type==='inbox')value=normalizeInboxAttachments(value);const r=db.prepare('SELECT local_edited,deleted FROM entities WHERE type=? AND id=?').get(type,id) as any;const snapshot={...value,id,sourceSystem:'opstwin',sourceId:value.sourceId||id,importedAt:now()};db.prepare('INSERT INTO source_snapshots(type,id,data,hash,imported_at) VALUES(?,?,?,?,?) ON CONFLICT(type,id) DO UPDATE SET data=excluded.data,hash=excluded.hash,imported_at=excluded.imported_at').run(type,id,JSON.stringify(snapshot),hash(snapshot),now());if(r?.local_edited||r?.deleted)return false;put(type,snapshot,false);return true;}
 export function activity(title:string,kind:string,status='succeeded',detail?:string,entityId?:string,receipt?:any) {return put('activities',{id:uid('activity'),title,kind,status,detail,entityId,receipt});}

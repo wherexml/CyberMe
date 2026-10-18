@@ -1,0 +1,10 @@
+// Read-only checks against the actual installed workspace. Never persist source text or IDs.
+import fs from 'node:fs/promises';import crypto from 'node:crypto';
+const dir='output/mygo-main-analysis-20261018',tag=process.argv[2]||'installed',hash=v=>crypto.createHash('sha256').update(typeof v==='string'?v:JSON.stringify(v)).digest('hex');
+if(!/^[a-z0-9-]+$/.test(tag))throw Error('Invalid evidence tag');
+const api=async path=>{const r=await fetch('http://127.0.0.1:46110'+path,{signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error('Read failed '+r.status);return r.json()};
+const baseline=JSON.parse(await fs.readFile(dir+'/actual-before-candidate.json'));const [items,primary,models,bootstrap]=await Promise.all(['/api/inbox','/api/conversations/primary','/api/settings/models','/api/bootstrap'].map(api));const messages=bootstrap.messages;
+const changed=items.filter(i=>baseline.draftHashes[hash(i.id)]!==hash({draft:i.draft,draftCandidate:i.draftCandidate,editedByUser:i.editedByUser})).length;
+const selected=JSON.parse(await fs.readFile('.local/mygo-main-analysis-20261018/actual-selected-item.json'));const itemId=selected.itemId||selected.id;const projected=messages.filter(m=>m.inboxAnalysis?.itemId===itemId&&m.inboxAnalysis.kind==='inbox-analysis-v1');
+const checks=[['原工作区条目数量保持',items.length===baseline.inboxCount],['全部草稿与候选保持',changed===0],['原primary保持',hash(primary.conversationId)===baseline.primaryHash],['当前模型与版本保持',models.version===baseline.modelVersion&&models.standard?.model===baseline.model],['真实分析在主会话且无重复',projected.length===1&&projected[0].conversationId===primary.conversationId],['真实Jev额度错误保留',projected.length===1&&projected[0].inboxAnalysis.state==='failed'&&/额度/.test(projected[0].content)]];
+const result={checks:checks.map(([name,pass])=>({name,status:pass?'PASS':'FAIL'})),inboxCount:items.length,changedDrafts:changed,privateTextNotSaved:true};await fs.writeFile(dir+'/actual-'+tag+'-preservation.json',JSON.stringify(result,null,2));console.log(result);if(checks.some(([,pass])=>!pass))process.exitCode=1;

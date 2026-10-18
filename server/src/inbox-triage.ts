@@ -60,6 +60,7 @@ async function perform(item:any):Promise<InboxTriage>{
   const serialized=JSON.stringify(state);
   if(serialized.length>55000)throw new Error('消息或上下文过长，请人工查看完整材料。');
   const response=await fetch('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({model:'jev-latest',state,questions:{...questions,...handlingQuestions,answered:answeredQuestion}}),signal:AbortSignal.timeout(20000)});
+  if(response.status===402)throw new Error('Jev API额度不足，请补充额度后重试。');
   if(!response.ok)throw new Error(`Jev HTTP ${response.status}，判断失败，可稍后重试。`);
   // Never retain upstream error bodies, which may echo the submitted source or headers.
   const data=await response.json() as any;
