@@ -9,3 +9,18 @@ output/
 .DS_Store
 docs/sprint*
 doocs/sprint*
+
+# Private historical docs stay local; publish curated specifications and runtime UI assets.
+/docs/*
+!/docs/public/
+!/docs/design/
+/docs/design/*.md
+/docs/design/*.txt
+/docs/design/*.json
+/docs/design/*.png
+/docs/design/*.jpg
+*.pem
+*.p12
+*.p8
+*.key
+credentials/
