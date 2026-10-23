@@ -1,15 +1,15 @@
-# OpsTwins MyGO
+# CyberMe（MyGO）
 
 当前目标为 macOS 完整产品 + 最新 HTML，原三页先导已扩展；完整交付尚须逐项验收，不能由编译或页面数量推定。
 
-固定 MyGO v0.2.15 / Go 1.27.1，当前唯一桌面客户端为 MyGO；GPUI 已于 2026-10-18 退役，Logo 位于 brand/opstwins.svg。入口为 `mygo://localhost/desktop.html`；`index.html` 仅公开视觉资格，`pilot.html` 仅历史先导诊断。
+固定 MyGO v0.2.15 / Go 1.27.1，当前唯一桌面客户端为 MyGO；GPUI 已于 2026-10-18 退役，Logo 位于 brand/cyberme.svg。入口为 `mygo://localhost/desktop.html`；`index.html` 仅公开视觉资格，`pilot.html` 仅历史先导诊断。
 
 ## 运行
 
 - `node --import tsx scripts/mygo-pilot-service.mjs`：公开隔离 API 46310，不导入姊妹数据、不运行后台调度、禁止外发。初次需要模型时显式加 `--reuse-model-config`；配置只在服务端私有文件。
-- `node scripts/mygo-build.mjs`：构建并 ad-hoc 签名 `.local/apps/OpsTwins MyGO QA.app`，独立 QA 状态。
+- `node scripts/mygo-build.mjs`：构建并 ad-hoc 签名 `.local/apps/CyberMe QA.app`，独立 QA 状态。
 - `node scripts/mygo-desktop-preview.mjs`：公开验收预览 46300，固定同源转发至 46310。
-- `node scripts/mygo-build.mjs --workspace`：构建 `.local/apps/OpsTwins MyGO.app`，连接现有日常工作区；先启动既有 API 46110。
+- `node scripts/mygo-build.mjs --workspace`：构建 `.local/apps/CyberMe Workspace.app`，连接现有日常工作区；先启动既有 API 46110。
 - `node scripts/mygo-launch.mjs`：启动 46312 本机网关并打开工作区包，网关不复制或创建业务数据库。
 
 ## 复验

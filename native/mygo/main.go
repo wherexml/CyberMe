@@ -70,7 +70,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mygo.App.SetName("OpsTwins MyGO")
+	mygo.App.SetName("CyberMe")
 	handler := mygo.FileServer(web)
 	mygo.Protocol.Handle("mygo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'")
@@ -86,7 +86,7 @@ func main() {
 	mygo.Bind(&Bridge{})
 	mygo.Bind(&DesktopFiles{Owner: q})
 	mygo.App.WhenReady(func() {
-		w := mygo.NewWindow(mygo.WindowOptions{Title: "OpsTwins MyGO", URL: "/desktop.html", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
+		w := mygo.NewWindow(mygo.WindowOptions{Title: "CyberMe", URL: "/desktop.html", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
 		w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
 			if !localURL(e.URL) {
 				e.PreventDefault()
@@ -109,7 +109,7 @@ func main() {
 			return true
 		})
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "OpsTwins", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, mygo.Separator(), {Label: "隐藏 OpsTwins", Accelerator: "Cmd+H", Click: func(_ *mygo.MenuItem, _ *mygo.Window) { q.owner(w, false); mygo.App.Hide() }}, {Label: "显示 OpsTwins", Click: func(_ *mygo.MenuItem, _ *mygo.Window) {
+			{Label: "CyberMe", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, mygo.Separator(), {Label: "隐藏 CyberMe", Accelerator: "Cmd+H", Click: func(_ *mygo.MenuItem, _ *mygo.Window) { q.owner(w, false); mygo.App.Hide() }}, {Label: "显示 CyberMe", Click: func(_ *mygo.MenuItem, _ *mygo.Window) {
 				if !w.IsDestroyed() {
 					mygo.App.Show()
 					w.Restore()

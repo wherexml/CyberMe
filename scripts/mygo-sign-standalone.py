@@ -7,7 +7,7 @@ parser.add_argument('--evidence-tag',default='20261016')
 args=parser.parse_args()
 if not re.fullmatch(r'[a-zA-Z0-9-]+',args.evidence_tag):raise SystemExit('Invalid evidence tag')
 root=Path(__file__).resolve().parent.parent
-app=root/'.local/apps/OpsTwins Standalone.app'
+app=root/'.local/apps/CyberMe.app'
 identity='F3C065FE2C81D5863813D53ED81B3FF41540D901'
 private=root/('.local/signing/standalone-'+args.evidence_tag);private.mkdir(parents=True,exist_ok=True)
 node_ent=private/'node-entitlements.plist';node_ent.write_text('<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/><key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>')

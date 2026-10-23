@@ -3,7 +3,7 @@ import {resolve, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 
-const names=['OpsTwins V17 QA.app','OpsTwins Standalone.app','OpsTwins MyGO.app','OpsTwins MyGO QA.app'];
+const names=['CyberMe.app','CyberMe Workspace.app','CyberMe QA.app','OpsTwins V17 QA.app','OpsTwins Standalone.app','OpsTwins MyGO.app','OpsTwins MyGO QA.app'];
 function safe(path) {
   if (existsSync(path) || (()=>{try {lstatSync(path);return true;}catch{return false;}})()) {
     if(lstatSync(path).isSymbolicLink()) throw Error(`Symlink rejected: ${path}`);
@@ -67,7 +67,7 @@ if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url))
   const [kind,...args]=process.argv.slice(2);
   if(kind==='mygo') {
     if(args.some(arg=>arg.startsWith('--acceptance'))) throw Error('Acceptance targets require the pending V17 build changes');
-    const name=args.includes('--standalone')?'OpsTwins Standalone.app':args.includes('--workspace')?'OpsTwins MyGO.app':'OpsTwins MyGO QA.app';
+    const name=args.includes('--standalone')?'CyberMe.app':args.includes('--workspace')?'CyberMe Workspace.app':'CyberMe QA.app';
     retainedBuild(root,name,process.execPath,[resolve(root,'scripts/mygo-build.mjs'),...args]);
   } else throw Error('Expected mygo');
 }

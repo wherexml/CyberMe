@@ -61,10 +61,14 @@ export async function fullAssets(root,assets){
  const css=[...bundle.matchAll(/<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g)].map(m=>`<link rel="stylesheet" href="${m[1]}">`).join('');
  html=html.replace('<body>',css+'<link rel="stylesheet" href="full/product.css"><link rel="stylesheet" href="full/inbox-policy.css"><body>');
  html+=`<script>window.OPSTWINS_DESKTOP_MODE=true;window.OPSTWINS_DESKTOP_MANIFEST=${JSON.stringify({islands:island,scripts:sequence})}</script><script src="full/runtime.js"></script><script src="full/bootstrap.js"></script>`;
- await writeFile(resolve(assets,'desktop.html'),html.replaceAll('OpsTwins macOS 设计原型','OpsTwins').replace('OpsTwins · macOS UI study','OpsTwins'));
+ await writeFile(resolve(assets,'desktop.html'),html.replaceAll('OpsTwins macOS 设计原型','CyberMe').replace('OpsTwins · macOS UI study','CyberMe').replace('<title>CyberMe</title>','<title>CyberMe</title><link rel="icon" href="icon.svg" type="image/svg+xml">'));
  await cp(resolve(root,'web/src/desktop/full/product.css'),resolve(assets,'full/product.css'));
  await cp(resolve(root,'web/src/desktop/full/inbox-policy.css'),resolve(assets,'full/inbox-policy.css'));
+ // One SVG source for the embedded mark, favicon and macOS icon build.
+ for(const target of ['icon.svg','assets/opstwins.svg'])await cp(resolve(root,'native/mygo/brand/cyberme.svg'),resolve(assets,target));
+ const brandText=text=>text.replace(/\bOpsTwins\b/g,'CyberMe');
  const strings=JSON.parse(await readFile(resolve(root,'web/src/desktop/full/interface-strings.json'),'utf8'));
+ for(const [key,value] of Object.entries(strings)){strings[key]=brandText(value);strings[brandText(key)]=brandText(value)}
  await writeFile(resolve(assets,'full/interface-strings.js'),'window.OPSTWINS_INTERFACE_STRINGS='+JSON.stringify(strings)+';');
  // Translate literal interface arguments, never runtime business content.
  for(const name of [...sequence,'macos-device-settings.js']){
@@ -72,6 +76,8 @@ export async function fullAssets(root,assets){
   const translate=text=>ts.factory.createCallExpression(ts.factory.createPropertyAccessExpression(ts.factory.createPropertyAccessExpression(ts.factory.createIdentifier('window'),'OpsTwinsDesktop'),'translate'),undefined,[ts.factory.createStringLiteral(text)]);
   const result=ts.transform(source,[ctx=>root=>{
    function visit(n){
+    // Static source literals only: preserve namespaces, storage keys and runtime user content.
+    if(ts.isStringLiteral(n)&&brandText(n.text)!==n.text)return ts.factory.createStringLiteral(brandText(n.text));
     if(ts.isCallExpression(n)){
      const name=ts.isIdentifier(n.expression)?n.expression.text:ts.isPropertyAccessExpression(n.expression)?n.expression.name.text:'';
      const index=['btn','button','toast','notify'].includes(name)?0:['node','n'].includes(name)?2:name==='setAttribute'&&['aria-label','placeholder','title'].includes(n.arguments[0]?.text)?1:-1;
