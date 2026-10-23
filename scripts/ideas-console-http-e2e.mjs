@@ -1,0 +1,15 @@
+// Repeatable HTTP journey against scripts/ideas-console-service.mjs only.
+import assert from 'node:assert/strict';
+import {mkdir,writeFile} from 'node:fs/promises';
+const base='http://127.0.0.1:46760',checks=[];
+async function read(path,status=200){const r=await fetch(base+path);assert.equal(r.status,status,path);const value=await r.json();assert(!JSON.stringify(value).includes('PRIVATE_'),path+' private sentinel');return value;}
+async function check(name,fn){await fn();checks.push({name,status:'PASS'});}
+await check('configured and registered are distinct',async()=>{const v=await read('/api/ideas-console/capabilities');assert.equal(v.worker.enabled,false);assert.equal(v.model.configured,false);assert.equal(v.model.health,'not_checked');assert(v.actions.length>0);assert(v.actions.every(a=>a.registered&&a.availability==='not_checked'));});
+await check('fresh task status overrides stale execution snapshot',async()=>{const v=await read('/api/ideas-console/intents/console-active');assert.equal(v.captureRun.status,'succeeded');assert.equal(v.targets[0].state,'waiting');assert.equal(v.sources[0].available,true);assert(v.description.includes('<img'));assert.equal(v.history.length,0);});
+await check('missing source and capture run stay explicit',async()=>{const v=await read('/api/ideas-console/intents/console-missing');assert.equal(v.sources[0].available,false);assert.equal(v.captureRun,null);assert.equal(v.executionRuns[0].status,'partial');});
+await check('partial and tool evidence preserved without raw payload',async()=>{const v=await read('/api/ideas-console/runs/console-partial');assert.equal(v.status,'partial');assert.equal(v.tools[0].name,'load_context');assert(!('input' in v.tools[0]));assert(!('output' in v.tools[0]));});
+await check('bounded pagination and search',async()=>{const v=await read('/api/ideas-console/intents?limit=1');assert.equal(v.items.length,1);assert.equal(v.hasMore,true);const next=await read('/api/ideas-console/intents?limit=1&offset='+v.nextOffset);assert.notEqual(v.items[0].id,next.items[0].id);const filtered=await read('/api/ideas-console/intents?query='+encodeURIComponent('公开评审'));assert.equal(filtered.items[0].id,'console-active');});
+await check('invalid pagination fails explicitly',async()=>{await read('/api/ideas-console/intents?limit=101',400);await read('/api/ideas-console/runs?offset=-1',400);await read('/api/ideas-console/runs?limit=abc',400);});
+await check('unknown exact records return 404',async()=>{await read('/api/ideas-console/intents/not-found',404);await read('/api/ideas-console/runs/not-found',404);});
+await check('read journey leaves business state unchanged',async()=>assert.equal((await read('/fixture/read-only')).unchanged,true));
+await mkdir('output/ideas-console-20261023',{recursive:true});await writeFile('output/ideas-console-20261023/http.json',JSON.stringify({at:new Date().toISOString(),publicFixture:true,modelExecution:false,checks},null,2));console.log(JSON.stringify({passed:checks.length,evidence:'output/ideas-console-20261023/http.json'}));

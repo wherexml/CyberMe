@@ -1,0 +1,22 @@
+// Run with: ego-browser nodejs -e 'await import("file:///ABSOLUTE/PROJECT/scripts/ideas-console-browser-e2e.mjs")'
+// Public HTTP fixture must already be running. The script never touches installed app data.
+const task=await taskSpace('CyberMe intent console 20261023'),p=task.page('p1');
+const fs=await import('node:fs/promises'),out=(await import('node:url')).fileURLToPath(new URL('../output/ideas-console-20261023',import.meta.url));
+const checks=[],assert=(ok,name)=>{if(!ok)throw Error(name);checks.push({name,status:'PASS'});};
+await p.goto('http://127.0.0.1:46760');await p.waitForSelector('button[aria-label="设置"]');await p.click('button[aria-label="设置"]');await p.waitForSelector('#ideas-console-entry button');await p.click('#ideas-console-entry button');await p.waitForSelector('#ideas-console[open]');
+assert(true,'settings entry');await p.click('#ideas-console .ic-tab:text-is("意图")');await p.waitForSelector('[data-record-id="console-active"]');await p.click('[data-record-id="console-active"]');await p.waitForFunction(()=>document.querySelector('.ic-detail')?.textContent.includes('后续执行'));
+assert(await p.evaluate(()=>!window.consoleInjection&&!document.querySelector('.ic-description img')),'HTML treated as text');
+assert(await p.evaluate(()=>document.querySelector('.ic-detail').textContent.includes('准备评审资料待处理')),'active task remains waiting');
+await fs.mkdir(out,{recursive:true});await fs.writeFile(out+'/intent-ax.txt',await p.snapshot({scope:'full_page'}));
+await p.click('[data-record-id="console-missing"]');await p.waitForFunction(()=>document.querySelector('.ic-detail')?.textContent.includes('运行记录缺失'));assert(await p.evaluate(()=>document.querySelector('.ic-detail').textContent.includes('来源不可用')),'missing evidence explicit');
+// Controlled browser transport fault; product endpoints and persisted business state stay unchanged.
+await p.evaluate(()=>{const D=window.OpsTwinsDesktop,original=D.api;D.api=async(...args)=>{if(args[1].endsWith('/intents/console-active')){D.api=original;throw Error('公开验收：读取暂时失败');}return original(...args);};});
+await p.click('[data-record-id="console-active"]');await p.waitForSelector('.ic-detail button:text-is("重试")');await p.click('.ic-detail button:text-is("重试")');await p.waitForFunction(()=>document.querySelector('.ic-detail')?.textContent.includes('后续执行'));assert(true,'read failure retry');
+await p.click('[data-record-id="console-missing"]');await p.waitForFunction(()=>document.querySelector('.ic-detail')?.textContent.includes('来源已丢失'));
+await p.evaluate(()=>{const D=window.OpsTwinsDesktop,original=D.api;D.api=async(...args)=>{if(args[1].endsWith('/intents/console-active')){D.api=original;const value=await original(...args);return new Promise(resolve=>{window.releaseConsoleRead=()=>resolve(value)});}return original(...args);};});
+await p.click('[data-record-id="console-active"]');await p.waitForFunction(()=>typeof window.releaseConsoleRead==='function');await p.click('[data-record-id="console-missing"]');await p.waitForFunction(()=>document.querySelector('.ic-detail')?.textContent.includes('来源已丢失'));await p.evaluate(()=>{window.releaseConsoleRead();delete window.releaseConsoleRead});
+assert(await p.evaluate(()=>document.querySelector('.ic-detail').textContent.includes('来源已丢失')),'late result preserves selected owner');
+await p.click('#ideas-console .ic-tab:text-is("执行记录")');await p.waitForSelector('[data-record-id="console-partial"]');await p.click('[data-record-id="console-partial"]');await p.waitForFunction(()=>document.querySelector('.ic-detail')?.textContent.includes('load_context'));assert(await p.evaluate(()=>document.querySelector('.ic-detail').textContent.includes('部分完成')),'partial and tool progress');
+await p.fill('#ideas-console input[type=search]','公开灵感');await p.waitForFunction(()=>document.querySelectorAll('#ideas-console .ic-item').length===1);assert(await p.evaluate(()=>document.querySelector('.ic-item').dataset.recordId==='console-generation'),'search');
+await p.click('#ideas-console header button');await p.waitForSelector('#ideas-console',{state:'detached'});await p.click('#ideas-console-entry button');await p.waitForSelector('#ideas-console[open]');assert(await p.evaluate(()=>document.querySelectorAll('#ideas-console').length===1),'close and reopen');
+await fs.writeFile(out+'/browser.json',JSON.stringify({at:new Date().toISOString(),checks,fixtureOnly:true,screenshot:'Earlier Page.captureScreenshot attempts timed out; no screenshot PASS claimed'},null,2));console.log({passed:checks.length,spaceId:task.spaceId});

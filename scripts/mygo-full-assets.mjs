@@ -57,12 +57,13 @@ export async function fullAssets(root,assets){
  let html=await readFile(resolve(source,'macos-ui-study.html'),'utf8');
  const scripts=[...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m=>m[1]).filter(p=>!p.startsWith('../../'));
  const sequence=[];for(const s of scripts){if(s==='macos-ui-study.js')sequence.push('full/chat-timeline.js');if(s==='macos-design-chat.js')sequence.push('full/chat.js');else if(s==='macos-inbox-preview.js')sequence.push('full/inbox-preview.js');else sequence.push(s);if(s==='macos-settings-study.js')sequence.push('full/settings.js')}
- sequence.push('full/update.js','full/records.js','full/workspace.js','full/ideas.js','full/inbox.js','full/memory.js','full/inbox-chat.js');
+ sequence.push('full/update.js','full/ideas-console.js','full/ideas-console-entry.js','full/records.js','full/workspace.js','full/ideas.js','full/inbox.js','full/memory.js','full/inbox-chat.js');
  html=html.replace(/<script src="[^"]+"><\/script>/g,'');
  const css=[...bundle.matchAll(/<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g)].map(m=>`<link rel="stylesheet" href="${m[1]}">`).join('');
- html=html.replace('<body>',css+'<link rel="stylesheet" href="full/product.css"><link rel="stylesheet" href="full/inbox-policy.css"><body>');
+ html=html.replace('<body>',css+'<link rel="stylesheet" href="full/ideas-console.css"><link rel="stylesheet" href="full/product.css"><link rel="stylesheet" href="full/inbox-policy.css"><body>');
  html+=`<script>window.OPSTWINS_DESKTOP_MODE=true;window.OPSTWINS_APP_VERSION=${JSON.stringify(await appVersion(root))};window.OPSTWINS_DESKTOP_MANIFEST=${JSON.stringify({islands:island,scripts:sequence})}</script><script src="full/runtime.js"></script><script src="full/bootstrap.js"></script>`;
  await writeFile(resolve(assets,'desktop.html'),html.replaceAll('OpsTwins macOS 设计原型','CyberMe').replace('OpsTwins · macOS UI study','CyberMe').replace('<title>CyberMe</title>','<title>CyberMe</title><link rel="icon" href="icon.svg" type="image/svg+xml">'));
+ await cp(resolve(root,'web/src/desktop/full/ideas-console.css'),resolve(assets,'full/ideas-console.css'));
  await cp(resolve(root,'web/src/desktop/full/product.css'),resolve(assets,'full/product.css'));
  await cp(resolve(root,'web/src/desktop/full/update-refresh.png'),resolve(assets,'full/update-refresh.png'));
  await cp(resolve(root,'web/src/desktop/full/inbox-policy.css'),resolve(assets,'full/inbox-policy.css'));

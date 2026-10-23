@@ -16,6 +16,9 @@ import (
 var productPath = regexp.MustCompile(`^/(api/(health|bootstrap|diagnostics|agent|chat|conversations|inbox|inbox-source-rules|ideas|tasks|projects|memories|settings|connections|feishu|wechat|sources|source-message-assets|runs|messages|activities|activity|artifacts|files|voice|calendar|automations|autonomous-dispatches|notifications|workspace|native|pilot|desktop)(/[^\\]*)?|files/[A-Za-z0-9_-]+)$`)
 
 func allowedProduct(method, path string) bool {
+	if strings.HasPrefix(path, "/api/ideas-console/") {
+		return method == "GET" && regexp.MustCompile(`^/api/ideas-console/(capabilities|intents|runs)(/[A-Za-z0-9_-]+)?$`).MatchString(path)
+	}
 	if path == "/api/native/events" || !productPath.MatchString(path) || strings.Contains(path, "..") || strings.ContainsAny(path, "\\\x00\r\n") {
 		return false
 	}

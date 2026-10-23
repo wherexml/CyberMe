@@ -1,4 +1,5 @@
 import {startIdeasBackground,ideasBackgroundStatus,refreshIdeas} from './ideas-background';
+import {mountIdeasConsole} from './ideas-console';
 import {startInboxChat} from './inbox-chat';
 import {mountMemory,enqueueMemory,startMemory} from './conversation-memory';
 import {queryFeishuContext} from './feishu-context';
@@ -66,6 +67,7 @@ app.use('*',cors({origin:origin=>webOrigins.includes(origin)?origin:undefined,al
 app.use('/api/*',async(c,next)=>{const origin=c.req.header('origin');if(origin&&!localOrigins.includes(origin))throw new ApiError(403,'origin_blocked','请求来源不被允许');await next();});
 app.onError((e,c)=>{const api=e instanceof ApiError?e:new ApiError(500,'internal_error',String(e));return c.json(publicValue({error:api.code,message:api.message,...(api.detail?{detail:api.detail}:{})}),api.status as any);});
 mountMemory(app);
+mountIdeasConsole(app);
 app.get('/api/wechat/status',c=>c.json(wechatReadStatus()));
 app.get('/api/connections/google/status',c=>c.json(googleStatus()));
 app.post('/api/connections/google/authorize',c=>c.json(beginGoogle()));
