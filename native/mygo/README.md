@@ -39,3 +39,9 @@ Use `node scripts/mygo-build.mjs --standalone` for distribution. It bundles Node
 ## 本地更新
 
 CyberMe 左下角更新图标通过 `DesktopUpdate` 原生桥检查本机固定频道，显示当前版本并执行重启更新。完整协议、发布已签名候选和验收边界见 [本地更新规格](../../docs/spec/cyberme-local-updates.md)。网页预览不提供安装桥。
+
+## CyberMe 互联网更新
+
+`update.go` 提供异步检查、下载、取消和状态轮询；`internal/updatefeed` 验证签名清单和安全归档；固定公钥与 feed 位于 `update-policy.json`。保留同用户已有本机候选渠道，否则使用当前用户 Application Support 内的私有更新目录。原子安装与回滚沿用 `scripts/cyberme-updater.mjs`。
+
+无新版不显示左下角按钮，手动检查位于设置→通用。正式包须签名、公证并附票；`scripts/cyberme-release.mjs` 从全新输出目录生成归档，用生产解包器与 Gatekeeper 再验后，经 draft/hash 回读才发布。私钥不入库。见 [规范](../../docs/spec/cyberme-online-updates.md) 与 [验收](../../docs/journeys/cyberme-online-update-20261023.md)。

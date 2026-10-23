@@ -1,4 +1,4 @@
-// Local Developer ID update channel. No network downloads or arbitrary page-supplied commands.
+// Verified Developer ID candidate transactions. The native bridge owns network downloads; no page-supplied paths.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {execFileSync,spawn} from 'node:child_process';
@@ -62,6 +62,12 @@ export async function acquireLock(base,kind){
  try{await fs.mkdir(lock,{mode:0o700})}catch{fail('update_in_progress')}
  await fs.writeFile(lock+'/owner.json',JSON.stringify({kind,owner:processList().find(p=>p.pid===process.pid)}),{mode:0o600,flag:'wx'});return lock;
 }
+async function publish(candidate){
+ if(!candidate.startsWith(sourceRoot+'/.download-')||path.basename(candidate)!=='CyberMe.app')fail('unsafe_candidate');await exact(candidate);signature(candidate);const next=await info(candidate),installed=await info(current);if(!newer(next,installed)||next.dataEpoch!==installed.dataEpoch)fail('candidate_changed');
+ const lock=await acquireLock(sourceRoot,'publish'),id=randomUUID(),stage=sourceRoot+'/.publish-'+id,previous=sourceRoot+'/.previous-'+id+'.app';let moved=false;
+ try{await saveLock(lock,{stage});await fs.mkdir(stage);run('/usr/bin/ditto',[candidate,stage+'/CyberMe.app']);signature(stage+'/CyberMe.app');if(JSON.stringify(await info(stage+'/CyberMe.app'))!==JSON.stringify(next))fail('candidate_changed');if(await exists(sourceRoot+'/CyberMe.app')){await saveLock(lock,{previous});await fs.rename(sourceRoot+'/CyberMe.app',previous);moved=true}try{await fs.rename(stage+'/CyberMe.app',sourceRoot+'/CyberMe.app')}catch(e){if(moved)await fs.rename(previous,sourceRoot+'/CyberMe.app');throw e}return {status:'ready',available:next}}
+ finally{await fs.rm(stage,{recursive:true,force:true});await releaseLock(lock)}
+}
 async function prepare(){
  if(!['/Applications/OpsTwins MyGO.app',TARGET].includes(current))fail('install_location_required');
  const parent=Number(parentText);if(!Number.isSafeInteger(parent)||parent<2||!processList().some(p=>p.pid===parent&&p.command===current+'/Contents/MacOS/opstwins-mygo'))fail('parent_invalid');
@@ -104,4 +110,4 @@ async function apply(tx){
   if(rollbackError){keepLock=true;await saveLock(t.lock,{rollbackError});for(const app of [...new Set([t.current,t.target])])if(await exists(app)){try{run('/usr/bin/open',['-n',app])}catch{}break}}await writeReceipt(tx,{status:'failed',error:e.message,rollback,rollbackError,backup:t.backup,staged:t.staged,current:t.current});
  }finally{if(!keepLock)await releaseLock(t.lock).catch(()=>{})}
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))try{if(action==='apply')await apply(current);else if(action==='check')console.log(JSON.stringify(await inspect()));else if(action==='prepare')console.log(JSON.stringify(await prepare()));else if(action==='recover'){await releaseLock(await acquireLock(current,'install'));console.log(JSON.stringify({status:'recovered'}))}else fail('invalid_action')}catch(e){console.log(JSON.stringify({status:'error',error:/^[a-z_]+$/.test(e.message)?e.message:'verification_failed'}))}
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))try{if(action==='publish')console.log(JSON.stringify(await publish(parentText)));else if(action==='apply')await apply(current);else if(action==='check')console.log(JSON.stringify(await inspect()));else if(action==='prepare')console.log(JSON.stringify(await prepare()));else if(action==='recover'){await releaseLock(await acquireLock(current,'install'));console.log(JSON.stringify({status:'recovered'}))}else fail('invalid_action')}catch(e){console.log(JSON.stringify({status:'error',error:/^[a-z_]+$/.test(e.message)?e.message:'verification_failed'}))}

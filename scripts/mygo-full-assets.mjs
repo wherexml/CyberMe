@@ -64,6 +64,7 @@ export async function fullAssets(root,assets){
  html+=`<script>window.OPSTWINS_DESKTOP_MODE=true;window.OPSTWINS_APP_VERSION=${JSON.stringify(await appVersion(root))};window.OPSTWINS_DESKTOP_MANIFEST=${JSON.stringify({islands:island,scripts:sequence})}</script><script src="full/runtime.js"></script><script src="full/bootstrap.js"></script>`;
  await writeFile(resolve(assets,'desktop.html'),html.replaceAll('OpsTwins macOS 设计原型','CyberMe').replace('OpsTwins · macOS UI study','CyberMe').replace('<title>CyberMe</title>','<title>CyberMe</title><link rel="icon" href="icon.svg" type="image/svg+xml">'));
  await cp(resolve(root,'web/src/desktop/full/product.css'),resolve(assets,'full/product.css'));
+ await cp(resolve(root,'web/src/desktop/full/update-refresh.png'),resolve(assets,'full/update-refresh.png'));
  await cp(resolve(root,'web/src/desktop/full/inbox-policy.css'),resolve(assets,'full/inbox-policy.css'));
  // One SVG source for the embedded mark, favicon and macOS icon build.
  for(const target of ['icon.svg','assets/opstwins.svg'])await cp(resolve(root,'native/mygo/brand/cyberme.svg'),resolve(assets,target));

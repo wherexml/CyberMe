@@ -85,6 +85,7 @@ func main() {
 	mygo.Bind(q)
 	mygo.Bind(&Bridge{})
 	mygo.Bind(&DesktopUpdate{})
+	configureUpdates()
 	mygo.Bind(&DesktopFiles{Owner: q})
 	mygo.App.WhenReady(func() {
 		w := mygo.NewWindow(mygo.WindowOptions{Title: "CyberMe", URL: "/desktop.html", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
