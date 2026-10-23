@@ -139,7 +139,7 @@ func runtimeStart(root *os.Root, name, entry string) error {
 		}
 	}
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(runtimeNode)+":"+os.Getenv("HOME")+"/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
-	cmd.Env = append(cmd.Env, "OPSTWIN_NO_BACKGROUND=1", "OPSTWIN_INBOX_BACKGROUND=1", "OPSTWIN_MEMORY_BACKGROUND=1", "OPSTWIN_CONNECTION_BACKGROUND=1", "OPSTWIN_API_PORT=46110")
+	cmd.Env = append(cmd.Env, "OPSTWIN_NO_BACKGROUND=1", "OPSTWIN_INBOX_BACKGROUND=1", "OPSTWIN_MEMORY_BACKGROUND=1", "OPSTWIN_IDEAS_BACKGROUND=1", "OPSTWIN_CONNECTION_BACKGROUND=1", "OPSTWIN_API_PORT=46110")
 	if runtimeMode == "standalone" {
 		cmd.Env = append(cmd.Env, "OPSTWIN_STANDALONE=1")
 	}

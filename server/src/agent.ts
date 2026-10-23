@@ -71,7 +71,7 @@ export async function interruptChat(conversationId:string,runId:string){
 export async function steerChat(conversationId:string,message:string){const active=activeChats.get(conversationId);if(!active?.session.isStreaming)return undefined;await active.session.steer(message);return active.runId;}
 
 export async function runAgent(prompt:string,options:{mode?:string;kind?:string;title?:string;conversationId?:string;attachmentIds?:string[];contextIds?:string[];readOnly?:boolean;history?:any[];runId?:string}={}) {
- const internalMemory=['memory_extract','context_summary'].includes(options.kind||'');
+ const internalMemory=['memory_extract','context_summary','ideas_refresh'].includes(options.kind||'');
  const run=options.runId?get('runs',options.runId):beginRun(options.kind||'chat',options.title||prompt.slice(0,90),{conversationId:options.conversationId,mode:options.mode||'chat'});if(!run)throw new ApiError(404,'run_not_found','运行不存在');
  let session:Awaited<ReturnType<typeof createAgentSession>>['session']|undefined;let timer:ReturnType<typeof setTimeout>|undefined;const artifacts:any[]=[];const events:any[]=[{type:'agent_started',at:now()}];let timedOut=false;let phase='initializing';
  try {

@@ -951,5 +951,16 @@
   "撤销这次记忆": "Undo this memory",
   "忘记": "Forget",
   "正在读取…": "Loading…",
-  "读取失败，请稍后重试": "Could not load. Please retry."
+  "读取失败，请稍后重试": "Could not load. Please retry.",
+  "暂无历史建议": "No past suggestions",
+  "暂无新建议": "No new suggestions",
+  "已被新安排替代": "Superseded",
+  "已过时": "Outdated",
+  "来源不可用": "Source unavailable",
+  "已收起": "Hidden",
+  "正在更新…": "Updating…",
+  "更新中断 · 重试": "Update interrupted · Retry",
+  "更新失败 · 重试": "Update failed · Retry",
+  "已合并": "Merged",
+  "已解决": "Resolved"
 }

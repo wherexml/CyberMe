@@ -59,7 +59,7 @@ export default function Page({ ctx }: { ctx: UIContext }) { const { t, language 
   const [newSchedule, setNewSchedule] = useState('daily 09:00');
   const displayCategory = (label: string) => (categories.includes(label) || ['insight', 'productivity'].includes(label)) ? t(label) : label;
   const labels = [...new Set([...categories, ...ctx.state.ideas.map(idea => categoryLabel(idea.category))])];
-  const visible = ctx.state.ideas.filter(idea => (showDeferred ? ['deferred', 'dismissed'].includes(idea.status) : !['deferred', 'dismissed'].includes(idea.status)) && (category === 'All' || categoryLabel(idea.category) === category));
+  const visible = ctx.state.ideas.filter(idea => (showDeferred ? ['deferred', 'dismissed', 'archived', 'merged', 'executed', 'completed'].includes(idea.status) : !['deferred', 'dismissed', 'archived', 'merged', 'executed', 'completed'].includes(idea.status)) && (category === 'All' || categoryLabel(idea.category) === category));
   useEffect(() => {
     if (thinkRun) return;
     const runId = readSavedThink().runId || ctx.state.ideas.find(idea => idea.runId)?.runId;
