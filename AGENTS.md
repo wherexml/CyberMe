@@ -7,6 +7,7 @@
 - Record failure cases before implementation. Prefer repeatable HTTP/browser E2E evidence; do not add unit tests after implementation.
 - Use five-digit ports: Web 46100 and API 46110. Isolated acceptance uses its own ports and synthetic data.
 - Use shared select controls. Keep UI concise, and do not treat mock behavior as real execution.
+- Scope console controls under `#ideas-console`; verify installed-app screenshots as legacy dialog styles can override browser fixture layouts.
 - The ideas console is read-only. Registration, configuration, worker enablement and actual execution are separate facts; never infer completion from generation or conversion alone.
 - Update module specifications and provide precise validation boundaries in Chinese commit descriptions.
 - Workspace-local guidance, when present, remains private at `.local/private-project-instructions/AGENTS.md`; read it without publishing its contents.
