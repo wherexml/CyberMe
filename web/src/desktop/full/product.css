@@ -83,3 +83,12 @@ html.desktop-native,html.desktop-native body{height:100%;overflow:hidden}html.de
 .chat-thinking-dots i:nth-child(3){animation-delay:.32s}
 @keyframes desktop-chat-think{0%,60%,100%{opacity:.35;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
 @media(prefers-reduced-motion:reduce){.chat-thinking-dots i{animation:none;opacity:.65}}
+/* Bottom-left native update control, adjacent to Settings. */
+.window>.sidebar.muse-rail:has(#cyberme-update) .nav{bottom:178px}
+#cyberme-update{position:relative;display:grid;place-items:center;width:44px;height:44px;min-height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink);box-shadow:none}
+#cyberme-update:hover,#cyberme-update[aria-expanded=true]{background:var(--subtle,#edeef1)}
+#cyberme-update svg{width:23px;height:23px}#cyberme-update i{position:absolute;right:7px;top:7px;width:6px;height:6px;border-radius:50%;background:#16a6a6}
+#cyberme-update-panel{position:fixed;left:68px;bottom:64px;width:264px;max-width:calc(100vw - 88px);box-sizing:border-box;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--bg);color:var(--ink);box-shadow:0 8px 36px #0002;z-index:100001;font-size:13px}
+#cyberme-update-panel[hidden],#cyberme-update i[hidden]{display:none}
+#cyberme-update-panel header{display:flex;align-items:center;justify-content:space-between;gap:20px}#cyberme-update-panel header strong{font-size:15px}#cyberme-update-panel .update-close{border:0;background:transparent;color:var(--muted);font-size:22px;padding:0 4px}
+#cyberme-update-panel p{margin:12px 0;line-height:1.5}#cyberme-update-panel .update-version{color:var(--muted)}#cyberme-update-panel .update-action{width:100%;margin-top:6px;padding:9px 12px;border:0;border-radius:8px;background:var(--subtle,#edeef1);color:var(--ink)}#cyberme-update-panel .update-action:disabled{opacity:.55}

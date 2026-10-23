@@ -1,6 +1,7 @@
 import {readFile,writeFile,mkdir,cp} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import ts from 'typescript';
+export async function appVersion(root){const {version}=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));if(!/^\d+\.\d+\.\d+$/.test(version||''))throw Error('Invalid package.json version');return version}
 export async function fullAssets(root,assets){
  const source=resolve(root,'docs/design');
  const patch=async(name,changes)=>{let text=await readFile(resolve(source,name),'utf8');for(const [from,to] of changes){if(!text.includes(from))throw Error('Reference changed: '+name+' '+from.slice(0,50));text=text.replace(from,to)}await writeFile(resolve(assets,name),text)};
@@ -56,11 +57,11 @@ export async function fullAssets(root,assets){
  let html=await readFile(resolve(source,'macos-ui-study.html'),'utf8');
  const scripts=[...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m=>m[1]).filter(p=>!p.startsWith('../../'));
  const sequence=[];for(const s of scripts){if(s==='macos-ui-study.js')sequence.push('full/chat-timeline.js');if(s==='macos-design-chat.js')sequence.push('full/chat.js');else if(s==='macos-inbox-preview.js')sequence.push('full/inbox-preview.js');else sequence.push(s);if(s==='macos-settings-study.js')sequence.push('full/settings.js')}
- sequence.push('full/records.js','full/workspace.js','full/ideas.js','full/inbox.js','full/memory.js','full/inbox-chat.js');
+ sequence.push('full/update.js','full/records.js','full/workspace.js','full/ideas.js','full/inbox.js','full/memory.js','full/inbox-chat.js');
  html=html.replace(/<script src="[^"]+"><\/script>/g,'');
  const css=[...bundle.matchAll(/<link[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g)].map(m=>`<link rel="stylesheet" href="${m[1]}">`).join('');
  html=html.replace('<body>',css+'<link rel="stylesheet" href="full/product.css"><link rel="stylesheet" href="full/inbox-policy.css"><body>');
- html+=`<script>window.OPSTWINS_DESKTOP_MODE=true;window.OPSTWINS_DESKTOP_MANIFEST=${JSON.stringify({islands:island,scripts:sequence})}</script><script src="full/runtime.js"></script><script src="full/bootstrap.js"></script>`;
+ html+=`<script>window.OPSTWINS_DESKTOP_MODE=true;window.OPSTWINS_APP_VERSION=${JSON.stringify(await appVersion(root))};window.OPSTWINS_DESKTOP_MANIFEST=${JSON.stringify({islands:island,scripts:sequence})}</script><script src="full/runtime.js"></script><script src="full/bootstrap.js"></script>`;
  await writeFile(resolve(assets,'desktop.html'),html.replaceAll('OpsTwins macOS 设计原型','CyberMe').replace('OpsTwins · macOS UI study','CyberMe').replace('<title>CyberMe</title>','<title>CyberMe</title><link rel="icon" href="icon.svg" type="image/svg+xml">'));
  await cp(resolve(root,'web/src/desktop/full/product.css'),resolve(assets,'full/product.css'));
  await cp(resolve(root,'web/src/desktop/full/inbox-policy.css'),resolve(assets,'full/inbox-policy.css'));

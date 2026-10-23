@@ -35,3 +35,7 @@ Use `node scripts/mygo-build.mjs --standalone` for distribution. It bundles Node
 ## 会话与自动记忆
 
 独立App内嵌生产后端，启动时开启`OPSTWIN_MEMORY_BACKGROUND=1`；Chat的记忆入口读取同一工作区的真实持久状态。安装、真实模型和原生UI证据见[2026-10-17记忆旅程](../../docs/journeys/conversation-memory-20261017.md)。
+
+## 本地更新
+
+CyberMe 左下角更新图标通过 `DesktopUpdate` 原生桥检查本机固定频道，显示当前版本并执行重启更新。完整协议、发布已签名候选和验收边界见 [本地更新规格](../../docs/spec/cyberme-local-updates.md)。网页预览不提供安装桥。
