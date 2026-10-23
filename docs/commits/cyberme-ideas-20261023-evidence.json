@@ -1,0 +1,126 @@
+{
+  "version": "0.1.5",
+  "build": "1792759047854",
+  "checks": [
+    {
+      "name": "draft-edited",
+      "pass": true,
+      "conversationId": "ui-side-d4612a89-ef6c-4b06-aa5d-0d8dc48ceb1c"
+    },
+    {
+      "name": "draft-reopened",
+      "pass": true,
+      "conversationId": "ui-side-d4612a89-ef6c-4b06-aa5d-0d8dc48ceb1c"
+    },
+    {
+      "name": "draft-restarted",
+      "pass": true,
+      "conversationId": "ui-side-d4612a89-ef6c-4b06-aa5d-0d8dc48ceb1c"
+    },
+    {
+      "name": "same conversation after reopen and restart",
+      "pass": true
+    },
+    {
+      "name": "one explicit request and reply",
+      "pass": true
+    },
+    {
+      "name": "real selected context and appended text",
+      "pass": true
+    },
+    {
+      "name": "original inbox drafts and send receipts preserved",
+      "pass": true
+    },
+    {
+      "name": "all original entity rows retained",
+      "pass": true
+    },
+    {
+      "name": "original message bodies unchanged",
+      "pass": true
+    },
+    {
+      "name": "primary conversation preserved",
+      "pass": true
+    },
+    {
+      "name": "settings preserved",
+      "pass": true
+    },
+    {
+      "name": "original nonempty composer drafts preserved",
+      "pass": true
+    },
+    {
+      "name": "installed executable equals candidate",
+      "pass": true
+    },
+    {
+      "name": "installed codesign",
+      "pass": true
+    },
+    {
+      "name": "installed xcrun",
+      "pass": true
+    },
+    {
+      "name": "installed spctl",
+      "pass": true
+    }
+  ],
+  "allPass": true,
+  "nativeVisualObserved": {
+    "distinctIcons": true,
+    "editableDraft": true,
+    "restartDraft": true,
+    "realReply": true,
+    "restartIcons": true,
+    "publicQaRemovedFromIdeas": true
+  },
+  "artifacts": [
+    {
+      "file": "native-icons-pass.png",
+      "sha256": "fbf108d2e09f7ca871e0a6119547f020e4c9b8efbdc91987eaa8f33678e0bcdd"
+    },
+    {
+      "file": "native-editable-draft.png",
+      "sha256": "9bbb34eff0b1f79782065d9a9a14c164e8f6a722ae7153ab13b7edfe911eaa7a"
+    },
+    {
+      "file": "native-draft-restarted.png",
+      "sha256": "0e8326ee54e037c1ba60bbe50b0337cd5d4ca0bf9dadc7791946bf5370f9f9bb"
+    },
+    {
+      "file": "native-explicit-send.png",
+      "sha256": "85a05a3645c71cf7c75fe4b656b4ef36c92cef57b7b3e0f360dab34477c0a752"
+    },
+    {
+      "file": "native-icons-restarted.png",
+      "sha256": "9c736195ef65b78f99f4ab51b23ce769f56eb5c1ad7841bd2acc67c2e93eee90"
+    },
+    {
+      "file": "real-model-choices.json",
+      "sha256": "3663086c7e2c08ce3c35de1eafe65f457f8b634f5a2f16dc5f90e43742a78f9c"
+    },
+    {
+      "file": "public-cleanup.json",
+      "sha256": "c5bffd55e4256d81c879fda7d87fce97ad3b7ccc737678f091203bd5a2e787af"
+    },
+    {
+      "file": "public-conversations-archived.json",
+      "sha256": "be7798ab1bb28407e4d38731ed3e932d05134224c185d3437fb21bb62535a47a"
+    }
+  ],
+  "scope": "Installed CyberMe 0.1.5 limited native acceptance; artifact paths are local ignored evidence",
+  "commitSnapshotValidation": {
+    "typecheck": true,
+    "catalogIcons": 48,
+    "derivedFiles": 89,
+    "controlledGeneratorChecks": 8,
+    "controlledHttpChecks": 4,
+    "desktopBundle": true,
+    "svgCopies": 48
+  }
+}

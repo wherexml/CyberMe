@@ -3,72 +3,336 @@
     "id": "report",
     "label": "周报",
     "file": "report.svg",
-    "accent": "#829fc2"
+    "accent": "#829fc2",
+    "keywords": "周报、回顾、总结"
   },
   {
     "id": "meeting",
     "label": "会议",
     "file": "meeting.svg",
-    "accent": "#90a3a8"
+    "accent": "#90a3a8",
+    "keywords": "会议、议程、纪要"
   },
   {
     "id": "briefing",
     "label": "每日摘要",
     "file": "briefing.svg",
-    "accent": "#ccac67"
+    "accent": "#ccac67",
+    "keywords": "每日摘要、简报、动态"
   },
   {
     "id": "followup",
     "label": "客户跟进",
     "file": "followup.svg",
-    "accent": "#98ac92"
+    "accent": "#98ac92",
+    "keywords": "客户跟进、催办、关系"
   },
   {
     "id": "automation",
     "label": "自动化",
     "file": "automation.svg",
-    "accent": "#90a4bd"
+    "accent": "#90a4bd",
+    "keywords": "自动化、重复劳动、定时任务"
   },
   {
     "id": "insight",
     "label": "洞察",
     "file": "insight.svg",
-    "accent": "#cbb16c"
+    "accent": "#cbb16c",
+    "keywords": "发现、观察、洞察"
   },
   {
     "id": "research",
     "label": "资料研究",
     "file": "research.svg",
-    "accent": "#93a7b7"
+    "accent": "#93a7b7",
+    "keywords": "调研、资料研究、证据"
   },
   {
     "id": "reminder",
     "label": "后续提醒",
     "file": "reminder.svg",
-    "accent": "#cda778"
+    "accent": "#cda778",
+    "keywords": "提醒、后续事项、待跟进"
   },
   {
     "id": "files",
     "label": "文件整理",
     "file": "files.svg",
-    "accent": "#97a8b9"
+    "accent": "#97a8b9",
+    "keywords": "文件夹、文件整理、分类"
   },
   {
     "id": "workflow",
     "label": "流程优化",
     "file": "workflow.svg",
-    "accent": "#b2a0bb"
+    "accent": "#b2a0bb",
+    "keywords": "工作流、流程优化、步骤"
   },
   {
     "id": "privacy",
     "label": "权限与安全",
     "file": "privacy.svg",
-    "accent": "#97ac9a"
+    "accent": "#97ac9a",
+    "keywords": "权限、隐私、合规、安全"
   },
   {
     "id": "finance",
     "label": "费用与账单",
     "file": "finance.svg",
-    "accent": "#c4ac88"
+    "accent": "#c4ac88",
+    "keywords": "财务、费用、账单"
+  },
+  {
+    "id": "calendar",
+    "label": "日程",
+    "file": "calendar.svg",
+    "accent": "#9eafbc",
+    "keywords": "日历、安排、预约"
+  },
+  {
+    "id": "deadline",
+    "label": "截止时间",
+    "file": "deadline.svg",
+    "accent": "#9eafbc",
+    "keywords": "期限、交付时间、倒计时"
+  },
+  {
+    "id": "checklist",
+    "label": "待办清单",
+    "file": "checklist.svg",
+    "accent": "#9eafbc",
+    "keywords": "待办、检查清单、行动项"
+  },
+  {
+    "id": "roadmap",
+    "label": "路线规划",
+    "file": "roadmap.svg",
+    "accent": "#9eafbc",
+    "keywords": "路线图、阶段规划、路径"
+  },
+  {
+    "id": "milestone",
+    "label": "里程碑",
+    "file": "milestone.svg",
+    "accent": "#9eafbc",
+    "keywords": "阶段目标、关键节点、进展"
+  },
+  {
+    "id": "target",
+    "label": "目标",
+    "file": "target.svg",
+    "accent": "#9eafbc",
+    "keywords": "目标、达成、关键结果"
+  },
+  {
+    "id": "code",
+    "label": "开发",
+    "file": "code.svg",
+    "accent": "#9eafbc",
+    "keywords": "编码、开发、程序实现"
+  },
+  {
+    "id": "bug",
+    "label": "缺陷修复",
+    "file": "bug.svg",
+    "accent": "#9eafbc",
+    "keywords": "故障、Bug、异常排查"
+  },
+  {
+    "id": "deploy",
+    "label": "发布部署",
+    "file": "deploy.svg",
+    "accent": "#9eafbc",
+    "keywords": "上线、部署、版本发布"
+  },
+  {
+    "id": "server",
+    "label": "服务运行",
+    "file": "server.svg",
+    "accent": "#9eafbc",
+    "keywords": "服务器、虚拟机、服务健康"
+  },
+  {
+    "id": "database",
+    "label": "数据管理",
+    "file": "database.svg",
+    "accent": "#9eafbc",
+    "keywords": "数据库、数据迁移、数据质量"
+  },
+  {
+    "id": "api",
+    "label": "接口集成",
+    "file": "api.svg",
+    "accent": "#9eafbc",
+    "keywords": "API、接口、系统对接"
+  },
+  {
+    "id": "cloud",
+    "label": "云资源",
+    "file": "cloud.svg",
+    "accent": "#9eafbc",
+    "keywords": "云平台、云服务、资源配置"
+  },
+  {
+    "id": "branch",
+    "label": "版本分支",
+    "file": "branch.svg",
+    "accent": "#9eafbc",
+    "keywords": "Git、分支、版本合并"
+  },
+  {
+    "id": "test",
+    "label": "测试验收",
+    "file": "test.svg",
+    "accent": "#9eafbc",
+    "keywords": "测试、验收、质量验证"
+  },
+  {
+    "id": "terminal",
+    "label": "命令工具",
+    "file": "terminal.svg",
+    "accent": "#9eafbc",
+    "keywords": "CLI、脚本、命令行"
+  },
+  {
+    "id": "team",
+    "label": "团队协作",
+    "file": "team.svg",
+    "accent": "#9eafbc",
+    "keywords": "团队、分工、协同"
+  },
+  {
+    "id": "handshake",
+    "label": "合作洽谈",
+    "file": "handshake.svg",
+    "accent": "#9eafbc",
+    "keywords": "合作、伙伴、商务协商"
+  },
+  {
+    "id": "contact",
+    "label": "联系人",
+    "file": "contact.svg",
+    "accent": "#9eafbc",
+    "keywords": "客户档案、联系人、关系维护"
+  },
+  {
+    "id": "message",
+    "label": "沟通反馈",
+    "file": "message.svg",
+    "accent": "#9eafbc",
+    "keywords": "消息、沟通、反馈"
+  },
+  {
+    "id": "presentation",
+    "label": "汇报演示",
+    "file": "presentation.svg",
+    "accent": "#9eafbc",
+    "keywords": "演示、汇报、PPT"
+  },
+  {
+    "id": "contract",
+    "label": "合同",
+    "file": "contract.svg",
+    "accent": "#9eafbc",
+    "keywords": "合同、条款、商务约定"
+  },
+  {
+    "id": "approval",
+    "label": "审批确认",
+    "file": "approval.svg",
+    "accent": "#9eafbc",
+    "keywords": "审批、确认、批准"
+  },
+  {
+    "id": "signature",
+    "label": "签署",
+    "file": "signature.svg",
+    "accent": "#9eafbc",
+    "keywords": "签字、签署、确认文件"
+  },
+  {
+    "id": "book",
+    "label": "学习",
+    "file": "book.svg",
+    "accent": "#9eafbc",
+    "keywords": "学习、阅读、培训"
+  },
+  {
+    "id": "knowledge",
+    "label": "知识整理",
+    "file": "knowledge.svg",
+    "accent": "#9eafbc",
+    "keywords": "知识库、笔记、经验沉淀"
+  },
+  {
+    "id": "search",
+    "label": "检索",
+    "file": "search.svg",
+    "accent": "#9eafbc",
+    "keywords": "查找、搜索、定位资料"
+  },
+  {
+    "id": "archive",
+    "label": "归档",
+    "file": "archive.svg",
+    "accent": "#9eafbc",
+    "keywords": "归档、整理旧资料、存档"
+  },
+  {
+    "id": "chart",
+    "label": "数据分析",
+    "file": "chart.svg",
+    "accent": "#9eafbc",
+    "keywords": "指标、分析、报表趋势"
+  },
+  {
+    "id": "growth",
+    "label": "业务增长",
+    "file": "growth.svg",
+    "accent": "#9eafbc",
+    "keywords": "增长、销售机会、业务拓展"
+  },
+  {
+    "id": "budget",
+    "label": "预算",
+    "file": "budget.svg",
+    "accent": "#9eafbc",
+    "keywords": "预算、成本控制、资源投入"
+  },
+  {
+    "id": "invoice",
+    "label": "票据报销",
+    "file": "invoice.svg",
+    "accent": "#9eafbc",
+    "keywords": "发票、报销、费用凭证"
+  },
+  {
+    "id": "risk",
+    "label": "风险提醒",
+    "file": "risk.svg",
+    "accent": "#9eafbc",
+    "keywords": "风险、阻碍、预警"
+  },
+  {
+    "id": "backup",
+    "label": "备份恢复",
+    "file": "backup.svg",
+    "accent": "#9eafbc",
+    "keywords": "备份、恢复、回滚"
+  },
+  {
+    "id": "compass",
+    "label": "方向决策",
+    "file": "compass.svg",
+    "accent": "#9eafbc",
+    "keywords": "方向、策略、选择方案"
+  },
+  {
+    "id": "focus",
+    "label": "专注推进",
+    "file": "focus.svg",
+    "accent": "#9eafbc",
+    "keywords": "专注、优先级、时间块"
   }
 ]

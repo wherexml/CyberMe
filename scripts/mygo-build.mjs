@@ -25,6 +25,7 @@ for(const match of html.matchAll(/(?:src|href)="([^"#]+\.(?:js|css))"/g)){
  await copy(match[1]);
 }
 for(const name of await readdir(resolve(source,'assets')))if(name.endsWith('.svg'))await copy('assets/'+name);
+for(const name of await readdir(resolve(source,'assets/idea-icons')))if(name.endsWith('.svg'))await copy('assets/idea-icons/'+name);
 // Never copy snapshots or capability files. This entry is a public, offline visual qualification.
 html=html.replace(/<script src="\.\.\/\.\.\/\.local\/design\/macos-study-data.js"><\/script>/,'<script src="public-data.js"></script>')
  .replace(/<script src="\.\.\/\.\.\/\.local\/design\/chat-capability.js"><\/script>/,'')

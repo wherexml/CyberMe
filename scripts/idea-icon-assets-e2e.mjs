@@ -1,0 +1,9 @@
+// Run after Vite builds the isolated .local/idea-icon-assets directory.
+import {readFile,writeFile,mkdir,cp,readdir} from 'node:fs/promises';import {resolve,dirname} from 'node:path';import {createHash} from 'node:crypto';import {fullAssets} from './mygo-full-assets.mjs';
+const assets=resolve('.local/idea-icon-assets'),catalog=JSON.parse(await readFile('shared/idea-icon-catalog.json','utf8')),checks=[];
+const design=resolve('docs/design'),html=await readFile(resolve(design,'macos-ui-study.html'),'utf8');
+for(const m of html.matchAll(/(?:src|href)="([^"#]+\.(?:js|css))"/g)){const name=m[1];if(name.startsWith('../../.local/'))continue;if(name.includes('..')||name.startsWith('/'))throw Error('Invalid source');await mkdir(dirname(resolve(assets,name)),{recursive:true});await cp(resolve(design,name),resolve(assets,name));}
+await mkdir(resolve(assets,'assets'),{recursive:true});for(const name of await readdir(resolve(design,'assets')))if(name.endsWith('.svg'))await cp(resolve(design,'assets',name),resolve(assets,'assets',name));
+let buildError;try{await fullAssets(process.cwd(),assets)}catch(e){buildError=e.message}
+for(const item of catalog){const source=await readFile('docs/design/assets/idea-icons/'+item.file),packed=await readFile(resolve(assets,'assets/idea-icons',item.file)),mock=await readFile('mock/opstwins/assets/idea-icons/'+item.file);checks.push({id:item.id,pass:source.equals(packed)&&source.equals(mock),sha256:createHash('sha256').update(source).digest('hex')});}
+await writeFile('output/idea-icon-library-20261023/assets.json',JSON.stringify({bundleCompleted:!buildError,buildError,checks},null,2));if(checks.some(x=>!x.pass))throw Error('Asset copy drift');console.log(JSON.stringify({iconCopiesMatch:checks.length,bundleCompleted:!buildError,buildError}));if(buildError)process.exitCode=1;

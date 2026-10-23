@@ -4,6 +4,7 @@ import ts from 'typescript';
 export async function appVersion(root){const {version}=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));if(!/^\d+\.\d+\.\d+$/.test(version||''))throw Error('Invalid package.json version');return version}
 export async function fullAssets(root,assets){
  const source=resolve(root,'docs/design');
+ await cp(resolve(source,'assets/idea-icons'),resolve(assets,'assets/idea-icons'),{recursive:true});
  const patch=async(name,changes)=>{let text=await readFile(resolve(source,name),'utf8');for(const [from,to] of changes){if(!text.includes(from))throw Error('Reference changed: '+name+' '+from.slice(0,50));text=text.replace(from,to)}await writeFile(resolve(assets,name),text)};
  await cp(resolve(root,'web/src/desktop/full'),resolve(assets,'full'),{recursive:true,filter:p=>!p.endsWith('.tsx')&&!p.endsWith('.css')});
  await patch('macos-settings-study.js',[

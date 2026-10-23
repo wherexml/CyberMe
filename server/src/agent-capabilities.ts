@@ -98,7 +98,7 @@ const resources=['tasks','projects','inbox','memories','ideas','automations','co
 const entityFields:Record<string,string[]>={
  tasks:['title','notes','status','completed','dueDate','projectId','subtasks'],projects:['title','name','notes','description','status'],
  inbox:['title','sender','channel','body','draft','status','attachments','context','category','sensitive','followup','dueDate','approved','sensitiveApproved'],
- memories:['title','body','content','kind','summary','entityId','contextIds'],ideas:['title','description','category','action','status'],
+ memories:['title','body','content','kind','summary','entityId','contextIds'],ideas:['title','description','category','action','status','iconKey'],
  automations:['title','prompt','schedule','enabled','mode','fileKind'],connections:['title','name','provider','type','endpoint','permissions','config'],conversations:['title','mode']
 };
 type Requester=(path:string,method:string,input?:any)=>Promise<any>;

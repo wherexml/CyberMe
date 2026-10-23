@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+ "crypto/sha256"
+ "fmt"
 	"embed"
 	"github.com/egoist/mygo"
 	"io/fs"
@@ -71,7 +73,20 @@ func main() {
 		log.Fatal(err)
 	}
 	mygo.App.SetName("CyberMe")
-	handler := mygo.FileServer(web)
+	// Version every embedded URL so WebKit cannot reuse scripts from an older bundle.
+ assetHash := sha256.New()
+ err = fs.WalkDir(web, ".", func(name string, entry fs.DirEntry, walkErr error) error {
+  if walkErr != nil { return walkErr }
+  if entry.IsDir() { return nil }
+  content, readErr := fs.ReadFile(web, name)
+  if readErr != nil { return readErr }
+  fmt.Fprintf(assetHash, "%s\x00%d\x00", name, len(content))
+  _, writeErr := assetHash.Write(content)
+  return writeErr
+ })
+ if err != nil { log.Fatal(err) }
+ assetPrefix := fmt.Sprintf("/_app/%x", assetHash.Sum(nil))
+ handler := mygo.FileServer(web)
 	mygo.Protocol.Handle("mygo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -79,7 +94,18 @@ func main() {
 			productProxy(w, r)
 			return
 		}
-		handler.ServeHTTP(w, r)
+		w.Header().Set("Cache-Control", "no-store")
+  if strings.HasPrefix(r.URL.Path, "/_app/") {
+   if !strings.HasPrefix(r.URL.Path, assetPrefix+"/") { http.NotFound(w, r); return }
+   request := r.Clone(r.Context())
+   address := *r.URL
+   address.Path = strings.TrimPrefix(address.Path, assetPrefix)
+   address.RawPath = ""
+   request.URL = &address
+   handler.ServeHTTP(w, request)
+   return
+  }
+  handler.ServeHTTP(w, r)
 	}))
 	q := &Qualification{visible: true}
 	mygo.Bind(q)
@@ -88,7 +114,7 @@ func main() {
 	configureUpdates()
 	mygo.Bind(&DesktopFiles{Owner: q})
 	mygo.App.WhenReady(func() {
-		w := mygo.NewWindow(mygo.WindowOptions{Title: "CyberMe", URL: "/desktop.html", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
+		w := mygo.NewWindow(mygo.WindowOptions{Title: "CyberMe", URL: assetPrefix + "/desktop.html", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
 		w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
 			if !localURL(e.URL) {
 				e.PreventDefault()

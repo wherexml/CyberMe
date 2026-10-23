@@ -1,6 +1,6 @@
 /* Shared production transport and durable HTML drafts. No capability is exposed to page JavaScript. */
 (() => {
- const managed=new Set(['opstwins-ui-study-prefs','opstwins-ui-study-state-v2','opstwins-design-sessions-v1','opstwins-design-chat-v1','opstwins-settings-study-v1','opstwins-device-study-v1','opstwins-full-requests','opstwins-full-model-state','opstwins-full-identity','opstwins-full-connections']);
+ const managed=new Set(['opstwins-ui-study-prefs','opstwins-ui-study-state-v2','opstwins-design-sessions-v1','opstwins-idea-discussions-v1','opstwins-design-chat-v1','opstwins-settings-study-v1','opstwins-device-study-v1','opstwins-full-requests','opstwins-full-model-state','opstwins-full-identity','opstwins-full-connections']);
  let saveSequence=0;let state,queue=Promise.resolve(),savingError=null;const native=!!window.mygo;
  const storageGet=Storage.prototype.getItem,storageSet=Storage.prototype.setItem;
  async function initialize(){document.documentElement.classList.toggle('desktop-native',native);

@@ -1,6 +1,7 @@
 /* Production wiring for the unmodified macOS HTML presentation. Every mutation awaits a canonical API result. */
 (() => {
  const D=window.OpsTwinsDesktop,api=(...a)=>D.api(...a),enc=encodeURIComponent;
+ D.ideaSources=idea=>{const ids=[...new Set([...(idea.contextIds||[]),...(idea.sourceIds||[]),idea.inboxId,idea.taskId,idea.artifactId].filter(Boolean))],files=new Set([idea.artifactId].filter(Boolean));return {contextIds:ids.filter(id=>!files.has(id)),attachmentIds:ids.filter(id=>files.has(id))}};
  const saveJobs=new Map(),saveErrors=new Set();let taskReadGeneration=0,lastInboxSelection='';const retryDrafts=new Set(),busy=new Set(),errors=new Map(),leases=new Map(),timers=new Map();let lastLoadedConversation='',chatGeneration=0,searchGeneration=0,refreshing=false;
  function replace(type,item){const at=data[type].findIndex(x=>x.id===item.id);if(at>=0)data[type][at]=item;else data[type].unshift(item);if(type==='inbox')item.attention=window.OpsTwinsBusinessUI.needsInboxAttention(item);return item}
  function errorBox(text,retry){const box=node('div','desktop-error',text);box.setAttribute('role','alert');if(retry)box.append(btn('重试',retry));return box}
@@ -79,7 +80,29 @@
  const taskTools=node('div','desktop-task-tools');taskTools.append(btn('新建任务',createTaskDialog),btn('已删除任务',deletedTasks),btn('项目与持续行动',()=>openIsland('task-manager')));$('#view-tasks .tasks').insertBefore(taskTools,$('#task-items'));
  // Ideas retain exact selected context IDs, including notes; execution uses a durable side session.
  ignoreIdea=async idea=>{if(idea.id.startsWith('sample-')){toast('示例建议不会写入工作区');return}try{const row=await api('PATCH','/api/ideas/'+enc(idea.id),{status:['deferred','dismissed'].includes(idea.status)?'new':'deferred',baseUpdatedAt:idea.updatedAt});replace('ideas',row);local.deferred=[];local.restored=[];renderIdeas();if($('#detail-dialog').open)$('#detail-dialog').close()}catch(e){toast(e.message)}};
- discussIdea=async idea=>{try{const id='ui-side-'+crypto.randomUUID();await D.createSession(id,idea.title);await refresh();window.OpsTwinsChatSessions.switchTo(id);const contextIds=[...new Set([...(idea.contextIds||[]),...(idea.sourceIds||[]),idea.inboxId,idea.taskId,idea.artifactId].filter(Boolean))];go('chat');if($('#detail-dialog').open)$('#detail-dialog').close();window.OpsTwinsDesignChat.start({ideaId:idea.id,conversationId:id,sessionTitle:idea.title,title:idea.title,contextIds,message:'请执行这项建议，先核对关联资料。资料不扩大执行授权。\n'+idea.title+'\n'+(idea.description||'')});renderChat()}catch(e){toast(e.message)}};
+ const discussionKey='opstwins-idea-discussions-v1';let preparingDiscussion=false;
+ const discussions=()=>JSON.parse(localStorage.getItem(discussionKey)||'{}');
+ const saveDiscussions=rows=>localStorage.setItem(discussionKey,JSON.stringify(rows));
+ D.prepareIdeaDiscussion=async idea=>{
+  if(preparingDiscussion)return;preparingDiscussion=true;
+  const page=current,owner=chatConversation,navigation=taskReadGeneration;
+  try{
+   const rows=discussions();let entry=rows[idea.id];
+   if(!entry){entry={id:'ui-side-'+crypto.randomUUID(),seeded:false,pending:true,...D.ideaSources(idea)};rows[idea.id]=entry;saveDiscussions(rows)}
+   await D.durable();await D.createSession(entry.id,idea.title);
+   if(current!==page||chatConversation!==owner||taskReadGeneration!==navigation)return;
+   if(!window.OpsTwinsChatSessions.switchTo(entry.id))throw Error('会话切换失败，草稿已保留');
+   go('chat');if($('#detail-dialog').open)$('#detail-dialog').close();
+   if(!entry.seeded){
+    const content=[idea.title,idea.description,...(idea.steps||[]).map((step,i)=>(i+1)+'. '+step)].filter(Boolean).join('\n\n');
+    const input=$('#input');if(!input.value.includes(content))input.value=[input.value,content].filter(Boolean).join('\n\n');
+    inputChange();if(!window.OpsTwinsChatSessions.draft(input.value))return;
+    entry.seeded=true;saveDiscussions(rows);
+   }
+   renderChat();$('#input').focus();$('#input').setSelectionRange($('#input').value.length,$('#input').value.length);
+  }catch(e){toast(e.message)}finally{preparingDiscussion=false}
+ };
+ discussIdea=idea=>D.prepareIdeaDiscussion(idea);
  $('#ideas-think').textContent='生成建议';$('#ideas-think').onclick=async()=>{const button=$('#ideas-think');button.disabled=true;try{await api('POST','/api/ideas/think',{prompt:$('#ideas-prompt').value||'根据我的工作区提出下一步建议',mode:'chat'});await refresh()}catch(e){toast(e.message)}finally{button.disabled=false}};
  const referenceSearchRow=searchRow;searchRow=hit=>{const row=referenceSearchRow(hit);row.dataset.kind=hit.type;return row};
  // Search uses the complete server index and exact IDs, never only loaded snapshot rows.
@@ -97,7 +120,7 @@
  const attachments=new Map();function attachmentList(){return attachments.get(chatConversation)||[]}
  function drawAttachments(){let bar=$('#desktop-attachments');bar?.remove();const values=attachmentList();if(!values.length)return;bar=node('div','desktop-attachments');bar.id='desktop-attachments';for(const file of values){const tag=node('span');tag.append(btn(file.name||file.title||'附件',()=>void previewFile(file.id)));tag.append(btn('×',e=>{},'remove'));tag.lastChild.onclick=e=>{e.stopPropagation();attachments.set(chatConversation,attachmentList().filter(x=>x.id!==file.id));drawAttachments()};bar.append(tag)}$('#composer').before(bar)}
  $('#attachment-info').setAttribute('aria-label','添加附件');$('#attachment-info').onclick=async()=>{const owner=chatConversation;try{let result;if(window.mygo)result=await window.mygo.call('DesktopFiles.Upload');else{const picker=node('input');picker.type='file';picker.onchange=async()=>{if(!picker.files?.[0])return;const form=new FormData();form.append('file',picker.files[0]);try{const file=await api('POST','/api/files',form);attachments.set(owner,[...(attachments.get(owner)||[]),file.artifact||file]);if(owner===chatConversation)drawAttachments()}catch(e){toast(e.message)}};picker.click();return}if(result.cancelled)return;attachments.set(owner,[...(attachments.get(owner)||[]),result.artifact||result]);if(owner===chatConversation)drawAttachments()}catch(e){toast(e.message)}};
- $('#composer').onsubmit=e=>{e.preventDefault();const text=$('#input').value;if(!text.trim()||!window.OpsTwinsChatSessions.draft(text))return;try{window.OpsTwinsDesignChat.start({message:text,conversationId:chatConversation,sessionTitle:window.OpsTwinsChatSessions.title(),attachmentIds:attachmentList().map(a=>a.id)});$('#input').value='';inputChange();attachments.delete(chatConversation);drawAttachments();renderChat()}catch(e){toast(e.message)}};
+ $('#composer').onsubmit=e=>{e.preventDefault();const text=$('#input').value;if(!text.trim()||!window.OpsTwinsChatSessions.draft(text))return;try{const rows=discussions(),entry=Object.values(rows).find(r=>r.id===chatConversation&&r.pending);window.OpsTwinsDesignChat.start({message:text,conversationId:chatConversation,sessionTitle:window.OpsTwinsChatSessions.title(),...(entry?{contextIds:entry.contextIds,readOnly:true}:{}),attachmentIds:[...new Set([...attachmentList().map(a=>a.id),...(entry?.attachmentIds||[])])]});if(entry){entry.pending=false;try{saveDiscussions(rows)}catch{toast('本机保存失败，关联资料已保留')}};$('#input').value='';inputChange();attachments.delete(chatConversation);drawAttachments();renderChat()}catch(e){toast(e.message)}};
  let fileGeneration=0,fileBlob='',fileAbort;
  function closeFilePreview(){fileGeneration++;fileAbort?.abort();if(fileBlob)URL.revokeObjectURL(fileBlob);fileBlob='';$('#desktop-file-panel')?.remove();$('.chat-layout').classList.remove('has-file-preview')}
  async function previewFile(id){

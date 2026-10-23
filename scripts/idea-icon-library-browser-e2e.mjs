@@ -1,0 +1,14 @@
+const fs=await import('node:fs/promises'),out='/Users/steve/Projects/opstwin-advance/output/idea-icon-library-20261023';
+const t=await taskSpace('CyberMe SVG 图标库 20261023'),p=t.page('p1'),checks=[];
+const check=(name,pass)=>{checks.push({name,pass});if(!pass)throw Error(name)};
+await p.goto('http://127.0.0.1:46680/');await p.waitForFunction(()=>document.querySelectorAll('#icons img').length===96&&[...document.querySelectorAll('#icons img')].every(x=>x.complete&&x.naturalWidth===48));
+check('48 distinct SVGs load at both preview sizes',await p.evaluate(()=>new Set([...document.querySelectorAll('#icons img')].map(x=>x.src)).size===48));
+check('large and small icons retain intended size',await p.evaluate(()=>[...document.querySelectorAll('.sizes')].every(x=>Math.round(x.children[0].getBoundingClientRect().width)===56&&Math.round(x.children[1].getBoundingClientRect().width)===24)));
+const chosen=await p.evaluate(()=>{const api=window.OpsTwinsIdeaIcons;return ['deploy','contract','meeting'].map(iconKey=>api.create({id:'same-idea',iconKey}).dataset.iconKey)});
+check('model chosen keys override ID fallback',chosen.join(',')==='deploy,contract,meeting');
+const bad=await p.evaluate(()=>{const api=window.OpsTwinsIdeaIcons;return ['../../outside','https://invalid.test/icon.svg','__proto__',{toString:null},null].map(iconKey=>{const el=api.create({id:'legacy',iconKey});return {key:el.dataset.iconKey,path:new URL(el.src).pathname}})});
+check('malformed keys resolve only to catalog paths',bad.every(x=>/^\/assets\/idea-icons\/[a-z]+\.svg$/.test(x.path)));
+await p.click('button[data-mode="soft"]');check('soft palette control works',await p.evaluate(()=>document.body.dataset.treatment==='soft'));
+await p.reload();await p.waitForFunction(()=>window.OpsTwinsIdeaIcons&&document.querySelectorAll('#icons article').length===48);
+check('refresh keeps selected icons stable',await p.evaluate(()=>window.OpsTwinsIdeaIcons.key({id:'same-idea',iconKey:'contract'})==='contract'));
+await p.click('button[data-mode="color"]');await fs.writeFile(out+'/gallery.snapshot.txt',await p.snapshot({scope:'full_page'}));await fs.writeFile(out+'/browser.json',JSON.stringify({checks},null,2));console.log(checks);
