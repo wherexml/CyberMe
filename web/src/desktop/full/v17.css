@@ -1,0 +1,105 @@
+/* Latest user-reviewed Mock vocabulary, adapted to canonical App data. */
+:root {--v17-hover:rgba(128,128,140,.07)}
+#settings-window input.switch{appearance:none;width:32px;height:20px;min-width:32px;min-height:20px;padding:0;border:0;border-radius:12px;background:#c8ccd5;position:relative;flex:none;overflow:visible}
+#settings-window input.switch:checked{background:var(--blue)}
+#settings-window input.switch:before{width:16px;height:16px;top:2px;left:2px}
+#settings-window input.switch:checked:before{transform:translateX(12px)}
+#settings-window input.switch:after{content:none}
+.task-agent-panel .task-agent-heading h3{white-space:nowrap;flex:none;font-size:14px;line-height:1.5}
+.task-agent-panel .task-agent-heading button{width:auto;min-width:0;flex:none;margin-left:auto}
+.task-agent-panel select,.task-agent-panel input,.task-agent-panel textarea{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink)}
+.task-agent-panel .field>span{font-size:12px;color:var(--muted)}
+#settings-window .identity-back{display:flex;align-items:center;gap:6px;justify-content:flex-start;margin:0 0 24px;padding:4px 0;color:var(--muted)}
+#settings-window .identity-document-entry{display:flex;align-items:center;gap:12px;width:100%;min-height:76px;padding:13px 2px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;text-align:left;color:var(--ink)}
+.identity-document-entry strong{flex:1;font-size:14px;font-weight:500}.document-icon{width:36px;height:36px;border-radius:10px;background:var(--v17-hover);display:grid;place-items:center}.identity-document-entry svg{width:20px;height:20px}.identity-document-entry>svg:last-child{width:15px;height:15px;color:var(--muted)}
+.knowledge-path-row{display:flex;align-items:center;gap:9px;min-height:48px;border-bottom:1px solid var(--line);padding:8px 0}.knowledge-path-row>span{flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px}.knowledge-path-row svg{width:17px;height:17px}.knowledge-path-row button{padding:4px!important;flex:none}
+.knowledge-path-entry{display:flex;align-items:center;gap:8px;margin:14px 0}.knowledge-path-entry>input{width:0;flex:1;min-width:0;height:38px;font-size:13px}.knowledge-path-entry>button{width:auto;flex:none;font-size:12px}.desktop-knowledge [role=alert]{font-size:12px;line-height:1.7;color:var(--muted)}
+#settings-window .v17-settings-section{margin:28px 0}.v17-settings-section h3{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 12px}.v17-settings-section .ss-row{min-height:56px;padding:8px 0}.v17-settings-section .ss-row-copy strong{font-size:14px;font-weight:400}.v17-settings-section .ss-select{width:240px;flex:none}.v17-auto-feedback:empty{display:none}.v17-auto-feedback{font-size:12px;line-height:1.7;color:var(--muted)}
+.v17-settings-support{margin-top:auto;border-top:1px solid var(--line);padding-top:12px}.v17-settings-support [data-setting]{font-size:13px!important}
+#settings-window [data-setting=dictation],#voice-input,#dictation-info,#voice-controls,#dictation-view,.dictation-control{display:none!important}
+.message{position:relative}.message>.msg-actions{display:none!important}.message>.message-actions{position:static;align-self:center;display:flex;gap:4px;flex:none;opacity:0;transform:none;margin:0 0 0 10px;padding:0;background:none}.message:hover>.message-actions,.message:focus-within>.message-actions,.message:has(.message-actions [aria-expanded=true])>.message-actions{opacity:1}.message.assistant,.message.user{flex-direction:row!important;align-items:center;gap:0}.message.user{justify-content:flex-end}.message .bubble{max-width:calc(100% - 108px)}.message>.message-actions button{width:24px;height:26px;min-width:24px;min-height:26px;padding:4px;border-radius:5px}.message>.message-actions svg{width:16px;height:16px}.message-context-menu{z-index:9000;background:var(--bg);color:var(--ink);border:1px solid var(--line);box-shadow:0 8px 26px #0002}.message-reaction{position:static!important;margin-top:6px}
+#v17-quotes{max-width:680px;margin:0 auto 8px;display:flex;flex-wrap:wrap;gap:6px}.v17-quote{display:flex;align-items:center;gap:6px;max-width:100%;padding:5px 8px;border-radius:8px;background:var(--v17-hover);font-size:12px;line-height:1.5}.v17-quote span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:390px}.v17-quote button{padding:0;width:20px;height:20px;min-height:0;background:none}.v17-selection{position:fixed;z-index:9001;border-radius:18px;box-shadow:0 4px 14px #0002;border:1px solid var(--line);background:var(--bg);color:var(--ink);height:32px;font-size:12px;padding:0 12px;display:flex;gap:9px;align-items:center}.v17-selection kbd{font-size:10px;padding:1px 4px;border-radius:4px;background:var(--v17-hover)}
+#task-detail-body .v17-task-document{padding:0 2px}.v17-task-title{display:flex;align-items:flex-start;gap:12px;margin:12px 0 18px}.v17-task-title h1{font-size:22px;line-height:1.45;margin:0;overflow-wrap:anywhere}.v17-task-title input{width:18px;height:18px;margin-top:7px;flex:none}.v17-task-title.done h1{text-decoration:line-through;color:var(--muted)}.v17-task-properties{display:flex;align-items:center;gap:12px;margin-bottom:24px}.v17-task-properties input{font-size:12px;border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:5px 8px}.v17-task-tools{display:flex;justify-content:flex-end;gap:6px;margin-bottom:10px}.v17-task-tools button{font-size:12px;min-height:28px;padding:3px 8px}.v17-task-body{font-size:14px;line-height:1.8;overflow-wrap:anywhere}.v17-task-body input[type=checkbox]{width:14px;height:14px;margin-right:8px}.v17-task-body li:has(>input:checked){text-decoration:line-through;color:var(--muted)}.v17-task-error:empty{display:none}.v17-task-error{font-size:12px;line-height:1.7;color:var(--muted);margin:12px 0}.v17-task-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}
+.inbox-actions{min-height:48px!important;height:48px!important;padding:7px 18px!important;gap:6px!important}.inbox-actions button{min-height:30px!important;padding:4px 10px!important;font-size:12px!important}.v17-inbox-channel{width:15px;height:15px;margin-right:6px;vertical-align:middle;object-fit:contain}.item-head b{display:flex;align-items:center}.source-hint{display:none!important}.v17-inline-analysis{font-size:13px;line-height:1.8;border-top:1px solid var(--line);padding:12px 0}.source-thread.v17-expanded{max-height:460px!important}.v17-source-actions{display:flex;gap:8px;margin-left:auto;align-items:center}.v17-source-actions button{font-size:11px!important;min-height:26px;padding:3px 7px}.source-thread{max-height:240px;overflow:auto}.task-agent-panel .field{display:flex;flex-direction:column;gap:6px}.task-agent-panel select,.task-agent-panel input,.task-agent-panel textarea{box-sizing:border-box;width:100%}
+@media(max-width:760px){.v17-settings-section .ss-select{max-width:55%;width:210px}.message .bubble{max-width:calc(100% - 88px)}.message>.message-actions{margin-left:5px;gap:0}.message>.message-actions button{width:23px;min-width:23px}.knowledge-path-entry{gap:4px}.knowledge-path-entry>button{padding:5px!important}.v17-quote span{max-width:210px}}
+.v17-help-shortcuts{display:flex;gap:10px;margin:22px 0 30px}.v17-help-shortcuts button{flex:1;padding:15px 8px!important;background:var(--v17-hover)!important;border-radius:9px}.v17-faq{padding:14px 0;border-bottom:1px solid var(--line)}.v17-faq summary{font-size:13px;cursor:pointer}.v17-faq p{margin:12px 0 0;color:var(--muted);font-size:12px;line-height:1.8}.v17-settings-section>p{font-size:13px;line-height:1.8;margin:8px 0}.avatar{border-radius:50%;overflow:hidden}.avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.jev-card{display:grid!important;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px 15px;min-height:42px;padding:10px 12px!important}.jev-heading{margin:0!important}.jev-heading strong{font-size:11px!important;font-weight:500}.jev-card>.judgment{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));min-width:0;margin:0!important;gap:10px!important}.jev-card .judgment>div{display:flex;flex-direction:row;align-items:center;gap:7px;min-width:0}.jev-card .judgment>div>span{font-size:10px;white-space:nowrap}.jev-card .judgment .judgment-meter{flex:0 1 32px;width:32px;min-width:16px;min-height:4px;margin:0!important;height:4px}.jev-card>.inline-note,.jev-card>.jev-warning,.jev-card>.jev-evidence,.jev-card>.jev-method{grid-column:1/-1;min-width:0;margin:0;overflow-wrap:anywhere}.jev-card>.inline-note{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:11px;line-height:1.7}.jev-card>.inline-note button{margin-left:auto;flex:none}.jev-warning:empty{display:none}.inbox-item .item-copy>p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:12px;line-height:1.65}
+.desktop-task-tools button{background:var(--subtle);color:var(--ink);border:1px solid var(--line)}
+@media(max-width:760px){.jev-card{grid-template-columns:minmax(0,1fr)}.jev-card>.judgment{grid-template-columns:repeat(3,minmax(0,1fr))}.jev-card .judgment>div{flex-direction:column;align-items:flex-start;gap:5px}.jev-card .judgment .judgment-meter{flex:none}}
+#settings-window .settings-provider-description,#settings-window .settings-provider-caption,#settings-window .settings-custom-card .settings-provider-caption{display:none}
+#settings-window .ss-draft-summary,#settings-window .ss-provider-description{display:none}.v17-task-body .md-code-scroll,.v17-task-body .md-table-scroll{max-width:100%;overflow:auto}.v17-task-body li{line-height:1.8}
+.v17-sent-quote{font-size:12px;line-height:1.65;color:var(--muted);border-left:2px solid var(--line);padding:0 0 0 10px;margin:12px 0 0;white-space:pre-wrap}.v17-sent-quote small{display:block;margin-bottom:4px;font-size:11px}
+.knowledge-path-preview{display:block;font-size:11px;line-height:1.5;color:var(--muted);font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:5px}.identity-document-entry strong{min-width:0}
+.chat-column .timeline{padding-bottom:var(--v17-composer-clearance,var(--composer-clearance));scroll-padding-bottom:var(--v17-composer-clearance,var(--composer-clearance))}
+#v17-quotes{pointer-events:auto}
+.v17-sent-quote .md{font-size:inherit;line-height:inherit;white-space:normal}.v17-sent-quote .md>:first-child{margin-top:0}.v17-sent-quote .md>:last-child{margin-bottom:0}
+.v17-inbox-channel{flex:none;display:inline-block}.v17-inbox-channel:not(img){stroke:currentColor;fill:none}.task-copy>p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden}
+#task-dialog .v17-task-tools{display:flex;justify-content:flex-end;gap:6px}#task-dialog .v17-task-tools button{width:auto;flex:0 0 auto;margin:0}
+body:has(#task-dialog[open]) .desktop-task-tools{visibility:hidden}
+#settings-window .ss-form-footer[hidden]{display:none!important}
+#settings-window input.switch:disabled{opacity:.7;box-shadow:inset 0 0 0 1px var(--muted)}
+html.desktop-native #task-dialog[open]{animation:none;opacity:1;transform:none}
+#view-inbox #send-reply:not(:disabled){background:var(--blue);color:var(--bg);opacity:1}
+.desktop-island .settings-custom-request{display:flex;justify-content:flex-end;margin-top:12px}
+#settings-window #settings-content>*{margin-left:0;margin-right:0}
+#settings-window #settings-content>:is(h1,h2){font-size:20px;line-height:1.4;margin-top:0;margin-bottom:24px}
+.v17-task-draft-state{font-size:11px;color:var(--muted);margin-right:auto;align-self:center}
+
+/* Independent visual follow-up: canonical selected state and readable disabled controls. */
+#settings-window #view-settings>.settings-layout>.settings-nav button[aria-pressed=true]{background:var(--line)!important;color:var(--ink)!important}
+#settings-window #view-settings>.settings-layout>.settings-nav button[aria-pressed=false]{background:transparent!important;color:var(--ink)!important}
+#retry-draft:disabled{color:var(--muted);opacity:.55;cursor:default}
+#detail-dialog .record-text.md{white-space:normal}
+#settings-window .desktop-identity>h2:last-child{display:none}
+
+.v17-settings-section h2{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 12px}
+
+html.desktop-native dialog[open],html.desktop-native .view.active{animation:none!important}
+html.desktop-native #settings-window,html.desktop-native #settings-window *{transition:none!important}
+
+/* WKWebView must paint navigation colors synchronously; keep run-status keyframes. */
+html.desktop-native .sidebar,html.desktop-native .sidebar *,html.desktop-native .sidebar *::before,html.desktop-native .sidebar *::after{transition:none!important}
+
+/* Prevent inert background buttons retaining old theme colors in WKWebView. */
+html.desktop-native button{transition:none!important}
+
+/* An available image owns the full avatar; restore the initial when load fails. */
+.avatar{position:relative}.avatar>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.avatar:has(>img)>span{visibility:hidden}
+
+/* Keep recovery actions readable and reachable without an extra submit footer. */
+#settings-window .v17-auto-feedback:not(:empty),#settings-window .desktop-knowledge [role=alert]{position:sticky;bottom:12px;z-index:3;padding:12px;margin:18px 0 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:13px;box-shadow:0 3px 12px #0000000b}
+/* Autonomy/General feedback takes normal-flow space so it never covers notification rows. */
+#settings-window .v17-auto-feedback:not(:empty){position:static;z-index:auto;box-shadow:none}
+#settings-window .v17-auto-feedback p,#settings-window .desktop-knowledge [role=alert] p{margin:0 0 8px}
+#settings-window .v17-auto-feedback button,#settings-window .desktop-knowledge [role=alert] button{display:inline-flex;align-items:center;min-height:32px;padding:5px 11px;margin:0 8px 0 0;border:1px solid var(--line);border-radius:7px;background:var(--subtle);color:var(--ink);font-size:12px;cursor:pointer}
+#settings-window #settings-content[data-v17-section=channels] .settings-page{background:transparent}
+#settings-window #settings-content[data-v17-section=channels] .settings-tag{background:var(--subtle);color:var(--ink);border:1px solid var(--line);font-weight:400}
+
+/* Task execution actions: the real panel uses .task-agent-buttons>button.primary; keep mock classes covered. */
+body .task-agent-panel :is(.task-agent-buttons>button,.task-agent-primary,.task-agent-secondary){display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:0 14px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-size:12px;font-weight:500;opacity:1;cursor:pointer}
+body .task-agent-panel :is(.task-agent-buttons>button.primary,.task-agent-primary){border-color:var(--blue);background:var(--blue);color:#fff}
+body.dark .task-agent-panel :is(.task-agent-buttons>button.primary,.task-agent-primary){border-color:var(--blue);background:var(--blue);color:#14223e}
+body .task-agent-panel :is(.task-agent-buttons>button,.task-agent-primary,.task-agent-secondary):hover:not(:disabled){filter:brightness(.96)}
+body.dark .task-agent-panel :is(.task-agent-buttons>button,.task-agent-primary,.task-agent-secondary):hover:not(:disabled){filter:brightness(1.1)}
+body .task-agent-panel :is(.task-agent-buttons>button,.task-agent-primary,.task-agent-secondary):focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+body .task-agent-panel :is(.task-agent-buttons>button,.task-agent-primary,.task-agent-secondary):disabled{opacity:.5;cursor:default;filter:none}
+
+/* Chat failure actions (retry, check result, original record) share one control style. */
+.chat-task-run .chat-agent-result>button{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-height:28px;margin:10px 8px 0 0;padding:4px 11px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font:inherit;font-size:12px;font-weight:500;line-height:1.4;white-space:nowrap;vertical-align:middle;cursor:pointer}
+.chat-task-run .chat-agent-result>button:hover:not(:disabled){background:var(--subtle)}
+.chat-task-run .chat-agent-result>button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.chat-task-run .chat-agent-result>button:disabled{opacity:.55;cursor:default}
+/* Shared VMSelect: one production presentation, native values remain in forms. */
+select[data-standard-select]{display:none!important}.desktop-select-slot{display:contents}
+.vm-select{--border-medium:var(--line);--surface-raised:var(--bg);--text-primary:var(--ink);--text-tertiary:var(--muted);min-width:0;font-size:13px}
+#vm-select-menu{margin:0;inset:auto;--surface-raised:var(--bg);--text-primary:var(--ink);--text-tertiary:var(--muted);--border-medium:var(--line);--surface-group:var(--subtle);--surface-selected:var(--hover,#8881)}
+#vm-select-menu [role=option]:disabled{opacity:.45;cursor:default}
+#settings-window .setting-row .vm-select{width:240px;max-width:100%}
+.ss-select>.desktop-select-slot>.vm-select{width:100%}.task-agent-field .vm-select{width:100%}
+.vm-select-error{display:block;font-size:12px;color:var(--muted);margin-top:6px}
+/* Keep the embedded settings controls below the real macOS window traffic lights. */
+@media(max-width:760px){html.desktop-native #settings-window{margin:48px auto 8px;height:calc(100dvh - 56px);max-height:calc(100dvh - 56px)}}
+#settings-window .settings-nav>button>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Native task surface reaches the real window bottom; the body owns scrolling. */
+html.desktop-native #task-dialog[open]{top:0!important;bottom:0!important;height:100%!important;border-radius:0}

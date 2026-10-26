@@ -20,7 +20,9 @@ try{
  check('重新生成有明确文字',await page.evaluate(()=>document.querySelector('[data-action=regenerate]').textContent==='重新生成'));
  check('保存状态简短且保留说明',await page.evaluate(()=>document.querySelector('#draft-status').textContent==='已保存'&&document.querySelector('#draft-status').title.includes('当前浏览器')));
  await click('analysis');check('分析入口可用',await page.evaluate(()=>document.querySelector('.modal h2').textContent==='分析过程'));await click('close');
- await click('regenerate');check('生成仍更新本地草稿',(await state()).inbox.find(x=>x.id==='i1').draft.startsWith('本轮先确认核心流程'));
+ await click('regenerate');await page.waitForFunction(()=>window.OpsTwinsMock.getState().inbox.find(x=>x.id==='i1').draftRequest?.status==='completed');
+ if((await state()).inbox.find(x=>x.id==='i1').draftCandidate)await click('adopt-draft');
+ check('生成或明确采用后更新本地草稿',(await state()).inbox.find(x=>x.id==='i1').draft.startsWith('本轮先确认核心流程'));
  await page.fill('#reply-draft',baseline+'\n公开紧凑验收');
  await page.waitForFunction(()=>document.querySelector('#draft-status').textContent==='已保存');
  await click('item:i2');await click('item:i1');check('按事项保存保留',await page.evaluate(()=>document.querySelector('#reply-draft').value.endsWith('公开紧凑验收')));

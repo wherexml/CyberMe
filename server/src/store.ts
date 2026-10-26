@@ -1,5 +1,8 @@
+import {stampCopilot,isFeishuCopilot,COPILOT_VERSION} from './inbox-copilot';
 import {entityChanged} from './entity-events';
 import {communicationMessages} from './communication-context';
+import {wechatGroupAttentionExcluded} from './wechat-attention';
+import {storedWechatCategory} from './wechat-categories';
 import {connectionCredentialValues} from './connection-credentials-policy';
 import { presentInbox } from './message-presentation';
 import {inboxDisposition} from '../../shared/inbox-surfacing';
@@ -42,7 +45,7 @@ export function revision() {return meta('revision',0);}
 export function bump() {const next=revision()+1;setMeta('revision',next);return next;}
 export function list<T=any>(type:string, deleted=false):T[] {const evaluatedAt=Date.now();return (db.prepare('SELECT data FROM entities WHERE type=? AND deleted=? ORDER BY rowid DESC').all(type,deleted?1:0) as any[]).map(x=>{const value=JSON.parse(x.data);return type==='inbox'?withInboxTriage(normalizeInboxAttachments(value),evaluatedAt):value;}).filter(value=>type!=='artifacts'||!value.archivedAt);}
 export function get<T=any>(type:string,id:string,includeDeleted=false):T|undefined {const r=db.prepare(`SELECT data FROM entities WHERE type=? AND id=? ${includeDeleted?'':'AND deleted=0'}`).get(type,id) as any;if(!r)return undefined;const value=JSON.parse(r.data);return type==='inbox'?withInboxTriage(normalizeInboxAttachments(value)):value;}
-export function put<T extends Record<string,any>>(type:string,value:T,local=true):T & {id:string;createdAt:string;updatedAt:string} {if(type==='inbox'){value=normalizeInboxAttachments(value);const {triage,surfacing,disposition,sourceUnavailable,sourceRule,dismissalFeedbackActive,...rest}=value;value=rest as T;}const data={...value,id:value.id||uid(type.slice(0,-1)),createdAt:value.createdAt||now(),updatedAt:now()};db.prepare('INSERT INTO entities(type,id,data,local_edited) VALUES(?,?,?,?) ON CONFLICT(type,id) DO UPDATE SET data=excluded.data,local_edited=MAX(entities.local_edited,excluded.local_edited)').run(type,data.id,JSON.stringify(data),local?1:0);bump();
+export function put<T extends Record<string,any>>(type:string,value:T,local=true):T & {id:string;createdAt:string;updatedAt:string} {if(type==='inbox'){const prior=value.id?db.prepare("SELECT data FROM entities WHERE type='inbox' AND id=?").get(value.id) as any:undefined;value=stampCopilot(value,prior?JSON.parse(prior.data):undefined);value=normalizeInboxAttachments(value);const {triage,surfacing,disposition,sourceUnavailable,sourceAttentionExcluded,sourceAttentionReason,sourceRule,dismissalFeedbackActive,...rest}=value;value=rest as T;}const data={...value,id:value.id||uid(type.slice(0,-1)),createdAt:value.createdAt||now(),updatedAt:now()};db.prepare('INSERT INTO entities(type,id,data,local_edited) VALUES(?,?,?,?) ON CONFLICT(type,id) DO UPDATE SET data=excluded.data,local_edited=MAX(entities.local_edited,excluded.local_edited)').run(type,data.id,JSON.stringify(data),local?1:0);bump();
  // Source revisions flow to linked rounds without changing their drafts or receipts.
  if(type==='inbox'&&!data.sourceParentInboxId&&Array.isArray(data.messages)){
   const rows=db.prepare("SELECT data FROM entities WHERE type='inbox' AND deleted=0").all() as any[];
@@ -84,16 +87,37 @@ export function inboxTriageState(item:any){
  });
  const noteCoverage={selectedReferenceIds:selectedIds,selectionTruncated:selectedIds.length>64,matchedNotes:notes.length,loadedNotes:linkedNotes.length,notesTruncated:notes.length>linkedNotes.length,contentTruncated:linkedNotes.some(note=>note.truncated),selectedNotesFingerprint:hash(notes.map(note=>({id:note.id,title:note.title,body:note.body,content:note.content,notes:note.notes,summary:note.summary,updatedAt:note.updatedAt})))};
  const conversation=communicationMessages(item.messages);
- const state={dismissalFeedback:inboxFeedback(item),owner:{name:owner.name,aliases:owner.name==='许茂林'?['Steve','许茂林']:[],role:owner.role,instructions:owner.instructions},message:{title:item.title,body:item.body,sender:item.sender,senderId:item.senderId,isMine:item.isMine,direction:item.direction,isSelfTest:item.isSelfTest===true,recipientId:item.recipientId,channel:item.channel,origin:item.origin,sensitive:!!item.sensitive,sourceId:item.sourceId,receivedAt:item.receivedAt,eventAt:item.eventAt,sentAt:item.sentAt,chatMode:item.chatMode||item.sourceScope?.chatMode},recentMessages:conversation.messages,conversationCoverage:{...conversation.coverage,fingerprint:hash(item.messages||[]),sourceUpdatedAt:item.sourceUpdatedAt||null,liveVerified:false},linkedTasks:linked,linkedNotes,noteCoverage,sourceAttachments:item.sourceAttachments||[]};
+ const state={dismissalFeedback:inboxFeedback(item),owner:{name:owner.name,aliases:owner.name==='许茂林'?['Steve','许茂林']:[],role:owner.role,instructions:owner.instructions},message:{title:item.title,body:conversation.messages.length?undefined:item.body,sender:item.sender,senderId:item.senderId,isMine:item.isMine,direction:item.direction,isSelfTest:item.isSelfTest===true,recipientId:item.recipientId,channel:item.channel,origin:item.origin,sensitive:!!item.sensitive,sourceId:item.sourceId,receivedAt:item.receivedAt,eventAt:item.eventAt,sentAt:item.sentAt,chatMode:item.chatMode||item.sourceScope?.chatMode},recentMessages:conversation.messages,conversationCoverage:{...conversation.coverage,...(Array.isArray(item.messages)&&item.messages.some((m:any)=>m.contentTruncated)?{truncated:true}:{}),fingerprint:hash(item.messages||[]),sourceUpdatedAt:item.sourceUpdatedAt||null,liveVerified:false,...(item.sourceCoverage?{sourceCoverage:item.sourceCoverage}:{}),...(/^wechat$/i.test(item.channel)?{connectionVersion:get('connections','wechat-sync-local')?.updatedAt||null}:{})},linkedTasks:linked,linkedNotes,noteCoverage,sourceAttachments:item.sourceAttachments||[]};
  return state;
 }
-export function inboxTriageVersion(item:any){return hash({state:inboxTriageState(item),policyVersion:TRIAGE_POLICY_VERSION});}
+// Transport refreshes are not new evidence. Preserve full message text (including
+// truncated tails), identity, recall and attachment changes in the semantic key.
+export function inboxTriageVersion(item:any){
+ const state=inboxTriageState(item);
+ const {sourceUpdatedAt,connectionVersion,fingerprint,...coverage}=state.conversationCoverage;
+ const messages=(item.messages||[]).map((m:any)=>({id:m.id,text:m.text||m.content||m.body||'',replyToId:m.replyToId,rootId:m.rootId,threadId:m.threadId,mentions:m.mentions,mentionsSelf:m.mentionsSelf,deleted:m.deleted,recalled:m.recalled,isMine:m.isMine,direction:m.direction,senderId:m.senderId,sender:m.senderName,sentAt:m.sentAt,createdAt:m.createdAt,attachments:m.attachments,contentTruncated:m.contentTruncated}));
+ return hash({...(isFeishuCopilot(item)?{copilotVersion:COPILOT_VERSION}:{}),state:{...state,conversationCoverage:{...coverage,fingerprint:hash(messages)}},policyVersion:TRIAGE_POLICY_VERSION});
+}
+// Upgrade only verifiably matching legacy snapshots; never bless stale results.
+export function migrateInboxTriageVersions(){
+ for(const row of db.prepare("SELECT data FROM entities WHERE type='inbox' AND deleted=0").all() as any[]){
+  const item=JSON.parse(row.data),saved=get('inbox_triages',item.id);
+  if(!saved||saved.policyVersion!==TRIAGE_POLICY_VERSION||isFeishuCopilot(item))continue;
+  const legacy=hash({state:inboxTriageState(item),policyVersion:TRIAGE_POLICY_VERSION}),version=inboxTriageVersion(item);
+  if(saved.sourceVersion===legacy&&legacy!==version)put('inbox_triages',{...saved,sourceVersion:version});
+ }
+}
 function withInboxTriage(item:any,evaluatedAt=Date.now()){
  const row=db.prepare("SELECT data FROM entities WHERE type='inbox_triages' AND id=? AND deleted=0").get(item.id) as any;
  const saved=row?JSON.parse(row.data):undefined;
  const {triage,sourceRule,disposition,sourceUnavailable,...rest}=item;
  const rule=item.sourceId?get('inbox_source_rules',hash([item.channel,item.sourceId])):undefined;
- const result={...rest,...(rule?.active?{sourceRule:{id:rule.id,name:rule.name,active:true}}:{}),...(saved?.sourceVersion===inboxTriageVersion(item)&&saved.policyVersion===TRIAGE_POLICY_VERSION?{triage:saved}:{})};if(result.attentionOverride&&result.attentionOverrideVersion!==inboxTriageVersion(item))result.attentionOverride=false;const connection=/^feishu$/i.test(item.channel)?get('connections','feishu-local'):undefined;if(connection&&connection.status!=='connected')result.sourceUnavailable=true;const projected=inboxDisposition(result,evaluatedAt);return {...result,disposition:projected,dismissalFeedbackActive:get('inbox_feedback',item.id)?.active===true,surfacing:projected.placement==='quiet'?'quiet':projected.placement==='pending'?'attention':projected.placement};
+ const result={...rest,...(rule?.active?{sourceRule:{id:rule.id,name:rule.name,active:true}}:{}),...(saved?.sourceVersion===inboxTriageVersion(item)&&saved.policyVersion===TRIAGE_POLICY_VERSION?{triage:saved}:{})};if(result.attentionOverride&&result.attentionOverrideVersion!==inboxTriageVersion(item))result.attentionOverride=false;const connection=item.sourceSystem==='virtual-im'?get('connections','virtual-im-local'):/^feishu$/i.test(item.channel)?get('connections','feishu-local'):/^wechat$/i.test(item.channel)?get('connections','wechat-sync-local'):undefined;
+ const wechatUnavailable=/^wechat$/i.test(item.channel)&&(!connection||!connection.permissions?.includes('read')||(item.sourceAccountHash&&item.sourceAccountHash!==connection.evidence?.sourceHash));
+ if((connection&&connection.status!=='connected')||wechatUnavailable||(item.sourceSystem==='virtual-im'&&(!connection||connection.config?.instanceId!==item.virtualImInstanceId||!connection.permissions?.includes('read'))))result.sourceUnavailable=true;
+ result.sourceAttentionExcluded=wechatGroupAttentionExcluded(item,evaluatedAt);
+ if(item.sourceSystem==='wechat-sync'){result.wechatCategory=storedWechatCategory(item);result.sourceAttentionReason=result.wechatCategory==='other'?'wechat_other':result.wechatCategory?'group_mentions_only':'wechat_category_unknown';}
+ const projected=inboxDisposition(result,evaluatedAt);return {...result,disposition:projected,dismissalFeedbackActive:get('inbox_feedback',item.id)?.active===true,surfacing:projected.placement==='quiet'?'quiet':projected.placement==='pending'?'attention':projected.placement};
 }
 
 const defaultSettings:Settings={

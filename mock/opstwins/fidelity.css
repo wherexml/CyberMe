@@ -80,6 +80,9 @@ body[data-density=relaxed] {--gap:24px;--row:64px}
 .idea-copy h3 {font-size:16px;line-height:1.55;letter-spacing:-.2px;margin-bottom:6px}
 .idea-copy>p {line-height:1.65}
 .idea-actions {margin-top:8px;min-height:26px}
+.ideas-page .idea-card .idea-actions {opacity:0;pointer-events:none}
+.ideas-page .idea-card:hover .idea-actions,.ideas-page .idea-card:focus-within .idea-actions {opacity:1;pointer-events:auto}
+@media(hover:none){.ideas-page .idea-card .idea-actions {opacity:1;pointer-events:auto}}
 .idea-actions button {font-size:12px;min-height:26px;padding:3px 0}
 .idea-actions button:first-child {color:var(--blue)}
 .task-group {margin-bottom:24px}

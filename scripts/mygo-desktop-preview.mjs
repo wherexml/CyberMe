@@ -10,7 +10,7 @@ createServer(async(req,res)=>{try{
  const url=new URL(req.url,origin);res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
  if(url.pathname.startsWith('/api/')||url.pathname.startsWith('/files/')){
   const link=JSON.parse(await readFile(resolve(root,'.local/mygo-pilot-public-v2/connection.json'),'utf8'));const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>64*1024*1024)throw Error('request_limit');chunks.push(chunk)}
-  const headers={'X-OpsTwins-Pilot':link.token};for(const h of ['content-type','range'])if(req.headers[h])headers[h]=req.headers[h];
+  const headers={'X-OpsTwins-Pilot':link.token};for(const h of ['content-type','range','x-opstwins-client','x-opstwins-agent'])if(req.headers[h])headers[h]=req.headers[h];
   const upstream=await fetch('http://127.0.0.1:46310'+url.pathname+url.search,{method:req.method,headers,body:['GET','HEAD'].includes(req.method)?undefined:Buffer.concat(chunks),redirect:'error',signal:AbortSignal.timeout(180000)});
   res.statusCode=upstream.status;for(const h of ['content-type','content-range','accept-ranges','content-disposition'])if(upstream.headers.has(h))res.setHeader(h,upstream.headers.get(h));return res.end(Buffer.from(await upstream.arrayBuffer()));
  }

@@ -1,0 +1,27 @@
+// Public HTTP/SQLite recovery journey; controlled Jev responses are explicit.
+import fs from 'node:fs/promises';import path from 'node:path';import {serve}from'@hono/node-server';
+const tag=Date.now(),scope=path.resolve('.local/analysis-recovery-'+tag),out='output/mygo-analysis-recovery-20261019/e2e-'+tag;
+await fs.mkdir(scope,{recursive:true});await fs.mkdir(out,{recursive:true});
+Object.assign(process.env,{OPSTWIN_DATA_DIR:scope,OPSTWIN_NO_BACKGROUND:'1',OPSTWIN_NO_LISTEN:'1',OPSTWIN_INBOX_CHAT_BACKGROUND:'0',JEV_API_KEY:'public-fixture-only'});
+let mode='success',calls=[];const original=globalThis.fetch;
+globalThis.fetch=async(url,opts)=>{if(String(url)!=='https://api.typesafe.ai/v1/systemone')return original(url,opts);const payload=JSON.parse(opts.body);calls.push({payload,headers:opts.headers});if(mode==='failure')return Response.json({code:'max_tokens_exceeded'},{status:400});if(mode==='hold')await new Promise(r=>{release=r});const answers={};for(const[k,q]of Object.entries(payload.questions)){if(q.type==='noul')answers[k]={type:'noul',noul:.8};else{const keys=Object.keys(q.criteria),choice=k==='request'?(keys.includes('m0')?'m0':'original'):k==='replyEvidence'?'none':k==='priority'?'medium':k==='action'?'reply':k==='resolution'?'open':keys[0];answers[k]={type:'choice',choice,confidence:.99,probabilities:Object.fromEntries(keys.map(x=>[x,x===choice?1:0]))}}}return Response.json({model:'public-controlled-jev',answers,usage:{input_tokens:100,output_tokens:1}})};
+let release;const S=await import('../server/src/store.ts'),{app}=await import('../server/src/index.ts'),{syncInboxChat}=await import('../server/src/inbox-chat.ts');
+const server=serve({fetch:app.fetch,hostname:'127.0.0.1',port:46512}),base='http://127.0.0.1:46512/api',checks=[];
+const check=(name,pass)=>{checks.push({name,pass});if(!pass)throw Error(name)},api=async(p,body)=>{const r=await fetch(base+p,{method:body===undefined?'GET':'POST',...(body===undefined?{}:{headers:{'content-type':'application/json'},body:JSON.stringify(body)})});return {http:r.status,data:await r.json()}};
+const seed=(id,extra={})=>S.put('inbox',{id,title:'公开分析恢复',sender:'公开同事',channel:'manual',status:'pending',origin:'human',receivedAt:S.now(),body:'请确认公开材料',...extra});
+S.put('conversations',{id:'recovery-main',title:'公开主会话'});S.setMeta('primaryConversationId','recovery-main');S.setMeta('inboxChatEnabledAt','2000-01-01');
+const projections=()=>S.list('messages').filter(m=>m.inboxAnalysis);
+try{
+ const text='这是公开的长会话材料，需要保留最近消息证据。'.repeat(4000);seed('long',{body:text.repeat(5),draft:'HUMAN-DRAFT',editedByUser:true,messages:Array.from({length:50},(_,i)=>({id:'public-'+i,isMine:false,sentAt:new Date(Date.now()+i).toISOString(),text}))});
+ const result=await api('/inbox/long/triage',{force:true});check('长会话实际 HTTP 判断成功',result.http===200&&result.data.status==='succeeded');
+ check('去掉重复 body，保留逐条消息',!calls.at(-1).payload.state.message.body&&calls.at(-1).payload.state.recentMessages.length===50);check('截断覆盖仍明确',calls.at(-1).payload.state.conversationCoverage.truncated===true);check('按需长上下文',calls.at(-1).headers['TypeSafe-Danger-Zone-Long-Context']==='true');check('人工草稿保持',S.get('inbox','long').draft==='HUMAN-DRAFT');
+ seed('short');await api('/inbox/short/triage',{force:true});check('短输入不启用长上下文',!calls.at(-1).headers['TypeSafe-Danger-Zone-Long-Context']);
+ for(let i=0;i<30;i++){const x=seed('failed-'+i);S.put('inbox_triages',{id:x.id,status:'failed',error:'Jev HTTP 400',sourceVersion:S.inboxTriageVersion(x),policyVersion:S.TRIAGE_POLICY_VERSION})}
+ // Existing derived per-item alert must be recoverable, user messages untouched.
+ const id='inbox-analysis-'+S.hash('failed-0').slice(0,32);S.put('messages',{id,conversationId:'recovery-main',role:'assistant',content:'旧错误卡片',inboxAnalysis:{kind:'inbox-analysis-v1',itemId:'failed-0',state:'failed'}});S.put('messages',{id:'human',conversationId:'recovery-main',role:'user',content:'公开人工消息'});
+ syncInboxChat();let rows=projections();check('30个故障只投影一条提示',rows.filter(m=>m.inboxAnalysis.state==='failed').length===1&&rows.some(m=>m.inboxAnalysis.aggregate&&m.inboxAnalysis.count===30));check('旧派生卡片可恢复删除',!S.get('messages',id)&&!!S.get('messages',id,true));check('人工聊天保留',!!S.get('messages','human'));check('事项与失败仍保留',S.get('inbox','failed-0').triage.status==='failed');
+ const rev=S.revision();syncInboxChat();check('无变化刷新不写入',rev===S.revision());const page=await api('/conversations/recovery-main/messages?limit=1');check('分页独立返回完整有效投影ID',Array.isArray(page.data.inboxAnalysisIds)&&page.data.inboxAnalysisIds.includes('inbox-analysis-failures')&&!page.data.inboxAnalysisIds.includes(id));
+ await api('/inbox/failed-0/triage',{force:true});syncInboxChat();check('恢复采用原稳定投影ID',!!S.get('messages',id));check('剩余错误计数更新',projections().find(m=>m.inboxAnalysis.aggregate)?.inboxAnalysis.count===29);
+ mode='failure';seed('real-failure');const f=await api('/inbox/real-failure/triage',{force:true});check('真实上游失败不伪造成功',f.data.status==='failed');
+ mode='hold';seed('late');const pending=api('/inbox/late/triage',{force:true});for(let i=0;i<100&&!release;i++)await new Promise(r=>setTimeout(r,10));S.put('inbox',{...S.get('inbox','late'),body:'公开修改后'});release();check('迟到旧来源不采用',(await pending).http===409);
+}catch(e){await fs.writeFile(out+'/error.txt',String(e));process.exitCode=1}finally{server.close();S.db.close();await fs.writeFile(out+'/result.json',JSON.stringify({scope:'public production HTTP/SQLite; controlled upstream, not real Jev',checks},null,2));console.log(JSON.stringify({out,checks}));}

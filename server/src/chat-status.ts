@@ -2,6 +2,13 @@
 import type {Hono} from 'hono';
 import {db, get, publicValue, revision} from './store';
 import {ApiError} from './integrations';
+// Exact legacy interruption marker only; never suppress a partial write or an unrelated failure.
+export function chatRequestStatus(row:{state:string},saved:any,run:any){
+ const status=row.state==='running'&&run?.status==='failed'?'failed':row.state;
+ const interrupted=run?.stopReason==='new_message'||/^(?:Error: )?已被新消息打断$/.test(String(run?.error||''));
+ if(status==='failed'&&interrupted&&Array.isArray(saved.completedWrites)&&saved.completedWrites.length===0)return 'cancelled';
+ return status;
+}
 export function mountChatStatus(app:Hono){
  // Discovery is independent of local outgoing state and loaded history pages.
  // Return only bounded intent metadata, never the original prompt or tool payloads.
@@ -28,7 +35,7 @@ export function mountChatStatus(app:Hono){
   const hasMore=rows.length>limit;
   const items=rows.slice(0,limit).map(row=>{
    const saved=JSON.parse(row.data),run=saved.runId?get('runs',saved.runId):undefined;
-   return {requestId:row.id,conversationId:id,status:row.state==='running'&&run?.status==='failed'?'failed':row.state,
+   return {requestId:row.id,conversationId:id,status:chatRequestStatus(row,saved,run),
     runId:typeof saved.runId==='string'?saved.runId:null,runStatus:run?.status??null,userMessageId:typeof saved.userMessage?.id==='string'?saved.userMessage.id:null,
     completedWriteCount:Array.isArray(saved.completedWrites)?saved.completedWrites.length:null,updatedAt:row.updated_at};
   });
@@ -41,7 +48,7 @@ export function mountChatStatus(app:Hono){
   if(!row)throw new ApiError(404,'request_not_found','此请求尚未开始');
   const saved=JSON.parse(row.data),run=get('runs',saved.runId);
   // Legacy/restarted processes may leave a running row with a terminal run.
-  const status=row.state==='running'&&run?.status==='failed'?'failed':row.state;
+  const status=chatRequestStatus(row,saved,run);
   return c.json(publicValue({requestId:id,status,conversationId:saved.conversationId,runId:saved.runId,
    userMessage:saved.userMessage,...(status==='succeeded'?{result:saved.result}:{}),
    ...(status==='partial'?{completedWrites:saved.completedWrites}:{}),

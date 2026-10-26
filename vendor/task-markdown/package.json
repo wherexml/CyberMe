@@ -1,0 +1,1 @@
+{"name":"opstwins-task-markdown-vendor","private":true,"type":"module","dependencies":{"unified":"11.0.5","remark-parse":"11.0.0","remark-gfm":"4.0.1"}}

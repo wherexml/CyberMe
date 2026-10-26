@@ -1,3 +1,4 @@
+import {copilotGate} from './inbox-copilot';
 import {get,list,put,uid,db} from './store';
 import {hasNoReplyDecision,needsInboxAttention,dispositionOf} from '../../shared/inbox-surfacing';
 import {generateInboxDraft} from './drafts';
@@ -5,7 +6,7 @@ import {generateInboxDraft} from './drafts';
 // One durable preparation per empty pending item. Failures/unknown outcomes
 // require explicit regeneration; no automatic send and no restart replay.
 function eligible(item:any) {
- return needsInboxAttention(item) && !hasNoReplyDecision(item) && dispositionOf(item).actionType==='reply' && item.status==='pending' && !String(item.draft||'').trim() && !item.editedByUser
+ return copilotGate(item).state==='ready' && needsInboxAttention(item) && !hasNoReplyDecision(item) && dispositionOf(item).actionType==='reply' && item.status==='pending' && !String(item.draft||'').trim() && !item.editedByUser
   && !item.draftCandidate && !item.draftError
   && !['queued','pending','running','interrupted','review'].includes(item.sourceProcessing?.status);
 }

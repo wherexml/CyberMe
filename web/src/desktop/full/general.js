@@ -1,0 +1,10 @@
+/* Persist actual App preferences; OS-owned controls open their system pane. */
+(() => {
+ const D=window.OpsTwinsDesktop;
+ D.renderGeneral=c=>{const root=c.root;root.replaceChildren(c.node('h1','','通用'));root.classList.add('ss-content');const section=title=>{const s=c.node('section','v17-settings-section');s.append(c.node('h2','',D.translate(title)));root.append(s);return s};const row=(label,control)=>{const r=c.node('div','ss-row'),copy=c.node('div','ss-row-copy');copy.append(c.node('strong','',D.translate(label)));r.append(copy,control);return r};const feedback=c.node('div','v17-auto-feedback');feedback.setAttribute('role','status');
+ const update=async(key,value)=>{try{if(key==='language'){const saved=await D.api('PATCH','/api/settings',{identity:{language:value}});c.data.settings=saved}c.prefs[key]=value;c.apply();if(!c.save())throw Error(D.translate('本机偏好未能保存'));await D.durable();feedback.replaceChildren();if(key==='language'&&root.dataset.v17Section==='general'&&root.closest('#settings-window')?.open)D.renderGeneral(c)}catch(e){feedback.replaceChildren(c.node('p','',e.message),c.btn('重试',()=>void update(key,value)))}};
+ const select=(label,key,value,options)=>window.OpsTwinsSettingsControls.select(c.node,value,options,v=>void update(key,v),label);
+ const appearance=section('外观');appearance.append(row('主题',select('主题','appearance',c.prefs.appearance,[['light','浅色'],['dark','深色'],['system','跟随系统']])),row('语言',select('语言','language',c.prefs.language,[['zh-CN','简体中文'],['en','English']])));
+ const system=section('启动与通知');for(const[label,pane]of [['登录时启动','com.apple.LoginItems-Settings.extension'],['桌面通知','com.apple.Notifications-Settings.extension']]){const button=c.btn('系统设置',async()=>{try{await window.mygo.call('DesktopFiles.OpenExternal','x-apple.systempreferences:'+pane)}catch(e){feedback.textContent=e.message}});button.disabled=!D.native;button.setAttribute('aria-label',D.translate(label+'系统设置'));system.append(row(label,button))}root.append(feedback);
+ };
+})();

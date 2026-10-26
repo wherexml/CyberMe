@@ -1,6 +1,7 @@
+import {prepareInboxDraft,inboxFingerprint} from './inbox-drafts.js';
 import {esc,icon,button} from './ui.js';
 const phases=['正在查看新消息','正在判断需要关注的事项','正在整理待回复内容'];
-const fingerprint=item=>JSON.stringify([item.id,item.title,item.messages,item.judgment]);
+const fingerprint=inboxFingerprint;
 export function createInboxAutomation({getState,save,changed,visible,scenario}) {
   let busy=false,restored=false;
   const state=getState();
@@ -17,7 +18,8 @@ export function createInboxAutomation({getState,save,changed,visible,scenario}) 
     const candidates=scope.inbox.filter(x=>['pending','unknown'].includes(x.status));
     for(const item of candidates){
       if(scope.inboxRuns.some(r=>r.itemId===item.id&&r.fingerprint===fingerprint(item)))continue;
-      created=true;scope.inboxRuns.push({messageIndex:scope.sessions.find(x=>x.id==='main').messages.length,id:crypto.randomUUID(),sessionId:'main',itemId:item.id,fingerprint:fingerprint(item),status:item.judgment?'queued':'unknown',phase:0,trace:[],createdAt:new Date().toISOString(),error:item.judgment?'':'原消息结果未确认，暂不生成判断或回复'});
+      const prepared=prepareInboxDraft(item);
+      created=true;scope.inboxRuns.push({messageIndex:scope.sessions.find(x=>x.id==='main').messages.length,id:crypto.randomUUID(),sessionId:'main',itemId:item.id,fingerprint:fingerprint(item),status:prepared.eligible?'queued':'unknown',policy:{confidence:prepared.confidence,reason:prepared.reason},context:{messageCount:prepared.context.messages.length,truncatedCount:prepared.context.truncatedCount,omittedCount:prepared.context.omittedCount},phase:0,trace:[],createdAt:new Date().toISOString(),error:prepared.eligible?'':prepared.reason==='low-confidence'?'回复信息不足，原草稿已保留':'原消息结果未确认，暂不生成判断或回复'});
     }
     scope.inboxRuns=scope.inboxRuns.slice(-30);
     if(!scope.inboxRuns.some(r=>r.status==='queued')){if(created||restored){if(save())restored=false;changed(false)}return}
@@ -35,7 +37,7 @@ export function createInboxAutomation({getState,save,changed,visible,scenario}) 
           const item=scope.inbox.find(x=>x.id===run.itemId);
           if(!item||fingerprint(item)!==run.fingerprint){run.status='unknown';run.error='来源发生变化，需要核对原事项';break}
           if(['error','unknown','partial'].includes(scenario())){run.status=scenario()==='error'?'failed':scenario();run.error='分析预览未完成，保留已有步骤与原事项';break}
-          run.trace.push(['已读取原始消息与来源','已区分回复需要、本人决策与深度思考','已整理回复草稿，等待你确认'][phase]);
+          run.trace.push([run.context?.truncatedCount||run.context?.omittedCount?'已读取部分消息与来源（内容已截断）':'已读取原始消息与来源','已区分回复需要、本人决策与深度思考','已整理回复草稿，等待你确认'][phase]);
           run.phase=phase+1;
           if(phase===2){run.status='completed';run.completedAt=new Date().toISOString();}
           if(!save()){run.status='failed';run.error='本地保存失败，已有结果暂留当前页面';break}

@@ -29,7 +29,11 @@
       });
       if (n.tagName === 'A') {
         const href = n.getAttribute('href') || '';
-        if (!HREF_OK.test(href)) n.removeAttribute('href');
+        // A rejected URI is plain text, keeping its inline formatting.
+        if (!HREF_OK.test(href)) {
+          n.replaceWith(...n.childNodes);
+          return;
+        }
         n.setAttribute('target', '_blank');
         n.setAttribute('rel', 'noopener noreferrer');
       }
@@ -38,7 +42,7 @@
     root.querySelectorAll('pre').forEach((pre) => wrap(pre, 'md-code-scroll'));
   }
 
-  function render(parent, text) {
+  function render(parent, text, {reflow=false}={}) {
     const source = text == null ? '' : String(text);
     try {
       if (!window.marked || typeof window.marked.parse !== 'function') {
@@ -46,7 +50,7 @@
       }
       const html = window.marked.parse(source.replace(/\r\n?/g, '\n'), {
         async: false,
-        breaks: true,
+        breaks: !reflow,
         gfm: true,
       });
       // Template contents stay inert while untrusted markup is filtered.

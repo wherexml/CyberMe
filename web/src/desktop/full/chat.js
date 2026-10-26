@@ -17,7 +17,7 @@
   try{const result=await api('POST','/api/chat',body);update(r,{status:'succeeded',result,runId:result.run?.id,conversationId:result.conversationId,error:undefined})}catch{await one(r).catch(()=>{})}finally{clearInterval(poll)}
  }catch(e){update(r,{status:'unknown',error:'请求未提交或未确认：'+e.message})}finally{posts.delete(r.requestId);if(r.status==='running')void recover(r)}}
  function start(input){const prior=records.find(r=>input.ideaId&&r.ideaId===input.ideaId&&['prepared','running','unknown','partial'].includes(r.status));if(prior){changed();return prior}const row={...input,requestId:'desktop-'+crypto.randomUUID(),status:'prepared',createdAt:new Date().toISOString()};records.push(row);try{persist()}catch(e){records.pop();throw e}changed();void execute(row);return row}
- async function retry(r){if(posts.has(r.requestId)||r.status==='partial')return;try{const value=await one(r);if(value.status==='failed')void execute(r)}catch(e){if(e.status===404&&r.message)void execute(r)}}
- function connect(callback){changed=callback;for(const r of records)if(['prepared','running','unknown'].includes(r.status))void recover(r)}
+ async function retry(r){if(posts.has(r.requestId)||['partial','cancelled','succeeded'].includes(r.status))return;try{const value=await one(r);if(value.status==='failed')void execute(r)}catch(e){if(e.status===404&&r.message)void execute(r)}}
+ function connect(callback){changed=callback;for(const r of records)if(['prepared','running','unknown','failed'].includes(r.status))void recover(r)}
  window.OpsTwinsDesignChat=Object.freeze({entries:()=>records,start,retry,recover,connect});
 })();

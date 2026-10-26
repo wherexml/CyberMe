@@ -1,0 +1,71 @@
+{
+  "checkedAt": "2026-10-17T08:06:03.515832+00:00",
+  "repositories": [
+    {
+      "repo": "markedjs/marked",
+      "stars": 37242,
+      "url": "https://github.com/markedjs/marked",
+      "license": "NOASSERTION"
+    },
+    {
+      "repo": "cure53/DOMPurify",
+      "stars": 17469,
+      "url": "https://github.com/cure53/DOMPurify",
+      "license": "Apache-2.0"
+    },
+    {
+      "repo": "ueberdosis/tiptap",
+      "stars": 38749,
+      "url": "https://github.com/ueberdosis/tiptap",
+      "license": "MIT"
+    },
+    {
+      "repo": "TypeCellOS/BlockNote",
+      "stars": 10304,
+      "url": "https://github.com/TypeCellOS/BlockNote",
+      "license": "NOASSERTION"
+    },
+    {
+      "repo": "Milkdown/milkdown",
+      "stars": 11994,
+      "url": "https://github.com/Milkdown/milkdown",
+      "license": "MIT"
+    },
+    {
+      "repo": "remarkjs/remark",
+      "stars": 9020,
+      "url": "https://github.com/remarkjs/remark",
+      "license": "MIT"
+    }
+  ],
+  "imported": {
+    "repository": "cure53/DOMPurify",
+    "commit": "cde95990b2190338cfd7c00b768f3d81d3219d61",
+    "files": {
+      "dompurify.js": {
+        "upstreamPath": "dist/purify.es.mjs",
+        "sha256": "60c5d5ccbb466de3de3ba863461a92bf134f8c156cef7992da43e0f659bc5cbd",
+        "bytes": 85820
+      },
+      "dompurify-LICENSE.txt": {
+        "upstreamPath": "LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "bytes": 11358
+      }
+    },
+    "version": "3.4.17"
+  },
+  "selection": "Marked renders GFM documents; unified/remark-parse/remark-gfm supplies exact checkbox source positions; DOMPurify sanitizes document HTML. Tiptap, BlockNote and Milkdown were reviewed as richer editor alternatives and are not bundled.",
+  "taskMarkdown": {
+    "packages": {
+      "remark-gfm": "4.0.1",
+      "remark-parse": "11.0.0",
+      "unified": "11.0.5"
+    },
+    "source": "vendor/task-markdown/browser-entry.js",
+    "sourceSha256": "9675f4ace2496fc88908b98a875c5c561f8348d004989f789ad0722740f636f9",
+    "lockSha256": "ceedeaa5d61a3662af603e09630bcbe598e7a6d3d7b129a3d5523cae0b6681ec",
+    "bundleSha256": "037095c71169f545bd04065471339d2b6e7cd4b55b6a93f7156c5ba1ccd3e7ff",
+    "noticesSha256": "2729f80aa282e09827561eba9f862867ae6f8a0969b0e9fa5077e7c31d82078f"
+  }
+}

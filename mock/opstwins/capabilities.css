@@ -1,0 +1,43 @@
+/* 能力与意图 · 独立一级标签。全部限定在 #ideas-console，避免通用 dialog/button 样式渗入。 */
+#ideas-console{height:100%;display:flex;flex-direction:column;background:var(--bg);font-size:13px}
+#ideas-console .ic-head{flex:none;display:flex;align-items:center;gap:20px;height:60px;padding:0 24px 0 28px;border-bottom:1px solid var(--line)}
+#ideas-console .ic-head h1{font-size:15px;font-weight:600;letter-spacing:-.2px;white-space:nowrap}
+#ideas-console .ic-tabs{display:flex;gap:2px;padding:2px;border-radius:8px;background:var(--panel)}
+#ideas-console .ic-tabs button{width:auto;padding:3px 12px;font-size:12px;border-radius:6px;color:var(--muted);line-height:1.6}
+#ideas-console .ic-tabs button.active{background:var(--bg);color:var(--ink);box-shadow:0 1px 2px #0000000d}
+#ideas-console .ic-demo{font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:1px 8px;white-space:nowrap}
+#ideas-console .ic-search{margin-left:auto;display:flex;align-items:center;gap:6px;width:180px;padding:0 9px;border-radius:7px;background:var(--panel)}
+#ideas-console .ic-search .icon{width:14px;height:14px;color:var(--muted)}
+#ideas-console .ic-search input{flex:1;width:100%;border:0;background:none;padding:6px 0;font-size:12px}
+#ideas-console .ic-body{flex:1;min-height:0;display:grid;grid-template-columns:272px minmax(0,1fr)}
+#ideas-console .ic-list{overflow:auto;padding:10px 10px 24px;border-right:1px solid var(--line);scrollbar-width:thin}
+#ideas-console .ic-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:10px 12px;margin:1px 0;border-radius:8px}
+#ideas-console .ic-row.selected{background:var(--selected)}
+#ideas-console .ic-row>span{min-width:0;display:flex;flex-direction:column}
+#ideas-console .ic-row b{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ideas-console .ic-row small{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ideas-console .ic-row em{flex:none;font-style:normal;font-size:11px;color:var(--muted)}
+#ideas-console .ic-detail{overflow:auto;padding:36px 48px 48px;scrollbar-width:thin}
+#ideas-console .ic-detail>*{max-width:560px}
+#ideas-console .ic-detail header{margin-bottom:26px}
+#ideas-console .ic-detail h2{font-size:17px;font-weight:600}
+#ideas-console .ic-detail header p{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.6;font-variant-numeric:tabular-nums}
+#ideas-console .ic-detail section{margin-top:30px}
+#ideas-console .ic-detail h3{font-size:11px;font-weight:500;color:var(--muted);margin-bottom:6px}
+#ideas-console .ic-facts{display:grid;grid-template-columns:112px minmax(0,1fr);margin:0}
+#ideas-console .ic-facts dt,#ideas-console .ic-facts dd{margin:0;padding:9px 0;border-bottom:1px solid var(--line);font-size:12px}
+#ideas-console .ic-facts dt{color:var(--muted)}
+#ideas-console .ic-tag{display:inline-flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+#ideas-console .ic-tag:before{content:"";width:5px;height:5px;border-radius:50%;background:transparent;flex:none}
+#ideas-console .ic-tag.ok:before{background:#7a9c86}
+#ideas-console .ic-tag.warn:before{background:#c49a5a}
+#ideas-console .ic-list-plain,#ideas-console .ic-steps{margin:0;padding:0 0 0 18px;font-size:12px;line-height:2.1}
+#ideas-console .ic-missing{font-size:12px;color:#b07f45}
+#ideas-console .ic-note{font-size:12px;color:var(--muted);margin-top:8px}
+#ideas-console .ic-link{width:auto;padding:4px 0;margin-top:8px;font-size:12px;color:var(--blue)}
+#ideas-console .ic-link:hover{background:none;text-decoration:underline}
+#ideas-console .ic-blank{padding:40px 12px;text-align:center;font-size:12px;color:var(--muted)}
+#ideas-console .ic-state{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--muted)}
+#ideas-console .ic-state button{width:auto;font-size:12px}
+#ideas-console .ic-state .icon{width:15px;height:15px}
+#ideas-console .ic-skeleton{display:block;height:44px;margin:4px 2px;border-radius:8px;background:var(--panel);animation:pulse 1.3s infinite}

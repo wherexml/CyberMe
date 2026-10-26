@@ -8,6 +8,7 @@
   await load(window.OPSTWINS_DESKTOP_MANIFEST.islands,true);
   for(const item of window.OPSTWINS_DESIGN_DATA.inbox)item.attention=window.OpsTwinsBusinessUI.needsInboxAttention(item);
   for(const url of window.OPSTWINS_DESKTOP_MANIFEST.scripts)await load(url);
+  await window.OpsTwinsDesktop.refinementReady;
   root.remove();
  }catch(e){root.textContent='工作区暂不可用：'+e.message;const retry=document.createElement('button');retry.textContent='重试连接';retry.onclick=()=>location.reload();root.append(retry)}
 })();

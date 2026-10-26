@@ -1,0 +1,12 @@
+.bubble .md-code-scroll,.bubble .md-table-scroll{max-width:100%;overflow:auto;margin:12px 0}
+.bubble pre{margin:0;padding:12px 14px;background:var(--panel);border-radius:8px;font-size:12px;line-height:1.7;white-space:pre}
+.bubble :not(pre)>code{background:var(--panel);padding:1px 4px;border-radius:4px;font-size:.9em}
+.bubble table{border-collapse:collapse;font-size:12px;min-width:100%}
+.bubble th,.bubble td{border:1px solid var(--line);padding:7px 10px;text-align:left;white-space:nowrap}
+.bubble ul,.bubble ol{padding-left:22px;margin:8px 0}.bubble li{line-height:1.9}
+.bubble blockquote{margin:10px 0;border-left:2px solid var(--line);padding-left:14px;color:var(--muted)}
+.bubble a{color:var(--blue);text-decoration:underline;text-underline-offset:3px}
+.draft-candidate{margin-top:12px;padding:12px 14px;background:var(--panel);border-radius:8px;font-size:12px}
+.draft-candidate>div{display:flex;align-items:center;gap:10px}.draft-candidate>div>span{flex:1;color:var(--muted)}
+.draft-candidate p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.9;margin-top:8px}
+.draft-feedback-error{font-size:12px;color:var(--muted);margin-top:10px}

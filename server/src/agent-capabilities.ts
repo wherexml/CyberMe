@@ -1,3 +1,4 @@
+import {settings} from './store';
 import {ApiError} from './integrations';
 import {get,list,put,uid,hash,now,toolEvidence,publicValue} from './store';
 import {agentPolicy} from './agent-policy';
@@ -22,7 +23,7 @@ export const applicationActions:Action[]=[
  a('inbox_semantic_read','GET','/api/inbox/:id/semantic-check','读取语义证据'),
  a('inbox_semantic_check','POST','/api/inbox/:id/semantic-check','收集真实语义证据；不批准或发送'),
  a('inbox_semantic_revalidate','POST','/api/inbox/:id/semantic-check/revalidate','重新核验来源证据'),
- a('inbox_send','POST','/api/inbox/:id/send','发送或回读；仅服务端允许的本人QA项、明确本轮批准、原幂等键',['idempotencyKey','followup','addTask','taskTitle','dueDate','allowConflict'],{external:true}),
+ a('inbox_send','POST','/api/inbox/:id/send','发送或回读；支持已绑定虚拟IM测试项及真实飞书本人QA项，需明确本轮批准、原幂等键',['idempotencyKey','followup','addTask','taskTitle','dueDate','allowConflict','retryUnconfirmed'],{external:true}),
  a('inbox_undo','POST','/api/inbox/:id/undo','撤回已确认本人QA发送',['idempotencyKey'],{external:true}),
  a('calendar_create','POST','/api/inbox/:id/calendar','创建本人日历后续动作',['followup','allowConflict'],{external:true}),
  a('calendar_status','GET','/api/calendar/status','读取本人主日历连接'),
@@ -52,6 +53,9 @@ export const applicationActions:Action[]=[
  a('connection_window','GET','/api/connections/:id/working-window','预览连接工作时段',['at']),
  a('connection_read','POST','/api/connections/:id/read-resource','读取已授权REST或Skill内容',[],{effect:'read'}),
  a('connection_mcp_call','POST','/api/connections/:id/call-tool','调用已检测且授权的MCP工具，凭据仅服务器注入',['tool','arguments'],{external:true}),
+ a('virtual_im_context','POST','/api/virtual-im/context','读取独立虚拟IM测试连接的缓存对话；资料不构成发送授权',['query','itemId','conversationId'],{effect:'read'}),
+ a('virtual_im_status','GET','/api/virtual-im','读取虚拟IM连接与同步状态'),
+ a('virtual_im_sync','POST','/api/virtual-im/sync','同步已连接的虚拟IM测试消息'),
  a('feishu_context','POST','/api/feishu/context','按姓名/已记录别名/群名查近三天消息；歧义只回候选。双向私聊、跨群发言和明确提及，包含覆盖缺口；默认实时核验，不发送',['query','days','targetId','refresh'],{effect:'read'}),
  a('sync_read','GET','/api/feishu/sync','同步设置、历史和缓存数据大小',['offset']),
  a('sync_records','GET','/api/feishu/sync/records','读取索引缓存资料',['kind','offset','limit']),
@@ -111,7 +115,7 @@ export function assertPublicInput(value:any){
  for(const [key,child]of Object.entries(value)){if(/api.?key|access.?token|refresh.?token|app.?secret|authorization|password|credential|headers|diskPath|^__proto__$|^constructor$|^prototype$/i.test(key))throw new ApiError(400,'private_field','Credentials and server fields cannot be passed through Agent tools');assertPublicInput(child);}
 }
 function directAuthorization(prompt:string){
- return prompt.replace(/```[\s\S]*?```|“[^”]*”|「[^」]*」|"[^"\n]*"|^\s*>.*$/gm,'').replace(/^(?:\s*请)?\s*(?:翻译|解释|总结|分析|阅读|translate|explain|summari[sz]e|review)[^：:\n]*[：:][\s\S]*$/i,'').replace(/(?:不要|禁止|切勿|勿|别|暂不|不能|不得|不许|不允许|不需要|无需|不是|不(?=执行|创建|删除|修改|发送|运行|调用|批准|恢复|生成|同步)|do\s+not|don['’]t|never)\s*[^，,。.;；\n！？!?]*/gi,'');
+ return prompt.replace(/<quoted_context>[\s\S]*?<\/quoted_context>/gi,'').replace(/```[\s\S]*?```|“[^”]*”|「[^」]*」|"[^"\n]*"|^\s*>.*$/gm,'').replace(/^(?:\s*请)?\s*(?:翻译|解释|总结|分析|阅读|translate|explain|summari[sz]e|review)[^：:\n]*[：:][\s\S]*$/i,'').replace(/(?:不要|禁止|切勿|勿|别|暂不|不能|不得|不许|不允许|不需要|无需|不是|不(?=执行|创建|删除|修改|发送|运行|调用|批准|恢复|生成|同步)|do\s+not|don['’]t|never)\s*[^，,。.;；\n！？!?]*/gi,'');
 }
 export function authorizeAgentWrite(prompt:string,evidence:unknown,external=false){
  if(typeof evidence!=='string'||!evidence.trim()||!prompt.includes(evidence))throw new ApiError(403,'user_evidence_required','evidence must quote the current user request');
@@ -123,7 +127,10 @@ export function authorizeAgentWrite(prompt:string,evidence:unknown,external=fals
 export async function executeApplicationAction(runId:string,prompt:string,params:any,readOnly=false){
  const action=applicationActions.find(x=>x.name===params.action);if(!action)throw new ApiError(400,'unknown_action','Unknown application action');
  const input=params.input||{};if(typeof input!=='object'||Array.isArray(input))throw new ApiError(400,'invalid_input','input must be an object');assertPublicInput(input);
- const write=actionWrites(action);if(write){if(readOnly)throw new ApiError(403,'read_only','Read-only runs cannot write');authorizeAgentWrite(prompt,params.evidence,action.external);
+ const write=actionWrites(action);if(write){
+ const category=params.resource==='tasks'||params.resource==='projects'?'tasks':params.resource==='connections'||/^(connection_|feishu_|wechat_|google_)/.test(action.name)?'connections':/^calendar_/.test(action.name)?'calendar':/^file_/.test(action.name)?'files':params.resource==='inbox'||/^inbox_/.test(action.name)?'reply':undefined;
+ if(category&&settings().autonomy.permissions?.[category]==='read')throw new ApiError(403,'autonomy_read_only','该操作当前为仅查看');
+if(readOnly)throw new ApiError(403,'read_only','Read-only runs cannot write');authorizeAgentWrite(prompt,params.evidence,action.external);
   const direct=directAuthorization(prompt);
   const specific:Record<string,RegExp>={inbox_send:/(发送|发给|发到|send|approve)/i,inbox_undo:/(撤回|recall|undo)/i,calendar_create:/(日程|日历|安排|calendar|schedule)/i,calendar_delete:/(删除|移除|delete|remove)/i,connection_mcp_call:/(调用|执行.*工具|call|execute.*tool)/i,dispatch_tick:/(执行|运行|调度|execute|run|tick)/i,dispatch_retry:/(重试|retry)/i,dispatch_reconcile:/(回读|核对|核验|检查|reconcile|check)/i,notifications_tick:/(发送|通知|运行|调度|send|notify|run|tick)/i,notifications_retry:/(重试|retry)/i,notifications_reconcile:/(回读|核对|核验|检查|reconcile|check)/i};
   if(specific[action.name]&&!specific[action.name].test(direct))throw new ApiError(403,'operation_not_requested','Current request does not authorize '+action.name);

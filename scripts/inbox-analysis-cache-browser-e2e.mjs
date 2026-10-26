@@ -1,0 +1,10 @@
+const fs=await import('node:fs/promises'),t=await taskSpace('OpsTwins cache recovery '+Date.now()),p=t.page('p1'),out='/Users/steve/Projects/opstwin-advance/output/mygo-analysis-cache-recovery-20261019';
+await p.goto('http://127.0.0.1:46513/');await p.waitForFunction(()=>!document.querySelector('#desktop-boot'),undefined,{timeout:20000});await p.click('.desktop-older');await p.waitForSelector('[data-message-id=\"inbox-analysis-failures\"]');await p.fill('#input','PUBLIC-UNSENT-RECOVERY');await p.evaluate(()=>window.recoveryComposer=document.querySelector('#input'));
+console.log({space:t.spaceId});
+const before=await p.evaluate(()=>({draft:document.querySelector('#input').value,ids:[...new Set([...document.querySelectorAll('#messages [data-message-id]')].map(n=>n.dataset.messageId))]}));
+const r=await p.fetch('/api/pilot/cache/resolve',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});if(!r.ok)throw Error('public resolution rejected');
+await p.waitForFunction(()=>!document.querySelector('[data-message-id="inbox-analysis-failures"]'),undefined,{timeout:20000});
+const after=await p.evaluate(()=>({sameComposer:window.recoveryComposer===document.querySelector('#input'),draft:document.querySelector('#input').value,ids:[...new Set([...document.querySelectorAll('#messages [data-message-id]')].map(n=>n.dataset.messageId))]}));
+const checks=[{name:'错误汇总无需刷新自动撤下',pass:!after.ids.includes('inbox-analysis-failures')},{name:'分页之外105条人工消息保留',pass:before.ids.filter(x=>x.startsWith('cache-human-')).length===105&&after.ids.filter(x=>x.startsWith('cache-human-')).length===105},{name:'输入框对象与未发草稿保留',pass:after.sameComposer&&after.draft==='PUBLIC-UNSENT-RECOVERY'}];await fs.writeFile(out+'/browser-result.json',JSON.stringify({space:t.spaceId,publicFixture:true,noReload:true,checks},null,2));await fs.writeFile(out+'/browser-after.ax.txt',await p.snapshot({scope:'full_page'}));console.log({checks});console.log(await p.snapshot());if(checks.some(c=>!c.pass))throw Error('browser checks failed');
+
+await t.finish({keep:[]});

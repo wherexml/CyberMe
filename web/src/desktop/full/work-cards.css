@@ -1,0 +1,22 @@
+/* Desktop adapters; compact card styles are shared with the existing Mock. */
+#detail-dialog:has(.chat-work-picker){width:min(480px,calc(100vw - 40px))}
+.chat-work-picker{display:grid;gap:14px;min-width:0}
+.chat-work-picker>input{box-sizing:border-box;width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+.chat-work-picker>div{max-height:320px;overflow:auto}
+.chat-work-picker label{display:flex;align-items:center;gap:9px;padding:9px 2px;font-size:13px;cursor:pointer}
+.chat-work-picker input[type=checkbox]{flex:0 0 16px;width:16px;height:16px;padding:0;margin:0;accent-color:var(--blue)}
+.chat-work-picker>button{justify-self:end;width:auto;padding:8px 14px;margin:0;background:var(--selected);color:var(--blue)}
+#chat-work-sources{flex-wrap:wrap;width:calc(100% - 56px);font-size:12px;align-items:center;margin-bottom:8px}
+#chat-work-sources>span{max-width:100%;display:inline-flex;align-items:center}
+#chat-work-sources button{font-size:12px;overflow-wrap:anywhere}
+#chat-work-recovery{box-sizing:border-box;width:calc(100% - 56px);max-width:680px;margin:8px auto;font-size:12px}
+.work-download .icon{display:block}
+#composer:has(#chat-work-source-button){grid-template-columns:34px 34px minmax(0,1fr) 34px}
+#desktop-file-panel>header>button{flex-shrink:0;white-space:nowrap}
+@media(max-width:760px){#composer:has(#chat-work-source-button){grid-template-columns:30px 30px minmax(0,1fr) 32px}}
+.chat-native-controls{display:grid;gap:9px}
+.chat-native-controls>label{display:grid;grid-template-columns:70px minmax(0,1fr);padding:0;gap:10px;align-items:center}
+.chat-native-controls .vm-select{min-width:0;width:100%}
+.chat-native-controls button{margin:0}
+.native-approval-detail{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:45vh;overflow:auto}
+.work-engine{font-size:11px;color:var(--muted);margin-right:8px}

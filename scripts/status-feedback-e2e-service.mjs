@@ -1,0 +1,23 @@
+// Public deterministic browser E2E. Real desktop UI and isolated store; controlled chat responses, no model.
+import {mkdir,realpath,readFile} from 'node:fs/promises';
+import {resolve,extname} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
+import {serve} from '@hono/node-server';
+import {Hono} from 'hono';
+const port=46840,scope=resolve('.local/acceptance/chat-simple-'+randomUUID()),assets=resolve(process.env.STATUS_FEEDBACK_ASSETS||'.local/status-feedback-20261024/build/assets');
+await mkdir(scope,{recursive:true,mode:0o700});const db=new DatabaseSync(resolve(scope,'opstwin-advance.db'));db.exec("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); INSERT INTO meta VALUES('initialized','true')");db.close();
+Object.assign(process.env,{OPSTWIN_DATA_DIR:scope,OPSTWIN_PRIVATE_DIR:scope,OPSTWIN_NO_BACKGROUND:'1',OPSTWIN_NO_LISTEN:'1',OPSTWIN_API_PORT:String(port),OPSTWIN_NOTIFICATION_DELIVERY:'off',OPSTWIN_AUTONOMOUS_DELIVERY:'off'});
+const S=await import('../server/src/store.ts');S.patchSettings({identity:{name:'公开验收',language:'zh-CN'}});S.put('conversations',{id:'simple-chat',title:'公开聊天验收'});S.setMeta('primaryConversationId','simple-chat');
+const fixtures=['failed','partial','unknown','running','cancelled'].map((status,i)=>({requestId:'notice-'+status,message:({failed:'公开验收：模型暂不可用',partial:'公开验收：部分操作完成',unknown:'公开验收：结果待确认',running:'公开验收：正在处理',cancelled:'公开验收：已停止'})[status],status,conversationId:'simple-chat',createdAt:new Date(Date.now()-60000+i*1000).toISOString(),runId:status==='partial'||status==='failed'?'run-notice-'+status:undefined,error:status==='failed'?'渠道诊断：公开验收错误 503':status==='partial'?'已有部分操作完成，请查看原记录，不能重新执行':'结果未确认，请回查原请求'}));
+const {app}=await import('../server/src/index.ts');const gate=new Hono(),requests=new Map();let posts=0,gets=0;
+gate.use('*',async(c,next)=>{if(c.req.header('host')!==`127.0.0.1:${port}`||c.req.header('origin')&&c.req.header('origin')!==`http://127.0.0.1:${port}`)return c.json({error:'origin_denied'},403);await next()});
+gate.get('/fixture-state',c=>c.json({fixtures,posts,gets}));
+gate.get('/api/chat/conversations/:id/unresolved',c=>c.json({items:c.req.param('id')==='simple-chat'?[{requestId:'unresolved-public',status:'unknown'},{requestId:'unresolved-partial',status:'partial'}]:[],hasMore:false,revision:1}));
+gate.get('/api/runs/:id',c=>c.json({id:c.req.param('id'),status:'partial',tools:[],events:[],error:'公开验收详细原因'}));
+gate.post('/api/chat',async c=>{const body=await c.req.json();posts++;if(requests.has(body.requestId))return c.json({error:'duplicate_post'},409);const row={...body,status:'running',started:Date.now()};requests.set(body.requestId,row);await new Promise(r=>setTimeout(r,7000));if(body.message==='失败验证'){row.status='failed';return c.json({error:'controlled_failure'},503)}if(body.message==='部分完成验证'){row.status='partial';return c.json({error:'partial_run_requires_review'},409)}const result={conversationId:body.conversationId,userMessage:{id:'u-'+body.requestId,role:'user',content:body.message,conversationId:body.conversationId},assistantMessage:{id:'a-'+body.requestId,role:'assistant',content:'已收到：'+body.message,conversationId:body.conversationId},artifacts:[]};row.status='succeeded';row.result=result;for(const m of [result.userMessage,result.assistantMessage])S.put('messages',m);return c.json(result)});
+gate.get('/api/chat/requests/:id',c=>{gets++;const fixture=fixtures.find(x=>x.requestId===c.req.param('id'));if(fixture)return c.json(fixture);if(c.req.param('id').startsWith('unresolved-'))return c.json({requestId:c.req.param('id'),status:'unknown',runId:'run-unresolved-public',message:'公开验收：记录读取'});const r=requests.get(c.req.param('id'));if(!r||Date.now()-r.started<2200)return c.json({error:'not_found'},404);return c.json({status:r.status,result:r.result,conversationId:r.conversationId})});
+gate.get('/evidence',c=>c.json({posts,gets,statuses:[...requests.values()].map(r=>({requestId:r.requestId,status:r.status}))}));
+gate.all('/api/*',c=>c.req.method==='GET'?app.fetch(c.req.raw):c.json({error:'fixture_write_denied'},403));
+const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.json':'application/json'};
+gate.get('*',async c=>{const path=resolve(assets,'.'+decodeURIComponent(c.req.path==='/'?'/desktop.html':c.req.path));if(!path.startsWith(assets+'/')||await realpath(path)!==path)return c.text('denied',403);c.header('Cache-Control','no-store');c.header('Content-Type',types[extname(path)]||'application/octet-stream');return c.body(await readFile(path))});serve({fetch:gate.fetch,hostname:'127.0.0.1',port});console.log(JSON.stringify({ready:true,port}));

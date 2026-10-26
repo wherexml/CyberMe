@@ -26,7 +26,7 @@ try{
  await page.goto('http://127.0.0.1:46400/');
  await page.waitForSelector('.overview');
  console.log({taskSpace:task.spaceId,out});
- check('统一入口展示32个页面',await page.evaluate(()=>document.querySelectorAll('.screen-card').length===32));
+ check('统一入口展示31个页面',await page.evaluate(()=>document.querySelectorAll('.screen-card').length===31));
  await shot('00-overview');
  await fs.writeFile(path.join(out,'overview.ax.txt'),await page.snapshot());
  await page.click('a[aria-label="进入对话"]');
@@ -47,8 +47,7 @@ try{
  const marker='公开E2E-'+Date.now();
  await page.fill('[name=message]',marker+'主会话');await click('sidebar');await click('session:review');await page.fill('[name=message]',marker+'侧会话');await click('session:main');
  check('会话草稿隔离',await page.evaluate(()=>document.querySelector('[name=message]').value.includes('主会话')));
- await click('voice');await shot('voice');await click('voice-cancel');
- check('听写取消保稿',await page.evaluate(()=>document.querySelector('[name=message]').value.includes('主会话')));
+ check('已移除语音入口且文字草稿保留',await page.evaluate(()=>!document.querySelector('[data-action=voice],.wave')&&document.querySelector('[name=message]').value.includes('主会话')));
  await click('attachments');await page.click('[name=attachment][value="0"]');await click('attach-selected');await page.click('[aria-label="发送消息"]');
  check('消息在本地会话保存',(await read()).sessions.find(x=>x.id==='main').messages.some(x=>x.text===marker+'主会话'));
  await page.reload();await page.waitForSelector('[name=message]');check('刷新恢复消息',(await read()).sessions.find(x=>x.id==='main').messages.some(x=>x.text===marker+'主会话'));

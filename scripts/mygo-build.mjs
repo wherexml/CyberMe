@@ -41,8 +41,12 @@ await cp(resolve(root,'.local/mygo-web'),assets,{recursive:true});
 await fullAssets(root,assets);
 await cp(resolve(root,'native/mygo/licenses'),resolve(assets,'licenses'),{recursive:true});
 const standalone=process.argv.includes('--standalone');
+const v17=process.argv.includes('--acceptance=v17');
+const qaWidthArg=process.argv.find(x=>x.startsWith('--acceptance-width='));
+const qaWidth=qaWidthArg?Number(qaWidthArg.slice(19)):1000;
+if(qaWidthArg&&(!v17||standalone||!Number.isInteger(qaWidth)||qaWidth<640||qaWidth>1600))throw Error('Invalid public QA initial width');
 const live=standalone||process.argv.includes('--workspace');
-const currentApp=resolve(root,standalone?'.local/apps/CyberMe.app':live?'.local/apps/CyberMe Workspace.app':'.local/apps/CyberMe QA.app');
+const currentApp=resolve(root,v17?'.local/apps/CyberMe V17 QA.app':standalone?'.local/apps/CyberMe.app':live?'.local/apps/CyberMe Workspace.app':'.local/apps/CyberMe QA.app');
 const app=process.env.OPSTWIN_BUILD_OUTPUT;
 if(app!==resolve(root,'.local/apps/.build-transaction/staged.app'))throw Error('Invalid build staging path');
 await mkdir(resolve(app,'Contents/MacOS'),{recursive:true});
@@ -51,10 +55,10 @@ const iconset=resolve(root,'.local/mygo-brand.iconset'),sharp=(await import('sha
 await mkdir(iconset,{recursive:true});
 for(const size of [16,32,128,256,512])for(const scale of [1,2])await sharp(resolve(root,'native/mygo/brand/cyberme.svg')).resize(size*scale,size*scale).png().toFile(resolve(iconset,`icon_${size}x${size}${scale===2?'@2x':''}.png`));
 const iconResult=spawnSync('iconutil',['-c','icns',iconset,'-o',resolve(app,'Contents/Resources/CyberMe.icns')],{stdio:'inherit'});if(iconResult.status!==0)throw Error('Application icon build failed');
-const result=spawnSync('go',['build','-trimpath',`-ldflags=-X github.com/egoist/mygo.production=1 -X main.updateSourceRoot=${root}/.local/updates -X main.workspaceRoot=${standalone?'':root} -X main.runtimeNode=${standalone?'':process.execPath} -X main.runtimeMode=${standalone?'standalone':'workspace'} -X main.serviceScope=${live?'mygo-desktop':'mygo-pilot-public-v2'} -X main.servicePort=${live?'46312':'46310'} -X main.clientScope=${live?'mygo-workspace':'mygo-full-qa'}`,'-o',resolve(app,'Contents/MacOS/opstwins-mygo.next'),'.'],{cwd:resolve(root,'native/mygo'),env:{...process.env,GOTOOLCHAIN:'go1.27.1'},stdio:'inherit'});
+const result=spawnSync('go',['build','-trimpath',`-ldflags=-X github.com/egoist/mygo.production=1 -X main.updateSourceRoot=${root}/.local/updates -X main.acceptanceWindowWidth=${qaWidth} -X main.workspaceRoot=${standalone?'':root} -X main.runtimeNode=${standalone?'':process.execPath} -X main.runtimeMode=${standalone?'standalone':'workspace'} -X main.serviceScope=${live?'mygo-desktop':v17?'mygo-v17-public':'mygo-pilot-public-v2'} -X main.servicePort=${live?'46312':v17?'46510':'46310'} -X main.clientScope=${live?'mygo-workspace':v17?'mygo-v17-qa':'mygo-full-qa'}`,'-o',resolve(app,'Contents/MacOS/opstwins-mygo.next'),'.'],{cwd:resolve(root,'native/mygo'),env:{...process.env,GOTOOLCHAIN:'go1.27.1'},stdio:'inherit'});
 if(result.status!==0)process.exit(result.status||1);
 await rename(resolve(app,'Contents/MacOS/opstwins-mygo.next'),resolve(app,'Contents/MacOS/opstwins-mygo'));
-await writeFile(resolve(app,'Contents/Info.plist'),`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.opstwins.mygo.${live?'full':'qa'}</string><key>CFBundleName</key><string>CyberMe${live?'':' QA'}</string><key>CFBundleDisplayName</key><string>CyberMe</string><key>CFBundleExecutable</key><string>opstwins-mygo</string><key>CyberMeDataEpoch</key><string>1</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleIconFile</key><string>CyberMe.icns</string><key>CFBundleShortVersionString</key><string>${await appVersion(root)}</string><key>CFBundleVersion</key><string>${Date.now()}</string><key>NSHighResolutionCapable</key><true/><key>NSMicrophoneUsageDescription</key><string>CyberMe 使用麦克风进行听写；录音仅在内存中转写。</string></dict></plist>`);
+await writeFile(resolve(app,'Contents/Info.plist'),`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.opstwins.mygo.${live?'full':v17?'v17qa':'qa'}</string><key>CFBundleName</key><string>${v17?'CyberMe V17 QA':'CyberMe'+(live?'':' QA')}</string><key>CFBundleDisplayName</key><string>CyberMe</string><key>CFBundleExecutable</key><string>opstwins-mygo</string><key>CyberMeDataEpoch</key><string>1</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleIconFile</key><string>CyberMe.icns</string><key>CFBundleShortVersionString</key><string>${await appVersion(root)}</string><key>CFBundleVersion</key><string>${Date.now()}</string><key>NSHighResolutionCapable</key><true/></dict></plist>`);
 if(standalone){const pack=spawnSync(process.execPath,[resolve(root,'scripts/mygo-package-runtime.mjs'),app],{cwd:root,stdio:'inherit'});if(pack.status!==0)process.exit(pack.status||1);}
 const sign=spawnSync('codesign',['--force','--deep','--sign','-',app],{stdio:'inherit'});if(sign.status!==0)process.exit(sign.status||1);
 const bytes=await readFile(resolve(app,'Contents/MacOS/opstwins-mygo'));
@@ -62,7 +66,7 @@ await mkdir(resolve(root,'output/mygo-1007'),{recursive:true});
 const builtAt=new Date().toISOString();
 const files=[];async function scan(dir,prefix=''){for(const name of (await readdir(dir)).sort()){const path=resolve(dir,name),rel=prefix+name;const stat=await (await import('node:fs/promises')).lstat(path);if(stat.isDirectory())await scan(path,rel+'/');else if(stat.isFile()){const raw=await readFile(path);files.push({path:rel,sha256:createHash('sha256').update(raw).digest('hex')})}else throw Error('Unexpected asset type')}}
 await scan(assets);
-const record=JSON.stringify({at:builtAt,mygo:'v0.2.15',go:'1.27.1',app:currentApp,bundleExecutableSHA256:createHash('sha256').update(bytes).digest('hex'),sourceDesignAssets:manifest,embeddedAssets:files},null,2);
+const record=JSON.stringify({at:builtAt,initialWindowWidth:qaWidth,mygo:'v0.2.15',go:'1.27.1',app:currentApp,bundleExecutableSHA256:createHash('sha256').update(bytes).digest('hex'),sourceDesignAssets:manifest,embeddedAssets:files},null,2);
 await mkdir(resolve(root,'output/mygo-1007/builds'),{recursive:true});
 await writeFile(resolve(root,'output/mygo-1007/builds',builtAt.replaceAll(':','-')+'.json'),record);
 await writeFile(resolve(root,'output/mygo-1007/build.json'),record);

@@ -3,7 +3,7 @@ const root='/Users/steve/Projects/opstwin-advance',out=root+'/output/mock-compon
 await fs.mkdir(out,{recursive:true});
 const task=await taskSpace(globalThis.OPSTWIN_MOCK_SPACE||'OpsTwins components and main conversation');
 const page=task.page('p1'),results=[];
-const click=a=>page.click(`[data-action="${a}"]`);
+const click=a=>page.click(`button[data-action="${a}"]`);
 const state=()=>page.evaluate(()=>window.OpsTwinsMock.getState());
 const check=(name,pass)=>{results.push({name,status:pass?'PASS':'FAIL'});if(!pass)throw Error(name)};
 async function choose(selector,value){const c=await page.evaluate(({selector,value})=>{const s=document.querySelector(selector);return {id:s.dataset.selectNative,index:[...s.options].findIndex(o=>o.value===value)}},{selector,value});await page.click(`[data-vm-id="${c.id}"]`);await page.click(`[data-vm-option="${c.index}"]`)}
@@ -27,20 +27,15 @@ try{
  check('缩放菜单在产品范围内',await page.evaluate(()=>{const m=document.querySelector('#vm-select-menu').getBoundingClientRect(),c=document.querySelector('.prototype-canvas').getBoundingClientRect();return m.left>=c.left&&m.right<=c.right+1&&m.bottom<=c.bottom+1}));await page.keyboard.press('Escape');
  await page.cdp('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});
  await reset();await choose('#screen-picker','chat');
- await page.waitForFunction(()=>(window.OpsTwinsMock.getState().inboxRuns||[]).some(r=>r.status==='running'));await page.fill('[name=message]','主会话分析中仍保留我的输入');await page.screenshot({path:out+'/main-analyzing.png'});
- await page.waitForFunction(()=>(window.OpsTwinsMock.getState().inboxRuns||[]).filter(r=>r.status==='completed').length===2);
- check('自动两项分析完成且未知不伪成功',(await state()).inboxRuns.filter(r=>r.status==='completed').length===2&&(await state()).inboxRuns.find(r=>r.itemId==='i3').status==='unknown');
- check('自动回包不重建输入框或丢稿',await page.evaluate(()=>document.querySelector('[name=message]').value==='主会话分析中仍保留我的输入'&&document.activeElement===document.querySelector('[name=message]')));
- check('主会话显示分析和待回复内容',await page.evaluate(()=>document.querySelector('.attention-result[data-inbox-id=i1]').textContent.includes('需要回复')&&document.querySelector('.attention-result[data-inbox-id=i1] .attention-draft').textContent.includes('先聚焦核心流程')));
- await page.click('.attention-result[data-inbox-id=i1] summary');check('自动过程三步可回看',await page.evaluate(()=>document.querySelectorAll('.attention-result[data-inbox-id=i1] .attention-trace li').length===3));await page.screenshot({path:out+'/main-results.png'});
- const ids=(await state()).inboxRuns.map(r=>r.id);await page.reload();await page.waitForSelector('.inbox-automation');check('刷新记录不重复',(await state()).inboxRuns.map(r=>r.id).join()===ids.join());
- await click('sidebar');await click('session:review');check('侧会话没有全局分析',await page.evaluate(()=>!document.querySelector('.inbox-automation')));await click('session:main');
- await click('attention-edit:i1');check('精确打开原Inbox事项',await page.evaluate(()=>document.querySelector('.person-heading h2').textContent==='林可'&&document.activeElement.id==='reply-draft'));
- await page.fill('#reply-draft','公开主会话草稿同步');await page.waitForFunction(()=>document.querySelector('#draft-status').textContent==='已保存');await click('attention-home:i1');check('Inbox人工稿同步主会话',await page.evaluate(()=>document.querySelector('.attention-result[data-inbox-id=i1] .attention-draft p').textContent==='公开主会话草稿同步'));
- await page.fill('[name=message]','公开后续对话');await page.press('[name=message]','Enter');check('新对话排在自动结果之后',await page.evaluate(()=>document.querySelector('.reading').lastElementChild.matches('.message.assistant')));
- await reset();await choose('#screen-picker','chat');await page.waitForFunction(()=>(window.OpsTwinsMock.getState().inboxRuns||[]).some(r=>r.status==='running'));const interrupted=(await state()).inboxRuns.find(r=>r.status==='running').id;await page.reload();await page.waitForSelector('.inbox-automation');
- check('中断后未知不自动重跑',(await state()).inboxRuns.find(r=>r.id===interrupted).status==='unknown');await page.screenshot({path:out+'/interrupted.png'});
- await reset();await choose('#screen-picker','chat');await page.waitForFunction(()=>(window.OpsTwinsMock.getState().inboxRuns||[]).filter(r=>r.status==='completed').length===2);await page.screenshot({path:out+'/final-main.png'});
- const hashes={};for(const f of ['app.js','pages.js','inbox-automation.js','components/select.js','components/select.css','components/adapter.js','components/common.css'])hashes[f]=crypto.createHash('sha256').update(await fs.readFile(root+'/mock/opstwins/'+f)).digest('hex');
+ check('主会话只渲染对话消息',await page.evaluate(()=>!document.querySelector('.inbox-automation,.attention-result')&&[...document.querySelector('.reading').children].every(x=>x.matches('.message'))));
+ await page.fill('[name=message]','主会话独立草稿');await page.reload();await page.waitForSelector('[name=message]');
+ check('刷新保留聊天草稿且不插入卡片',await page.evaluate(()=>document.querySelector('[name=message]').value==='主会话独立草稿'&&!document.querySelector('.inbox-automation')));
+ await click('sidebar');await click('session:review');check('侧会话没有收件箱卡片',await page.evaluate(()=>!document.querySelector('.inbox-automation,.attention-result')));await click('session:main');
+ await click('nav:inbox');check('独立Inbox草稿入口保留',await page.evaluate(()=>!!document.querySelector('#reply-draft')&&!document.querySelector('[data-action^="attention-"]')));
+ await page.fill('#reply-draft','公开独立收件箱草稿');await page.waitForFunction(()=>document.querySelector('#draft-status').textContent==='已保存');await click('nav:chat');
+ check('Inbox人工稿不投影成Chat卡片',await page.evaluate(()=>!document.querySelector('.attention-result,.attention-draft')));
+ await page.fill('[name=message]','公开后续对话');await page.press('[name=message]','Enter');check('新对话仍是普通消息',await page.evaluate(()=>document.querySelector('.reading').lastElementChild.matches('.message.assistant')));
+ await reset();await choose('#screen-picker','chat');await page.screenshot({path:out+'/final-main.png'});
+ const hashes={};for(const f of ['app.js','pages.js','components/select.js','components/select.css','components/adapter.js','components/common.css'])hashes[f]=crypto.createHash('sha256').update(await fs.readFile(root+'/mock/opstwins/'+f)).digest('hex');
  await fs.writeFile(out+'/result.json',JSON.stringify({taskSpace:task.spaceId,results,hashes,scope:'public mock only'},null,2));console.log({passed:results.length,out});
 }catch(error){await fs.writeFile(out+'/failure.json',JSON.stringify({results,error:String(error)},null,2));await page.screenshot({path:out+'/failure.png'});throw error}

@@ -1,6 +1,9 @@
 // Install only the exact accepted signed candidate. User state is outside these bundles.
 import fs from 'node:fs/promises';import path from 'node:path';import crypto from 'node:crypto';import {execFileSync} from 'node:child_process';import net from 'node:net';
-const root=process.cwd(),source=path.resolve('.local/apps/OpsTwins Standalone.app'),target='/Applications/OpsTwins MyGO.app',next='/Applications/OpsTwins MyGO.main-analysis-next.app',backup=path.resolve('.local/apps/history/main-analysis-before-20261019.app'),out='output/mygo-main-analysis-20261018';
+const out=process.argv.find(x=>x.startsWith('--evidence-dir='))?.slice(15)||'output/mygo-main-analysis-20261018';
+if(!/^output\/mygo-[a-z0-9-]+$/.test(out))throw Error('Project-local evidence directory required');
+const root=process.cwd(),candidate=process.argv.find(x=>x.startsWith('--candidate='))?.slice(12),source=path.resolve(candidate||'.local/apps/OpsTwins Standalone.app'),target='/Applications/OpsTwins MyGO.app',next='/Applications/OpsTwins MyGO.main-analysis-next.app',backup=path.resolve('.local/apps/history/'+(process.argv.length>2?path.basename(out)+'-before-install.app':'main-analysis-before-20261019.app'));
+if(candidate&&(!source.startsWith(path.resolve('.local/signing')+path.sep)||await fs.realpath(source)!==source))throw Error('Candidate must be an exact project-local signing path');
 const hash=async p=>crypto.createHash('sha256').update(await fs.readFile(p)).digest('hex');const exe=p=>p+'/Contents/MacOS/opstwins-mygo';
 const expected=JSON.parse(await fs.readFile(out+'/artifact-final.json')).executable;
 if(await hash(exe(source))!==expected)throw Error('Candidate source changed');

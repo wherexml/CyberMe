@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+ "strconv"
 	"sync"
 )
 
 //go:embed all:assets
 var assets embed.FS
+var acceptanceWindowWidth = "1000"
 var hidden = mygo.NewEvent[bool]("owner-hidden")
 var shown = mygo.NewEvent[bool]("owner-visible")
 
@@ -112,9 +114,12 @@ func main() {
 	mygo.Bind(&Bridge{})
 	mygo.Bind(&DesktopUpdate{})
 	configureUpdates()
+	mygo.Bind(&WindowChrome{})
 	mygo.Bind(&DesktopFiles{Owner: q})
 	mygo.App.WhenReady(func() {
-		w := mygo.NewWindow(mygo.WindowOptions{Title: "CyberMe", URL: assetPrefix + "/desktop.html", Width: 1000, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
+		width := 1000
+ if serviceScope == "mygo-v17-public" { if n, err := strconv.Atoi(acceptanceWindowWidth); err == nil && n >= 640 && n <= 1600 { width = n } }
+ w := mygo.NewWindow(mygo.WindowOptions{Title: "CyberMe", URL: assetPrefix + "/desktop.html", Width: width, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
 		w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
 			if !localURL(e.URL) {
 				e.PreventDefault()
@@ -126,15 +131,7 @@ func main() {
 			q.mu.Lock()
 			q.permissions++
 			q.mu.Unlock()
-			if !localURL(r.Origin) {
-				return false
-			}
-			for _, p := range r.Permissions {
-				if p != mygo.PermissionMicrophone {
-					return false
-				}
-			}
-			return true
+			return false // Current product has no voice capture surface.
 		})
 		mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 			{Label: "CyberMe", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, mygo.Separator(), {Label: "隐藏 CyberMe", Accelerator: "Cmd+H", Click: func(_ *mygo.MenuItem, _ *mygo.Window) { q.owner(w, false); mygo.App.Hide() }}, {Label: "显示 CyberMe", Click: func(_ *mygo.MenuItem, _ *mygo.Window) {
@@ -145,6 +142,7 @@ func main() {
 					w.Focus()
 				}
 			}}, mygo.Separator(), {Role: mygo.RoleQuit}}},
+			{Label: "文件", Submenu: []*mygo.MenuItem{{Label: "关闭窗口", Accelerator: "Cmd+W", Click: func(_ *mygo.MenuItem, window *mygo.Window) { if window != nil { go closeFrontWindow(window) } }}}},
 			{Role: mygo.RoleEditMenu}, {Role: mygo.RoleWindowMenu},
 		}))
 		mygo.App.OnActivate(func(_ bool) {

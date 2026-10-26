@@ -1,0 +1,174 @@
+{
+  "importedAt": "2026-10-17",
+  "scope": "local mock evaluation only",
+  "files": [
+    {
+      "repository": "elie222/inbox-zero",
+      "commit": "a281a644ea4c4cc91fbf327adfd91dc7755a6405",
+      "upstreamPath": "apps/web/utils/ai/reply/draft-confidence.ts",
+      "localPath": "vendor/inbox-zero/upstream/apps/web/utils/ai/reply/draft-confidence.ts",
+      "sha256": "fb885ed4c260c69b5ce99db164ebe9894904b3786fa1dac4c938518a64dd993b"
+    },
+    {
+      "repository": "elie222/inbox-zero",
+      "commit": "a281a644ea4c4cc91fbf327adfd91dc7755a6405",
+      "upstreamPath": "apps/web/utils/reply-tracker/thread-status-context.ts",
+      "localPath": "vendor/inbox-zero/upstream/apps/web/utils/reply-tracker/thread-status-context.ts",
+      "sha256": "18d00e629f080aa1f90932a5b8693cb325a9b99021a0be5c245165a142cd9fee"
+    },
+    {
+      "repository": "elie222/inbox-zero",
+      "commit": "a281a644ea4c4cc91fbf327adfd91dc7755a6405",
+      "upstreamPath": "apps/web/utils/ai/choose-rule/draft-management.ts",
+      "localPath": "vendor/inbox-zero/upstream/apps/web/utils/ai/choose-rule/draft-management.ts",
+      "sha256": "9203ffdf18bcf9a21e8a7daa94b5adbf2f408ccfcf2afa48017548e0b344b6ec"
+    },
+    {
+      "repository": "elie222/inbox-zero",
+      "commit": "a281a644ea4c4cc91fbf327adfd91dc7755a6405",
+      "upstreamPath": "apps/web/utils/reply-tracker/conversation-status-config.ts",
+      "localPath": "vendor/inbox-zero/upstream/apps/web/utils/reply-tracker/conversation-status-config.ts",
+      "sha256": "5ac222294f688b5a88132ca373f788c199bd84b2d2f1a10f2de54858e8d1d284"
+    },
+    {
+      "repository": "elie222/inbox-zero",
+      "commit": "a281a644ea4c4cc91fbf327adfd91dc7755a6405",
+      "upstreamPath": "apps/web/utils/reply-tracker/sender-reply-examples.ts",
+      "localPath": "vendor/inbox-zero/upstream/apps/web/utils/reply-tracker/sender-reply-examples.ts",
+      "sha256": "940215a045dce556851c21bac8a44758b1a37ed3f25504db32259a5e836a6bed"
+    },
+    {
+      "repository": "elie222/inbox-zero",
+      "commit": "a281a644ea4c4cc91fbf327adfd91dc7755a6405",
+      "upstreamPath": "apps/web/utils/reply-tracker/generate-draft.ts",
+      "localPath": "vendor/inbox-zero/upstream/apps/web/utils/reply-tracker/generate-draft.ts",
+      "sha256": "dd6c09fe3f61488570d72ed84102689b811644746cb59e2ed43790f073866738"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/code-block-utils.ts",
+      "localPath": "vendor/remend/src/code-block-utils.ts",
+      "sha256": "132797fa7654ca5bc232fa960d50a4d8e762b2b7ad414aead49aa605d915ae29"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/comparison-operator-handler.ts",
+      "localPath": "vendor/remend/src/comparison-operator-handler.ts",
+      "sha256": "b332f2652c069e6b233d163ac516c7fe571b9dcbd85b02630a71bbc0b02d5395"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/emphasis-handlers.ts",
+      "localPath": "vendor/remend/src/emphasis-handlers.ts",
+      "sha256": "5eaf2ec256cd1a953b89cfca4739b5d24c61549fcfc2c059a3ac500b015083af"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/html-tag-handler.ts",
+      "localPath": "vendor/remend/src/html-tag-handler.ts",
+      "sha256": "da39fb9ba8ab639e6c855cac02f0eb419ba9cb812d15b7d8367044b025fb816f"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/index.ts",
+      "localPath": "vendor/remend/src/index.ts",
+      "sha256": "cefe214360b3d6a804921d33140313c6959b28ee511d3d6e518c53dd42d8b09c"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/inline-code-handler.ts",
+      "localPath": "vendor/remend/src/inline-code-handler.ts",
+      "sha256": "f3d9c5c47f9a9debdbe52fd3b874fc91355a6c1409989ec8797660b1da2b6ed3"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/katex-handler.ts",
+      "localPath": "vendor/remend/src/katex-handler.ts",
+      "sha256": "03727fc46f7cf0b7338d8183653daf9283c4cfa5bf70b924bf1f4f513d4da91c"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/link-image-handler.ts",
+      "localPath": "vendor/remend/src/link-image-handler.ts",
+      "sha256": "c247bba2367c560bbd28e7b2a35854c9ea51a9550bd7eedffd9ce80cf5672cf4"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/patterns.ts",
+      "localPath": "vendor/remend/src/patterns.ts",
+      "sha256": "d9cd92a3aadd3bf32eb22b0c209688bfbf6caa08f211343105eb20ee8c468367"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/scan.ts",
+      "localPath": "vendor/remend/src/scan.ts",
+      "sha256": "a9de04be0053f34aa8845b2e1fcc6f3e3ff41c32ede828bdec567b2069c8da9b"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/setext-heading-handler.ts",
+      "localPath": "vendor/remend/src/setext-heading-handler.ts",
+      "sha256": "979cfe50e1ac4ceca68c3157fc8a0128376d23d86170fd15597fed72d70cd22f"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/single-tilde-handler.ts",
+      "localPath": "vendor/remend/src/single-tilde-handler.ts",
+      "sha256": "fc0c86d4e1f5b20ec046a262f0d6baf024b1c397b7615895a934cf466005ef39"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/strikethrough-handler.ts",
+      "localPath": "vendor/remend/src/strikethrough-handler.ts",
+      "sha256": "f0480df5df2935cc83fee8bed54b326b12f09caa434b3e0e11e927c2bb1a9cab"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/src/utils.ts",
+      "localPath": "vendor/remend/src/utils.ts",
+      "sha256": "77955c5ae34a4e891f978cdf235cc1efda2f71c987826527ea169d9ef440b94b"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/package.json",
+      "localPath": "vendor/remend/package.json",
+      "sha256": "8df1262e5cb812c0500035a806c53ce9baa0064da24e20f370ba2f46bd73df79"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "packages/remend/README.md",
+      "localPath": "vendor/remend/README.md",
+      "sha256": "0baf34e3ad7b1fab8d399c83fcf435b855049108019e2698586a3c36f4403790"
+    },
+    {
+      "repository": "elie222/inbox-zero",
+      "commit": "a281a644ea4c4cc91fbf327adfd91dc7755a6405",
+      "upstreamPath": "LICENSE",
+      "localPath": "vendor/inbox-zero/LICENSE",
+      "sha256": "f4a1d294633040a4fd956113ef73045af61ffbc37909e857aed75457418656cb"
+    },
+    {
+      "repository": "vercel/streamdown",
+      "commit": "fea4ef5baada951c0f907e29669d1cba1f8beec1",
+      "upstreamPath": "LICENSE",
+      "localPath": "vendor/remend/LICENSE",
+      "sha256": "b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529"
+    }
+  ]
+}

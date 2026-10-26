@@ -461,3 +461,10 @@
 .op-context-disclosure>summary:focus-visible{outline:2px solid #0071e3;outline-offset:3px;border-radius:4px}
 .op-context-disclosure .op-context-card{margin-top:8px}
 @media(max-width:720px){.op-context-disclosure>summary{min-height:44px}}
+
+/* WeSync message separators: preceding message, day boundary or 15 minutes. */
+.op-source-entry{display:flex;flex-direction:column;flex-shrink:0;min-width:0;width:100%}
+.op-source-time{align-self:center;text-align:center;padding:10px 0 18px;color:var(--text-secondary,#777);font-size:12px;line-height:1.5;font-variant-numeric:tabular-nums}
+
+/* WeSync-style bubbles: identity is carried by the avatar, not a repeated heading. */
+.op-source-message>.op-avatar{margin-top:0}

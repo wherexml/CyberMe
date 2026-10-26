@@ -10,7 +10,7 @@
   const list=node('dl','record-fields');for(const [key,value0] of Object.entries(value)){const row=node('div','record-field');row.append(node('dt','',labels[key]||key));const body=node('dd');body.append(/^(authorization|cookie|password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token)$/i.test(key)?node('span','','已隐藏'):valueView(value0));row.append(body);list.append(row)}return list.children.length?list:node('p','record-empty','无已保存字段');
  }
  D.renderRecord=(box,record,run)=>{
-  box.replaceChildren();const state=record.status||run.status||'unknown';const head=node('div','record-overview');head.append(node('span','record-status',status(state)),node('span','record-count',`${(run.tools||[]).length} 个执行步骤`));box.append(head);
+  box.replaceChildren();const state=record.status||run.status||'unknown';const head=node('div','record-overview');head.append(node('span','record-status',status(state)));box.append(head);
   const outcome=run.taskOutcome||record.taskOutcome;const summary=outcome?.summary||outcome?.message||run.summary||record.summary;
   if(typeof summary==='string')box.append(node('p','record-summary',summary));
   if(run.error||record.error)box.append(node('p','desktop-error',String(run.error||record.error)));

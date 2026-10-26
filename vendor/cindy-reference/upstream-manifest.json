@@ -1,0 +1,69 @@
+{
+  "repository": "https://github.com/makecindy/cindy",
+  "commit": "d3173a55c8dd4bc42cc85b69130a49c8dd34229e",
+  "capturedAt": "2026-10-17",
+  "license": "Apache-2.0",
+  "purpose": "Unmodified reference source; Codex protocol client/transport and relative dependencies reused by server/src/executors/native.ts for the 46400 direct task bridge",
+  "files": [
+    {
+      "path": "LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358
+    },
+    {
+      "path": "NOTICE",
+      "sha256": "77ad73b2535cd4011ed8b509aa51d7c745ae5a6f411370d8f94337562c03cd97",
+      "bytes": 282
+    },
+    {
+      "path": "packages/maker-core/src/agents/codex/app-server/transport.ts",
+      "sha256": "93debee85bf74c0987ed68aef2e39010c6a452e2f180a4ccfb3b6cdb242897bb",
+      "bytes": 3109
+    },
+    {
+      "path": "packages/maker-core/src/agents/codex/app-server/stdioTransport.ts",
+      "sha256": "dd0944402a7c646d98f9b63eb4ffa38aa1287970053ca8e4d634bb3a1703db11",
+      "bytes": 11636
+    },
+    {
+      "path": "packages/maker-core/src/agents/codex/app-server/client.ts",
+      "sha256": "3d5aac1fe1e6e489f1b1205b6ba5eb5f480be5c06b3077b1350f4bde27372687",
+      "bytes": 27698
+    },
+    {
+      "path": "packages/maker-core/src/agents/codex/app-server/protocol.ts",
+      "sha256": "27e753b9d403981516548b774bf8b06bd971d66a6ed95d7bd2ab286aed5fce37",
+      "bytes": 45765
+    },
+    {
+      "path": "packages/maker-core/src/interfaces/logger.ts",
+      "sha256": "523d51b8d354b751418c33854886f72068a73260234b70d740991d68ebd2b2a6",
+      "bytes": 1466
+    },
+    {
+      "path": "packages/maker-core/src/types/account-rate-limits.ts",
+      "sha256": "ef59c35c2f01d827fed9b4193b4ea0e57ed89681bd8c555aadbf1f943154e1a8",
+      "bytes": 3968
+    },
+    {
+      "path": "packages/maker-core/src/agents/codex/interaction-broker.ts",
+      "sha256": "7fee931958c8a7126dda7e3ab74d175884bf059bae3db496d92c81d221264272",
+      "bytes": 3054
+    },
+    {
+      "path": "packages/maker-core/src/agents/codex/history-recovery.ts",
+      "sha256": "338173dfeb9a719e3af3ba68c077be7de15afa829dba4917016a759481e04a0a",
+      "bytes": 1064
+    },
+    {
+      "path": "packages/maker-core/src/agents/claude-code/local-process-spawn.ts",
+      "sha256": "716c58a1ad734c626d84ebf859540433e54c3d0e1a9b6d8dcd3d364913edc9ae",
+      "bytes": 2132
+    },
+    {
+      "path": "packages/maker-core/src/agents/claude-code/invalid-resume.ts",
+      "sha256": "0691ce0b4f1a604c4cc770e0d0ed9fbf85fd8fa0261fe7c80cf80ef5b2b5054c",
+      "bytes": 1887
+    }
+  ]
+}

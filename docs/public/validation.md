@@ -2,6 +2,8 @@
 
 2026-10-23 灵感后台：类型检查通过；隔离真实产品 HTTP 8 项、浏览器交互 9 项通过。涵盖精确关联的 active 待办、缺失来源/运行、partial、工具步骤、分页、无业务写入、HTML 安全呈现、失败重试和迟到请求隔离。
 
+2026-10-24 灵感主对话提醒（[规格](ideas-chat.md)）：类型检查通过；源码与冻结安装候选包各 27 项 HTTP E2E、真实模型 5 项、Chrome 浏览器 6 项通过。已通过原生更新入口安装本机 0.1.8，实测提醒展示、打开对应详情与示例删除后的撤回；6 项原数据保留检查通过。证据见本机忽略目录 `output/mygo-ideas-chat-20261024/REPORT.md`。原生截图保存在私有目录；未覆盖超大历史分页压力和全部外观。`invalid_evidence` 未改动，生成失败仍可能延迟提醒恢复。本次是 Developer ID 签名本机更新，未新公证或互联网发布。
+
 复现入口：先准备桌面静态资源，再运行 `node --import tsx scripts/ideas-console-service.mjs`；执行 `node scripts/ideas-console-http-e2e.mjs`，并通过 ego-browser 运行 `scripts/ideas-console-browser-e2e.mjs`。fixture 使用 46760/46761，输出保留在忽略的 `output/ideas-console-20261023/`。
 
 浏览器截图接口曾连续超时，不能把页面结构验收当成视觉截图通过。随后实际原生 0.1.3 截图发现通用 dialog 样式污染；已在源码修正，并通过 9 项浏览器交互复验及标题、按钮、搜索框和列表对齐的 DOM 几何检查。原生失败图仍保留，不以浏览器结果覆盖。

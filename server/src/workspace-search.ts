@@ -2,6 +2,7 @@
 import type {Hono} from 'hono';
 import {db,publicValue,revision} from './store';
 import {ApiError} from './integrations';
+import {chatSearchText} from './chat-search-text';
 
 export const WORKSPACE_SEARCH_KINDS=['messages','conversations','inbox','ideas','tasks','artifacts','projects','memories','automations','activities'] as const;
 type Kind=typeof WORKSPACE_SEARCH_KINDS[number];
@@ -11,13 +12,14 @@ const fields=['title','name','sender','senderName','body','content','description
 const messageFields=['text','content','body','senderName'];
 const stepFields=['title','description','text','content','notes'];
 const nested=(field:string,keys:string[])=>`COALESCE((SELECT group_concat(CASE WHEN nested.type='text' THEN nested.value WHEN nested.type='object' THEN ${keys.map(key=>`CASE WHEN json_type(nested.value,'$.${key}')='text' THEN json_extract(nested.value,'$.${key}') ELSE '' END`).join("||char(10)||")} ELSE '' END,char(10)) FROM json_each(CASE WHEN json_type(data,'$.${field}')='array' THEN json_extract(data,'$.${field}') ELSE '[]' END) nested),'')`;
-const searchText=[...fields.map(textField),nested('messages',messageFields),nested('steps',stepFields)].join('||char(10)||');
+const searchText=[...fields.map(field=>field==='content'?`CASE WHEN type='messages' THEN native_search_message_text(${textField('role')},${textField(field)}) ELSE ${textField(field)} END`:textField(field)),nested('messages',messageFields),nested('steps',stepFields)].join('||char(10)||');
 const title=`COALESCE(NULLIF(${textField('title')},''),NULLIF(${textField('name')},''),NULLIF(${textField('sender')},''),'')`;
 const timeSql=`native_search_time(${textField('createdAt')},${textField('updatedAt')})`;
 const cte=`WITH records AS (SELECT type AS kind,id,${title} AS title,CASE WHEN type='messages' THEN COALESCE(NULLIF(${textField('conversationId')},''),id) ELSE id END AS targetId,${timeSql} AS time,${searchText} AS searchText FROM entities WHERE deleted=0 AND type IN (${WORKSPACE_SEARCH_KINDS.map(()=>'?').join(',')}) AND NOT(type='artifacts' AND COALESCE(json_extract(data,'$.archivedAt'),'')<>''))`;
 let functionsReady=false;
 function ensureFunctions(){
  if(functionsReady)return;
+ db.function('native_search_message_text',{deterministic:true},chatSearchText);
  db.function('native_search_fold',{deterministic:true},value=>String(value??'').toLowerCase());
  db.function('native_search_time',{deterministic:true},(created,updated)=>{
   for(const value of [created,updated]){if(typeof value!=='string'||!value.trim())continue;const date=new Date(value);if(Number.isFinite(date.getTime()))return date.toISOString();}return null;

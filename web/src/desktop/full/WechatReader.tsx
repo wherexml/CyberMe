@@ -15,6 +15,33 @@ export default function WechatReader({ ctx }: {
 }) {
     const connection = ctx.state.connections.find(c => c.id === 'wechat-sync-local'), connected = connection?.status === 'connected';
     const [chats, setChats] = useState<Page>(), [messages, setMessages] = useState<Page>(), [selected, setSelected] = useState<any>(), [query, setQuery] = useState(''), [messageQuery, setMessageQuery] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [media, setMedia] = useState<any>();
+    const [sync, setSync] = useState<any>();
+    const syncGeneration = useRef(0), syncWriting = useRef(false);
+    useEffect(() => {
+        const g = ++syncGeneration.current;
+        setSync(undefined);
+        const read = async () => {
+            if (!connected || syncWriting.current) return;
+            try { const value = await api('GET', '/wechat/sync'); if (g === syncGeneration.current && !syncWriting.current) setSync(value); }
+            catch (e: any) { if (g === syncGeneration.current) setError(e.message); }
+        };
+        void read(); const timer = setInterval(() => void read(), 5000);
+        return () => { syncGeneration.current++; clearInterval(timer); };
+    }, [connected, connection?.updatedAt]);
+    async function saveSync(enabled: boolean) {
+        await work(async () => {
+            syncWriting.current = true;
+            try { const current = await api('GET', '/wechat/sync'); const value = await api('PATCH', '/wechat/sync', {enabled, baseVersion: current.settings.version}); setSync(value); }
+            finally { syncWriting.current = false; }
+        });
+    }
+    async function syncNow() {
+        await work(async () => {
+            syncWriting.current = true;
+            try { const current = await api('GET', '/wechat/sync'); if (!current.running) await api('POST', '/wechat/sync', {}); setSync(await api('GET', '/wechat/sync')); }
+            finally { syncWriting.current = false; }
+        });
+    }
     const generation = useRef(0), owner = useRef(''), blob = useRef(''), abort = useRef<AbortController | undefined>(undefined), search = useRef({ contacts: false, query: '' }), messageSearch = useRef(''), mediaGeneration = useRef(0);
     function clearMedia() {
         mediaGeneration.current++;
@@ -150,13 +177,19 @@ export default function WechatReader({ ctx }: {
                 setError(e.message);
         }
     }
-    return <main className="settings-page"><button className="settings-back-link" onClick={() => ctx.navigate('/settings/connections')}><ChevronLeft/>返回连接</button><h1>{desktopText("\u4E2A\u4EBA\u5FAE\u4FE1")}</h1><p>{connected ? desktopText("\u5DF2\u8FDE\u63A5 \u00B7 \u53EA\u8BFB") : desktopText("\u672A\u8FDE\u63A5")}{desktopText("\u00B7 \u901A\u8FC7\u8FD9\u53F0 Mac \u4E0A\u7684 GreenBubbles \u8BFB\u53D6")}</p>{error && <p role="alert">{error}</p>}
+    return <main className="settings-page"><button className="settings-back-link" onClick={() => ctx.navigate('/settings/connections')}><ChevronLeft/>返回连接</button><h1>{desktopText("\u4E2A\u4EBA\u5FAE\u4FE1")}</h1><p>{connected ? desktopText("\u5DF2\u8FDE\u63A5 \u00B7 \u53EA\u8BFB") : desktopText("\u672A\u8FDE\u63A5")}{desktopText("\u00B7 \u901A\u8FC7\u8FD9\u53F0 Mac \u4E0A\u7684 WeSync \u8BFB\u53D6")}</p>{error && <p role="alert">{error}</p>}
  <section className="settings-card"><div className="settings-card-actions"><button disabled={busy} onClick={() => work(async () => {
             const value = await api('POST', '/wechat/connect', {});
             await ctx.refresh();
             if (!value.ok)
                 throw Error(value.message);
         })}>{connected ? desktopText("\u91CD\u65B0\u68C0\u6D4B") : desktopText("\u8FDE\u63A5\u672C\u673A\u5FAE\u4FE1")}</button>{connected && <><button disabled={busy} onClick={() => loadChats()}>{desktopText("\u67E5\u770B\u4F1A\u8BDD")}</button><button disabled={busy} onClick={() => work(async () => { await api('POST', '/connections/wechat-sync-local/disconnect', {}); clear(); await ctx.refresh(); })}>{desktopText("\u65AD\u5F00\u8FDE\u63A5")}</button></>}</div>
+ {connected && sync && <div className="settings-card">
+ <label><input type="checkbox" checked={sync.settings.enabled} disabled={busy} onChange={e => void saveSync(e.target.checked)}/>自动同步（每5分钟）</label>
+ <div className="settings-card-actions"><button disabled={busy || sync.running} onClick={() => void syncNow()}>{sync.running ? '正在同步…' : '立即同步'}</button>
+ <span role="status">{sync.running ? '正在同步' : sync.history?.[0]?.status === 'failed' || sync.history?.[0]?.status === 'interrupted' ? '同步未完成，请重试' : sync.history?.[0]?.status === 'partial' ? '部分同步，仍有来源未读取' : sync.history?.[0]?.status === 'succeeded' ? '已同步最近消息' : ''}</span></div>
+ <details><summary>同步范围</summary><p>最近7天 · 最近消息 · 仅本地读取</p></details>
+ </div>}
  {connected && <form onSubmit={e => { e.preventDefault(); void loadChats(false, true); }}><input aria-label="微信联系人搜索" placeholder={desktopText("\u641C\u7D22\u8054\u7CFB\u4EBA")} value={query} onChange={e => setQuery(e.target.value)}/><button disabled={busy || !query.trim()}>{desktopText("\u641C\u7D22")}</button></form>}</section>
  {chats && <div className="desktop-wechat-reader"><section>{coverage(chats)}{chats.items.map(c => <button className="wechat-chat-row" key={c.id} disabled={busy} onClick={() => loadMessages(c)} aria-pressed={selected?.id === c.id}>{c.name}</button>)}{!chats.items.length && <p>{desktopText("\u672C\u6B21\u8303\u56F4\u6CA1\u6709\u5339\u914D\u7ED3\u679C")}</p>}{chats.hasMore && <button disabled={busy} onClick={() => loadChats(true)}>{desktopText("\u7EE7\u7EED\u67E5\u627E")}</button>}</section>
  {selected && <section><h2>{selected.name}</h2><form onSubmit={e => { e.preventDefault(); void loadMessages(selected, false, true); }}><input aria-label="微信消息搜索" placeholder={desktopText("\u5728\u6B64\u4F1A\u8BDD\u4E2D\u641C\u7D22")} value={messageQuery} onChange={e => setMessageQuery(e.target.value)}/><button disabled={busy || !messageQuery.trim()}>{desktopText("\u641C\u7D22\u6D88\u606F")}</button><button type="button" disabled={busy} onClick={() => loadMessages(selected)}>{desktopText("\u5168\u90E8\u6D88\u606F")}</button></form>{coverage(messages)}{messages?.items.map(m => <article className="wechat-message" key={m.id}><small>{m.sender} · {new Date(m.at * 1000).toLocaleString()}</small><p style={{ whiteSpace: 'pre-wrap' }}>{m.text}</p><button disabled={busy} onClick={() => exact(m)}>{desktopText("\u8BFB\u53D6\u7CBE\u786E\u6D88\u606F")}</button>{m.messageType !== 1 && <button onClick={() => readMedia(m)}>{desktopText("\u8BFB\u53D6\u9644\u4EF6")}</button>}</article>)}{messages?.hasMore && <button disabled={busy} onClick={() => loadMessages(selected, true)}>{desktopText("\u66F4\u65E9\u6D88\u606F")}</button>}</section>}</div>}

@@ -5,6 +5,7 @@ const root=resolve(import.meta.dirname,'..'),app=resolve(process.argv[2]||'');
 if(app!==join(root,'.local/apps/OpsTwins Standalone.app') && !(app===join(root,'.local/apps/.build-transaction/staged.app') && process.env.OPSTWIN_BUILD_OUTPUT===app))throw Error('Unexpected build destination');
 const dest=join(app,'Contents/Resources/runtime');await rm(dest,{recursive:true,force:true});await mkdir(dest,{recursive:true});
 for(const name of ['server/src','server/agent','server/assets','shared','node_modules'])await cp(join(root,name),join(dest,name),{recursive:true,verbatimSymlinks:true});
+await cp(join(root,'vendor/cindy-reference'),join(dest,'vendor/cindy-reference'),{recursive:true});
 await mkdir(join(dest,'scripts'),{recursive:true});await cp(join(root,'scripts/mygo-workspace-gateway.mjs'),join(dest,'scripts/mygo-workspace-gateway.mjs'));
 await cp(join(root,'scripts/cyberme-updater.mjs'),join(dest,'scripts/cyberme-updater.mjs'));
 await mkdir(join(dest,'bin'),{recursive:true});await cp(await realpath(process.execPath),join(dest,'bin/node'));

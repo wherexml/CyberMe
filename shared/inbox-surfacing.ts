@@ -3,7 +3,7 @@ export const INBOX_PENDING_POLICY='pending-v1-7d';
 export const INBOX_WINDOW_MS=7*24*60*60*1000;
 export type InboxPlacement='pending'|'quiet'|'history'|'verify';
 export interface InboxDisposition {policyVersion:string;placement:InboxPlacement;primaryReason:string;reasons:string[];recoveryReasons:string[];evaluatedAt:string;actionableAt?:string;expiresAt?:string;priority?:string;actionType?:string;canRestore:boolean}
-export const inboxReasonLabels:Record<string,string>={expired:'已超过7天',no_reply:'无需回复',low_priority:'低优先级',replied:'已回复',completed:'已完成',dismissed:'已忽略',source_rule:'来源已安静记录',source_unavailable:'来源连接不可用，请恢复连接后核实',time_unknown:'消息时间待核实',judgment_unknown:'等待判断',judgment_failed:'判断失败',priority_unknown:'优先级待核实',context_unknown:'上下文待核实',sensitive:'敏感事项待核实',sending:'发送中',send_unknown:'发送结果待核实',send_failed:'发送失败',processing_failed:'处理失败',draft_unknown:'生成结果待核实',draft_failed:'草稿生成失败',action:'需要处理',manual:'已恢复待处理'};
+export const inboxReasonLabels:Record<string,string>={wechat_other:'微信其他类不分析',wechat_category_unknown:'微信分类待确认',group_mentions_only:'群聊仅关注最近@我',expired:'已超过7天',no_reply:'无需回复',low_priority:'低优先级',replied:'已回复',completed:'已完成',dismissed:'已忽略',source_rule:'来源已安静记录',source_unavailable:'来源连接不可用，请恢复连接后核实',time_unknown:'消息时间待核实',judgment_unknown:'等待判断',judgment_failed:'判断失败',priority_unknown:'优先级待核实',context_unknown:'上下文待核实',sensitive:'敏感事项待核实',sending:'发送中',send_unknown:'发送结果待核实',send_failed:'发送失败',processing_failed:'处理失败',draft_unknown:'生成结果待核实',draft_failed:'草稿生成失败',action:'需要处理',manual:'已恢复待处理'};
 export function inboxTimestamp(value:unknown):number|undefined {
  if(value===undefined||value===null||value==='')return;
  // Source dates must carry a timezone. Never reinterpret local ambiguous dates.
@@ -14,6 +14,7 @@ export function inboxTimestamp(value:unknown):number|undefined {
 }
 export function hasNoReplyDecision(item: InboxItem) {return item.triage?.status==='succeeded'&&item.triage.route==='no_reply'&&!item.attentionOverride;}
 export function inboxDisposition(item:InboxItem,at=Date.now()):InboxDisposition {
+ if(item.sourceAttentionExcluded&&!['sending','send_unknown'].includes(item.status)&&item.draftPreparation?.status!=='unknown')return {policyVersion:INBOX_PENDING_POLICY,placement:'quiet',primaryReason:item.sourceAttentionReason||'group_mentions_only',reasons:[item.sourceAttentionReason||'group_mentions_only'],recoveryReasons:[],evaluatedAt:new Date(at).toISOString(),canRestore:false};
  const t=item.triage,ok=t?.status==='succeeded',messages=Array.isArray(item.messages)?item.messages:[];
  const request=ok&&t.requestMessageId?messages.find((m:any)=>m.id===t.requestMessageId):undefined;
  // Jev selects the current request, not the latest unrelated conversation event.
@@ -75,3 +76,12 @@ export function isQuietInbox(item:InboxItem){return dispositionOf(item).placemen
 export function needsInboxAttention(item:InboxItem){return dispositionOf(item).placement==='pending';}
 export function needsInboxVerification(item:InboxItem){const d=dispositionOf(item);return d.placement==='verify'||d.recoveryReasons.length>0;}
 export function compareInboxAttention(a:InboxItem,b:InboxItem){const x=dispositionOf(a),y=dispositionOf(b);return Number(y.priority==='high')-Number(x.priority==='high')||(inboxTimestamp(a.dueAt)??Infinity)-(inboxTimestamp(b.dueAt)??Infinity)||(y.actionableAt||'').localeCompare(x.actionableAt||'')||a.id.localeCompare(b.id);}
+
+/** All is the daily working set; quiet/history remain explicitly browseable. */
+export function matchesInboxFilter(item:InboxItem,filter:string){
+ const d=dispositionOf(item),verify=needsInboxVerification(item);
+ if(filter==='verify')return verify;
+ if(filter==='quiet')return d.placement==='quiet'||d.placement==='history';
+ if(filter==='all')return verify||d.placement==='pending';
+ return d.placement==='pending';
+}

@@ -1,0 +1,5 @@
+import {createServer} from 'node:http';
+import {readFile,realpath} from 'node:fs/promises';
+import {resolve,extname} from 'node:path';
+const root=resolve('mock/cyberme-chat-alignment-v2'),port=46424;
+createServer(async(req,res)=>{try{if(!['GET','HEAD'].includes(req.method)){res.writeHead(405);return res.end()}const url=new URL(req.url,`http://127.0.0.1:${port}`),p=resolve(root,'.'+decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname));if(!p.startsWith(root+'/')||await realpath(p)!==p)throw Error('path');res.writeHead(200,{'content-type':({'.html':'text/html; charset=utf-8','.css':'text/css','.js':'text/javascript'})[extname(p)]||'text/plain','cache-control':'no-store','content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"});res.end(req.method==='HEAD'?undefined:await readFile(p))}catch{res.writeHead(404);res.end('Not found')}}).listen(port,'127.0.0.1',()=>console.log(`CyberMe alignment mock: http://127.0.0.1:${port}`));

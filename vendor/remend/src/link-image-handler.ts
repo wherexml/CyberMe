@@ -1,0 +1,203 @@
+import { isInsideCodeBlock } from "./code-block-utils";
+import {
+  findMatchingClosingBracket,
+  findMatchingOpeningBracket,
+} from "./utils";
+
+export type LinkMode = "protocol" | "text-only";
+
+// Sentinel src for incomplete images during streaming. Mirrors
+// streamdown:incomplete-link for incomplete links. Streamdown allowlists the
+// `streamdown` protocol for img src in its sanitize schema so this marker
+// survives rehype-sanitize + rehype-harden under default config (same as links).
+export const INCOMPLETE_IMAGE_PLACEHOLDER = "streamdown:incomplete-image";
+
+// Helper function to handle incomplete URLs in links/images
+const handleIncompleteUrl = (
+  text: string,
+  lastParenIndex: number,
+  linkMode: LinkMode
+): string | null => {
+  const afterParen = text.substring(lastParenIndex + 2);
+  if (afterParen.includes(")")) {
+    return null;
+  }
+
+  // We have an incomplete URL like [text](partial-url
+  // Now find the matching opening bracket for the ] before (
+  const openBracketIndex = findMatchingOpeningBracket(text, lastParenIndex);
+
+  if (openBracketIndex === -1 || isInsideCodeBlock(text, openBracketIndex)) {
+    return null;
+  }
+
+  // Check if there's a ! before the [
+  const isImage = openBracketIndex > 0 && text[openBracketIndex - 1] === "!";
+  const startIndex = isImage ? openBracketIndex - 1 : openBracketIndex;
+
+  // Extract everything before this link/image
+  const beforeLink = text.substring(0, startIndex);
+
+  // Extract the text between [ and ] (alt text for images, link text for links)
+  const altOrLinkText = text.substring(openBracketIndex + 1, lastParenIndex);
+
+  if (isImage) {
+    // For images with incomplete URLs, replace with placeholder marker
+    return `${beforeLink}![${altOrLinkText}](${INCOMPLETE_IMAGE_PLACEHOLDER})`;
+  }
+
+  // For links with incomplete URLs, handle based on linkMode
+  if (linkMode === "text-only") {
+    return `${beforeLink}${altOrLinkText}`;
+  }
+  return `${beforeLink}[${altOrLinkText}](streamdown:incomplete-link)`;
+};
+
+// Helper to find the first incomplete [ (for text-only mode)
+// Always returns a valid index since callers guarantee text[maxPos] is an incomplete [
+const findFirstIncompleteBracket = (text: string, maxPos: number): number => {
+  for (let j = 0; j < maxPos; j++) {
+    if (text[j] === "[" && !isInsideCodeBlock(text, j)) {
+      // Skip if it's an image
+      if (j > 0 && text[j - 1] === "!") {
+        continue;
+      }
+      // Check if this [ has a matching ]
+      const closingIdx = findMatchingClosingBracket(text, j);
+      if (closingIdx === -1) {
+        // This is an incomplete [
+        return j;
+      }
+      // This [ is complete, check if it's a full link [text](url)
+      if (closingIdx + 1 < text.length && text[closingIdx + 1] === "(") {
+        const urlEnd = text.indexOf(")", closingIdx + 2);
+        if (urlEnd !== -1) {
+          // Skip past this complete link
+          j = urlEnd;
+        }
+      }
+    }
+  }
+  // Fallback: the bracket at maxPos is always incomplete by contract
+  return maxPos;
+};
+
+// Helper function to handle incomplete link text (unclosed brackets)
+const handleIncompleteText = (
+  text: string,
+  i: number,
+  linkMode: LinkMode
+): string | null => {
+  // Check if there's a ! before it
+  const isImage = i > 0 && text[i - 1] === "!";
+  const openIndex = isImage ? i - 1 : i;
+
+  // Check if we have a closing bracket after this
+  const afterOpen = text.substring(i + 1);
+  if (!afterOpen.includes("]")) {
+    // This is an incomplete link/image
+    const beforeLink = text.substring(0, openIndex);
+
+    if (isImage) {
+      // For images with incomplete alt text, replace with placeholder marker
+      const altText = text.substring(i + 1);
+      return `${beforeLink}![${altText}](${INCOMPLETE_IMAGE_PLACEHOLDER})`;
+    }
+
+    // For links, handle based on linkMode
+    if (linkMode === "text-only") {
+      // Find the first incomplete [ and strip just that bracket
+      const firstIncomplete = findFirstIncompleteBracket(text, i);
+      return (
+        text.substring(0, firstIncomplete) + text.substring(firstIncomplete + 1)
+      );
+    }
+    // Preserve the text and close the link with a placeholder URL
+    return `${text}](streamdown:incomplete-link)`;
+  }
+
+  // If we found a closing bracket, we need to check if it's the matching one
+  // (accounting for nested brackets)
+  const closingIndex = findMatchingClosingBracket(text, i);
+  if (closingIndex === -1) {
+    // No matching closing bracket
+    const beforeLink = text.substring(0, openIndex);
+
+    if (isImage) {
+      // For images with no matching closing bracket, replace with placeholder marker
+      const altText = text.substring(i + 1);
+      return `${beforeLink}![${altText}](${INCOMPLETE_IMAGE_PLACEHOLDER})`;
+    }
+
+    if (linkMode === "text-only") {
+      // Find the first incomplete [ and strip just that bracket
+      const firstIncomplete = findFirstIncompleteBracket(text, i);
+      return (
+        text.substring(0, firstIncomplete) + text.substring(firstIncomplete + 1)
+      );
+    }
+    return `${text}](streamdown:incomplete-link)`;
+  }
+
+  return null;
+};
+
+// One healing step over the trailing incomplete link or image, if any
+const healTrailingLinkOrImage = (text: string, linkMode: LinkMode): string => {
+  // Look for patterns like [text]( or ![text]( at the end of text
+  // We need to handle nested brackets in the link text
+
+  // Start from the end and look for ]( pattern
+  const lastParenIndex = text.lastIndexOf("](");
+  if (lastParenIndex !== -1 && !isInsideCodeBlock(text, lastParenIndex)) {
+    const result = handleIncompleteUrl(text, lastParenIndex, linkMode);
+    if (result !== null) {
+      return result;
+    }
+  }
+
+  // Then check for incomplete link text: [partial-text without closing ]
+  // Search backwards for an opening bracket that doesn't have a matching closing bracket
+  for (
+    let i = text.lastIndexOf("[");
+    i !== -1;
+    i = i === 0 ? -1 : text.lastIndexOf("[", i - 1)
+  ) {
+    if (!isInsideCodeBlock(text, i)) {
+      const result = handleIncompleteText(text, i, linkMode);
+      if (result !== null) {
+        return result;
+      }
+    }
+  }
+
+  return text;
+};
+
+// A pass costs a full rescan of the shortened text, so an adversarial tail
+// of thousands of nested incomplete constructs would turn healing quadratic
+// without a bound. Realistic nesting depth is single digits.
+const MAX_HEAL_PASSES = 32;
+
+// Preserves incomplete links and images with a special marker.
+export const handleIncompleteLinksAndImages = (
+  text: string,
+  linkMode: LinkMode = "protocol"
+): string => {
+  let current = text;
+
+  // Removing a trailing incomplete image can expose another incomplete
+  // construct that ended immediately before it (an input ending in "![!["
+  // heals to "![", which is itself incomplete). Iterate until healed text
+  // re-heals to itself, so healing is idempotent. A step that grows the text
+  // has completed the construct, and truncating steps strictly shorten,
+  // so the loop terminates.
+  for (let pass = 0; pass < MAX_HEAL_PASSES; pass += 1) {
+    const next = healTrailingLinkOrImage(current, linkMode);
+    if (next.length >= current.length) {
+      return next;
+    }
+    current = next;
+  }
+  return current;
+};

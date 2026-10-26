@@ -69,7 +69,12 @@ export function mountNativeApi(app:Hono){
    rows=pageBeforeStmt().all(conversationId,anchor.k,anchor.k,anchor.r,limit+1) as any[];
   }else rows=pageLatestStmt().all(conversationId,limit+1) as any[];
   const hasMore=rows.length>limit;const items=rows.slice(0,limit).reverse().map(row=>JSON.parse(row.data));
-  return json(c,{items,hasMore,nextBefore:hasMore&&items.length?items[0].id:null});
+  // Derived Inbox projections can be retired independently of message paging.
+  // Return their complete live ID set so clients discard stale cached cards
+  // without dropping older human messages outside this page.
+  const inboxAnalysisIds=(db.prepare("SELECT id FROM entities WHERE type='messages' AND deleted=0 AND json_extract(data,'$.conversationId')=? AND json_extract(data,'$.inboxAnalysis.kind')='inbox-analysis-v1' ORDER BY id").all(conversationId) as {id:string}[]).map(row=>row.id);
+  const ideaAnalysisIds=(db.prepare("SELECT id FROM entities WHERE type='messages' AND deleted=0 AND json_extract(data,'$.conversationId')=? AND json_extract(data,'$.ideaAnalysis.kind')='idea-insight-v1' ORDER BY id").all(conversationId) as {id:string}[]).map(row=>row.id);
+  return json(c,{items,hasMore,nextBefore:hasMore&&items.length?items[0].id:null,inboxAnalysisIds,ideaAnalysisIds});
  });
 
  app.get('/api/native/events',c=>{

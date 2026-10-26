@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CyberMe 对话 Mock v2</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<header class="preview-bar"><span>CyberMe <span class="muted">对话 Mock v2</span></span><button id="guides" aria-pressed="false">对齐参考线</button></header>
+<main class="stage"><div class="frame">
+<section class="window" data-screen-label="01 对话对齐" aria-label="CyberMe 对话预览">
+ <header class="titlebar"><div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div><span>对话</span></header>
+ <div class="window-content">
+  <div class="chat-lane">
+   <div class="timeline" tabindex="0" aria-label="对话记录">
+    <div class="messages" id="messages">
+     <time>14:17</time>
+     <article class="message user"><div class="bubble">你的任务有点多啊</div></article>
+     <article class="message assistant"><div class="bubble">
+      <p>我先把需要你介入的内容收成三类，优先看会影响下一步的决定。</p>
+      <p><strong>等你决定</strong></p>
+      <ol><li><strong>产品方案：</strong>先确认这次要解决的核心问题，再整理合作方式和演示范围。</li><li><strong>界面调整：</strong>把对话与输入区对齐，先让主要内容更好读，减少不必要的留白。</li></ol>
+      <p><strong>可以继续准备</strong></p>
+      <p>已有资料可以先整理成简短提纲。缺少的内容单独列出来，避免每一步都打断你。</p>
+      <p><strong>暂时放一放</strong></p>
+      <p>还没有新信息、也不影响当前安排的事项，先收起，不反复提醒。</p>
+     </div></article>
+     <article class="message user"><div class="bubble">先看界面调整，其他的稍后再说</div></article>
+     <article class="message assistant"><div class="bubble">好，先把这一处做好。</div></article>
+    </div>
+   </div>
+   <div class="composer-area">
+    <div id="attachments" class="attachments" hidden></div>
+    <form id="composer" class="composer">
+     <button class="icon-button attach" type="button" aria-label="添加附件"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+     <textarea id="input" aria-label="消息" placeholder="输入消息…" rows="1"></textarea>
+     <button id="send" class="icon-button send" type="submit" aria-label="发送消息" disabled><svg viewBox="0 0 24 24"><path d="M12 19V5m-7 7 7-7 7 7"/></svg></button>
+    </form>
+    <input type="file" id="file" multiple hidden>
+   </div>
+  </div>
+ </div>
+</section>
+</div></main>
+<aside id="tweaks" hidden><strong>Tweaks</strong><label>输入框高度 <input id="height" type="range" min="46" max="58" value="46"></label><label>两侧留白 <input id="inset" type="range" min="20" max="48" value="28"></label></aside>
+<script src="app.js"></script>
+</body></html>

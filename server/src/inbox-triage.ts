@@ -1,7 +1,9 @@
+import {isFeishuCopilot,copilotGate,stampCopilot} from './inbox-copilot';
+import {omlxJudgment} from './inbox-omlx';
 import {inboxTimestamp,dispositionOf} from '../../shared/inbox-surfacing';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {ROOT,get,list,put,now,hash,registerSecret,publicValue,inboxTriageState,inboxTriageVersion,TRIAGE_POLICY_VERSION} from './store';
+import {ROOT,get,list,put,now,hash,registerSecret,publicValue,inboxTriageState,inboxTriageVersion,migrateInboxTriageVersions,TRIAGE_POLICY_VERSION} from './store';
 import {ApiError} from './integrations';
 import type {InboxTriage} from '../../shared/types';
 
@@ -23,13 +25,18 @@ const questions={
 };
 export async function analyzeInbox(itemId:string,{force=false}={}){
  if(inflight.has(itemId))return inflight.get(itemId)!;
- const item=get('inbox',itemId);if(!item)throw new ApiError(404,'not_found','Message not found');
- if(item.triage&&!force)return item.triage as InboxTriage;
+ let item=get('inbox',itemId);if(!item)throw new ApiError(404,'not_found','Message not found');
+ if(isFeishuCopilot(item)&&!item.copilot){put('inbox',stampCopilot(item,undefined));item=get('inbox',itemId);}
+ const gate=copilotGate(item);
+ if(gate.state==='cooling')throw new ApiError(409,'inbox_cooling','消息冷却中，3 分钟无新消息后分析',{notBefore:item.copilot?.notBefore});
+ if(item.sourceAttentionExcluded)throw new ApiError(409,item.sourceAttentionReason==='wechat_other'?'wechat_other_excluded':item.sourceAttentionReason==='wechat_category_unknown'?'wechat_category_unknown':'group_attention_excluded',item.sourceAttentionReason==='wechat_other'?'微信“其他”分类不参与分析或起草':item.sourceAttentionReason==='wechat_category_unknown'?'微信分类尚未确认，请稍后同步':'群聊仅处理最近24小时内最新的@本人消息');
+ if(item.sourceUnavailable)throw new ApiError(409,'source_unavailable','来源连接不可用，请先重新连接');
+ if(item.triage&&(!force||isFeishuCopilot(item)&&item.triage.status==='succeeded'))return item.triage as InboxTriage;
  const task=perform(item);inflight.set(itemId,task);
  try{return await task;}finally{inflight.delete(itemId);}
 }
 async function perform(item:any):Promise<InboxTriage>{
- const sourceVersion=inboxTriageVersion(item),started=Date.now();
+ const sourceVersion=inboxTriageVersion(item),started=Date.now(),connectionVersion=/^wechat$/i.test(item.channel)?get('connections','wechat-sync-local')?.updatedAt:undefined;
  const initial:InboxTriage={status:'running',sourceVersion,policyVersion:TRIAGE_POLICY_VERSION};
  put('inbox_triages',{...initial,id:item.id});
  let result:InboxTriage;
@@ -40,11 +47,13 @@ async function perform(item:any):Promise<InboxTriage>{
   const latest=state.recentMessages.at(-1);
   const source=latest||state.message;
   const own=source.isMine===true||(source.isMine!==false&&source.direction==='outgoing');
-  const ruleReason=state.message.isSelfTest?'self_test':own&&!state.recentMessages.length?'own_message':undefined;
+  const gate=copilotGate(item);
+  if(isFeishuCopilot(item)&&gate.state==='unknown')throw new Error('oMLX 分析前上下文待核实：'+gate.reason);
+  const ruleReason=gate.state==='replied'?'already_replied':gate.state==='excluded'?'group_not_mentioned':state.message.isSelfTest?'self_test':own&&!state.recentMessages.length?'own_message':undefined;
   if(ruleReason){
-   result={...initial,status:'succeeded',route:'no_reply',method:'rule',priority:'low',priorityReason:'本人消息，无需回复',actionType:'none',resolution:'none',reason:ruleReason,model:'message-provenance-v1',answers:{provenance:{isSelfTest:state.message.isSelfTest,isMine:source.isMine,direction:source.direction}},elapsedMs:Date.now()-started,completedAt:now()};
+   result={...initial,status:'succeeded',route:'no_reply',method:'rule',priority:'low',priorityReason:'本人消息，无需回复',actionType:'none',resolution:gate.state==='replied'?'replied':'none',requestMessageId:gate.request?.id,replyMessageId:gate.reply?.id,needsReply:0,needsOwner:0,needsDeepThink:0,missingContext:0,risk:0,reason:ruleReason,model:'message-provenance-v1',answers:{provenance:{isSelfTest:state.message.isSelfTest,isMine:source.isMine,direction:source.direction}},elapsedMs:Date.now()-started,completedAt:now()};
   }else{
-  const key=apiKey();if(!key)throw new Error('Jev 未配置，暂时无法判断。');
+  const key=isFeishuCopilot(item)?'local':apiKey();if(!key)throw new Error('Jev 未配置，暂时无法判断。');
   const messages=state.recentMessages;
   const requestOptions:Record<string,string>={unknown:'No identifiable request origin, ambiguous or missing history',original:'The standalone source message (only when recentMessages is empty)'};
   const replyOptions:Record<string,string>={none:'No verified resolving reply from the owner'};
@@ -57,13 +66,21 @@ async function perform(item:any):Promise<InboxTriage>{
    replyEvidence:{type:'choice',instructions:instructions+' Select a verified subsequent owner reply only if it fully resolves the identified issue, otherwise none.',criteria:replyOptions}
   };
   const answeredQuestion={type:'noul',instructions:instructions+' Evaluate the specific request selected by request and the subsequent authenticated owner message selected by replyEvidence. A clear confirmation fully answers a request for that confirmation. Do not require a reply to the owner own answer.',criteria:{true:'The owner has already fully answered this specific request, with a later verified owner message, and has no remaining promised work or unanswered part.',false:'No verified answer, unrelated group chatter, partial answer, only a promise to act later, or a new unanswered question after the owner reply.'}};
-  const serialized=JSON.stringify(state);
-  if(serialized.length>55000)throw new Error('消息或上下文过长，请人工查看完整材料。');
-  const response=await fetch('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({model:'jev-latest',state,questions:{...questions,...handlingQuestions,answered:answeredQuestion}}),signal:AbortSignal.timeout(20000)});
+  const allQuestions={...questions,...handlingQuestions,answered:answeredQuestion};
+  const serialized=JSON.stringify(state),stateBytes=Buffer.byteLength(serialized);
+  const payload=JSON.stringify({model:'jev-latest',state,questions:allQuestions});
+  // UTF-8 bytes conservatively upper-bound text tokens, unlike JS character
+  // counts. Check both request and per-question limits before crossing the API.
+  const requestBytes=Buffer.byteLength(payload),questionBytes=Math.max(...Object.values(allQuestions).map(q=>Buffer.byteLength(JSON.stringify(q))));
+  if(requestBytes>250000||stateBytes+questionBytes>250000)throw new Error('消息或上下文过长，请人工查看完整材料。');
+  const longContext=requestBytes>60000||stateBytes+questionBytes>30000;
+  const data=isFeishuCopilot(item)?await omlxJudgment(state,allQuestions):await (async()=>{
+  const response=await fetch('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json',...(longContext?{'TypeSafe-Danger-Zone-Long-Context':'true'}:{})},body:payload,signal:AbortSignal.timeout(longContext?60000:20000)});
   if(response.status===402)throw new Error('Jev API额度不足，请补充额度后重试。');
   if(!response.ok)throw new Error(`Jev HTTP ${response.status}，判断失败，可稍后重试。`);
   // Never retain upstream error bodies, which may echo the submitted source or headers.
-  const data=await response.json() as any;
+  return await response.json() as any;
+  })();
   const a=data.answers;
   for(const name of ['reply','owner','deep','missing','risk'])if(a?.[name]?.type!=='noul'||!Number.isFinite(a[name].noul)||a[name].noul<0||a[name].noul>1)throw new Error('Jev 返回了无效的判断数据。');
   const reason=a.reason;
@@ -81,10 +98,10 @@ async function perform(item:any):Promise<InboxTriage>{
   // These conservative thresholds are workflow defaults, not calibrated accuracy claims.
   const uncertain=(n:number)=>n>0.25&&n<0.75;
   const route=p('reply')<=0.25?'no_reply':p('reply')<0.75||p('missing')>=0.5?'review':p('deep')>=0.75||p('risk')>=0.75?'deep_reply':uncertain(p('deep'))?'review':'quick_reply';
-  result={...initial,status:'succeeded',method:'jev',route,priority,priorityReason:handlingQuestions.priority.criteria[priority as keyof typeof handlingQuestions.priority.criteria],actionType,resolution,requestMessageId:request?.id,replyMessageId:resolution==='replied'?reply?.id:undefined,needsReply:p('reply'),needsOwner:p('owner'),needsDeepThink:p('deep'),missingContext:p('missing'),risk:p('risk'),reason:reason.choice,reasonConfidence:reason.confidence,model:data.model,answers:a,usage:data.usage,elapsedMs:Date.now()-started,completedAt:now()};
+  result={...initial,status:'succeeded',method:isFeishuCopilot(item)?'omlx':'jev',route,priority,priorityReason:handlingQuestions.priority.criteria[priority as keyof typeof handlingQuestions.priority.criteria],actionType,resolution,requestMessageId:request?.id,replyMessageId:resolution==='replied'?reply?.id:undefined,needsReply:p('reply'),needsOwner:p('owner'),needsDeepThink:p('deep'),missingContext:p('missing'),risk:p('risk'),reason:reason.choice,reasonConfidence:reason.confidence,model:data.model,answers:a,usage:data.usage,elapsedMs:Date.now()-started,completedAt:now()};
   }
- }catch(e){result={...initial,status:'failed',route:'review',error:e instanceof Error&&/Jev|上下文过长/.test(e.message)?publicValue(e.message):'Jev 网络请求失败或超时，可重试；请人工判断。',elapsedMs:Date.now()-started,completedAt:now()};}
- const latest=get('inbox',item.id);if(!latest||inboxTriageVersion(latest)!==sourceVersion)throw new ApiError(409,'triage_source_changed','消息或上下文已改变，旧判断未采用。');
+ }catch(e){result={...initial,status:'failed',route:'review',error:isFeishuCopilot(item)?'oMLX 分析失败或上下文不足，请核实后重试':e instanceof Error&&/Jev|上下文过长/.test(e.message)?publicValue(e.message):'Jev 网络请求失败或超时，可重试；请人工判断。',elapsedMs:Date.now()-started,completedAt:now()};}
+ const latest=get('inbox',item.id);if(!latest||latest.sourceAttentionExcluded||latest.sourceUnavailable||(connectionVersion&&get('connections','wechat-sync-local')?.updatedAt!==connectionVersion)||inboxTriageVersion(latest)!==sourceVersion)throw new ApiError(409,'triage_source_changed','消息或上下文已改变，旧判断未采用。');
  put('inbox_triages',{...result,id:item.id});
  // A new substantive request after a closed round gets a separate durable item.
  // Never reopen the old sending payload or rebind its original idempotency keys.
@@ -94,7 +111,7 @@ async function perform(item:any):Promise<InboxTriage>{
   if(requestAt!==undefined&&closedAt!==undefined&&requestAt>closedAt){
    const root=latest.sourceParentInboxId||latest.id,id='round-'+hash([root,result.requestMessageId]).slice(0,32);
    if(!get('inbox',id)){
-    const round=put('inbox',{id,sourceParentInboxId:root,requestRoundId:result.requestMessageId,title:latest.title,sender:latest.sender,senderId:latest.senderId,avatarUrl:latest.avatarUrl,channel:latest.channel,origin:latest.origin,status:'pending',body:latest.body,messages:latest.messages,sourceId:latest.sourceId,sourceSystem:latest.sourceSystem,sourceScope:latest.sourceScope,chatMode:latest.chatMode,context:latest.context,contextIds:latest.contextIds,sensitive:latest.sensitive,sourceAttachments:latest.sourceAttachments,sourceUpdatedAt:latest.sourceUpdatedAt});
+    const round=put('inbox',{id,sourceParentInboxId:root,requestRoundId:result.requestMessageId,title:latest.title,sender:latest.sender,senderId:latest.senderId,avatarUrl:latest.avatarUrl,channel:latest.channel,origin:latest.origin,status:'pending',body:latest.body,messages:latest.messages,sourceId:latest.sourceId,sourceSystem:latest.sourceSystem,sourceScope:latest.sourceScope,chatMode:latest.chatMode,selfId:latest.selfId,context:latest.context,contextIds:latest.contextIds,sensitive:latest.sensitive,sourceAttachments:latest.sourceAttachments,sourceUpdatedAt:latest.sourceUpdatedAt});
     put('inbox_triages',{...result,id:round.id,sourceVersion:inboxTriageVersion(round)});
    }
    if(latest.forwardedRequestId!==result.requestMessageId)put('inbox',{...latest,forwardedRequestId:result.requestMessageId});
@@ -103,9 +120,11 @@ async function perform(item:any):Promise<InboxTriage>{
  return result;
 }
 export function startInboxTriage(){
+ migrateInboxTriageVersions();
+ for(const item of list('inbox'))if(isFeishuCopilot(item)&&!item.copilot)put('inbox',item);
  // Recover interrupted work without repeatedly retrying a failed provider on every refresh.
  for(const record of list('inbox_triages').filter(r=>r.status==='running'))put('inbox_triages',{...record,status:'failed',route:'review',error:'服务重启中断了判断，请重试。',completedAt:now()});
  let active=false;
- const timer=setInterval(async()=>{if(active||!apiKey())return;const candidate=list('inbox').find(i=>(!terminal.has(i.status)||(['sent','delivered','done','dismissed','cancelled'].includes(i.status)))&&!i.triage&&!i.sourceUnavailable&&dispositionOf(i).primaryReason!=='expired'&&!inflight.has(i.id));if(!candidate)return;active=true;try{await analyzeInbox(candidate.id);}catch{}finally{active=false;}},1500);
+ const timer=setInterval(async()=>{if(active)return;const candidate=list('inbox').find(i=>(isFeishuCopilot(i)?copilotGate(i).state!=='cooling':!!apiKey())&&(!terminal.has(i.status)||(['sent','delivered','done','dismissed','cancelled'].includes(i.status)))&&!i.triage&&!i.sourceUnavailable&&!i.sourceAttentionExcluded&&dispositionOf(i).primaryReason!=='expired'&&!inflight.has(i.id));if(!candidate)return;active=true;try{await analyzeInbox(candidate.id);}catch{}finally{active=false;}},1500);
  timer.unref();return timer;
 }

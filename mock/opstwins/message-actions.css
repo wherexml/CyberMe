@@ -1,0 +1,22 @@
+/* Message-owned controls sit beside the bubble, within the same hover area. */
+.reading .message {display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:8px;position:relative}
+.reading .message.user {justify-content:flex-end;align-items:center}
+.reading .message .bubble {max-width:calc(100% - 96px);padding-bottom:12px;min-width:60px}
+.reading .message-actions {position:sticky;bottom:12px;left:auto;width:80px;height:28px;flex:none;display:flex;align-items:center;gap:1px;align-self:flex-end;margin-bottom:10px;opacity:0;pointer-events:none;transition:opacity .12s}
+.reading .message:hover .message-actions,.reading .message:focus-within .message-actions {opacity:1;pointer-events:auto}
+.reading .message-actions .icon-button {width:26px;height:28px;padding:5px;color:var(--muted);border-radius:6px}
+.reading .message-actions .icon-button .icon {width:17px;height:17px;stroke-width:1.7}
+.reading .message-actions .icon-button:hover {color:var(--ink);background:var(--hover)}
+.reading .message-actions .copied {color:#4d9371}
+.message-context-menu {position:absolute;z-index:90;min-width:182px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--bg);box-shadow:0 10px 26px #17223520,0 2px 5px #1722350a;color:var(--ink)}
+.message-context-menu>button {width:100%;padding:9px 10px;min-height:36px;border-radius:7px;justify-content:flex-start;gap:10px;font-size:13px;font-weight:400;white-space:nowrap}
+.message-context-menu>button .icon {width:17px;height:17px;color:var(--muted)}
+.message-context-menu>button:disabled {opacity:.38}
+.message-context-menu.reaction-menu {display:flex;gap:2px;min-width:0}
+.message-context-menu.reaction-menu>button {width:32px;height:32px;padding:4px;font-size:19px;justify-content:center}
+.message-context-menu.reaction-menu>button[aria-checked=true] {background:var(--hover)}
+.message-reaction {display:inline-flex;padding:1px 6px;min-height:22px;font-size:13px;margin-top:8px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+@media(hover:none){.reading .message-actions{opacity:1;pointer-events:auto}}
+.reading .message:has(.message-actions [aria-expanded=true]) .message-actions {opacity:1;pointer-events:auto}
+.message-context-menu {width:188px}
+.message-context-menu.reaction-menu {width:auto}

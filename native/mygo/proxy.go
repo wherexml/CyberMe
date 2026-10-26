@@ -13,7 +13,7 @@ import (
 )
 
 // Fixed product namespace. Import and arbitrary URL/path forwarding are never exposed.
-var productPath = regexp.MustCompile(`^/(api/(health|bootstrap|diagnostics|agent|chat|conversations|inbox|inbox-source-rules|ideas|tasks|projects|memories|settings|connections|feishu|wechat|sources|source-message-assets|runs|messages|activities|activity|artifacts|files|voice|calendar|automations|autonomous-dispatches|notifications|workspace|native|pilot|desktop)(/[^\\]*)?|files/[A-Za-z0-9_-]+)$`)
+var productPath = regexp.MustCompile(`^/(api/(health|bootstrap|diagnostics|agent|task-agents|chat|conversations|inbox|inbox-source-rules|ideas|tasks|projects|memories|settings|connections|feishu|wechat|sources|source-message-assets|runs|messages|activities|activity|artifacts|files|voice|calendar|automations|autonomous-dispatches|notifications|workspace|native|pilot|desktop)(/[^\\]*)?|files/[A-Za-z0-9_-]+)$`)
 
 func allowedProduct(method, path string) bool {
 	if strings.HasPrefix(path, "/api/ideas-console/") {
@@ -68,7 +68,7 @@ func productProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_request", 400)
 		return
 	}
-	for _, h := range []string{"Content-Type", "Range", "If-None-Match"} {
+	for _, h := range []string{"Content-Type", "Range", "If-None-Match", "X-OpsTwins-Client", "X-OpsTwins-Agent"} {
 		if v := r.Header.Get(h); v != "" {
 			req.Header.Set(h, v)
 		}

@@ -1,0 +1,63 @@
+/* Document reading is the default task detail; edit fields appear on request. */
+.prototype-canvas>.modal-backdrop:has(.task-document-modal) {padding:0;justify-content:flex-end;align-items:stretch;backdrop-filter:none;background:#17223516}
+.prototype-canvas .task-document-modal {width:500px;max-width:calc(100% - 96px);height:100%;max-height:100%;border-radius:0 13px 13px 0;padding:22px 28px 32px;box-shadow:-12px 0 45px #16213816;overflow:auto;overscroll-behavior:contain}
+.task-document-heading {margin-bottom:26px;gap:12px;font-size:12px;color:var(--muted)}
+.task-document-tools {display:flex;align-items:center;gap:3px}
+.task-document-heading .icon-button {width:28px;height:28px;padding:5px}
+.task-document-heading .icon {width:17px;height:17px}
+.task-title-line {display:flex;gap:12px;align-items:flex-start;margin-bottom:15px}
+.task-title-line input {width:18px;height:18px;margin:5px 0 0;flex:none;accent-color:var(--blue);cursor:pointer}
+.task-title-line h1 {font-size:22px;font-weight:600;line-height:1.45;letter-spacing:-.4px;overflow-wrap:anywhere}
+.task-title-line .completed {text-decoration:line-through;color:var(--muted)}
+.task-properties {display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:0 0 27px;color:var(--muted);font-size:11px}
+.task-properties>span,.task-date {display:inline-flex;align-items:center;gap:6px;min-width:0}
+.task-properties .icon {width:14px;height:14px}
+.task-date {cursor:pointer;border-radius:5px}
+.task-date:hover {background:var(--hover)}
+.task-date input {border:0;background:transparent;padding:4px 2px;font-size:12px;width:128px;min-width:0;cursor:pointer;color:inherit}
+.task-document-body {font-size:13px;line-height:1.85;overflow-wrap:anywhere}
+.task-document-body p {font-size:13px;line-height:1.85;margin:0 0 15px}
+.task-document-body h1 {font-size:21px;margin:24px 0 12px}
+.task-document-body h2 {font-size:15px;font-weight:550;margin:26px 0 10px}
+.task-document-body h3 {font-size:14px;margin:22px 0 8px}
+.task-document-body ul,.task-document-body ol {padding-left:22px;margin:12px 0 18px}
+.task-document-body li {margin:7px 0;line-height:1.8}
+.task-document-body a {color:var(--blue);text-decoration:underline;text-underline-offset:3px}
+.task-document-body blockquote {margin:16px 0;padding:1px 0 1px 14px;border-left:2px solid var(--line);color:var(--muted)}
+.task-document-body .md-code-scroll,.task-document-body .md-table-scroll {overflow:auto;max-width:100%;margin:14px 0}
+.task-document-body pre {margin:0;background:var(--hover);padding:12px;border-radius:8px;font-size:11px;line-height:1.8}
+.task-document-body :not(pre)>code {background:var(--hover);padding:1px 4px;border-radius:3px;font-size:.92em}
+.task-document-body table {border-collapse:collapse;font-size:12px}
+.task-document-body td,.task-document-body th {border:1px solid var(--line);padding:6px 10px}
+.task-document-body .markdown-task-item {list-style:none;margin-left:-22px}
+.markdown-task-label,.task-document-checks>label {display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;line-height:1.8}
+.markdown-task-label input,.task-document-checks input {width:14px;height:14px;margin:5px 0 0;flex:none;accent-color:var(--blue);cursor:pointer}
+.markdown-task-label input:checked+.markdown-task-text,.task-document-checks input:checked+span {text-decoration:line-through;color:var(--muted)}
+.markdown-task-label .markdown-task-text {min-width:0;overflow-wrap:anywhere}
+.task-document-checks {display:grid;gap:12px;margin:22px 0 28px}
+.task-document-checks p {font-size:13px;line-height:1.8}
+.task-document .workspace-links {margin-top:28px}
+.task-document-error:empty {display:none}
+.task-document-error {font-size:12px;color:var(--muted);margin-top:18px}
+.task-edit-form .field {margin-bottom:18px}
+.task-edit-form .field input {font-size:15px}
+.task-edit-form .field:first-child input {font-size:19px}
+.task-edit-form textarea {font-size:13px;line-height:1.8;resize:vertical;min-height:250px}
+.avatar {position:relative;overflow:hidden;flex:none}
+.avatar>span {position:relative;z-index:0}
+.avatar>img {position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;z-index:1}
+.original-card {border:0;border-radius:0;overflow:visible;margin-bottom:22px}
+.original-card>.source-heading {border:0;margin:0;padding:0 0 9px;min-height:28px;color:var(--muted)}
+.source-heading>span {font-size:12px}
+.source-heading>div {display:flex;align-items:center;gap:10px}
+.source-heading button {font-size:11px;padding:3px 0;min-height:26px;gap:5px}
+.source-heading .icon {width:14px;height:14px}
+.source-thread {border:1px solid var(--line);border-radius:11px;padding:14px 12px;max-height:240px;overflow:auto;overscroll-behavior:contain}
+.source-thread.full {max-height:460px}
+.source-thread .date-divider {margin:0 0 16px;font-size:10px}
+.source-message:last-child {margin-bottom:0}
+.inbox-inline-details {padding:14px 0 18px;margin:0 0 20px;border-bottom:1px solid var(--line)}
+.inbox-inline-details>.section-heading {margin:0 0 10px;font-size:12px;color:var(--muted)}
+.inbox-inline-details .document-markdown {font-size:12px;line-height:1.8}
+.inbox-inline-details .document-markdown p {line-height:1.8}
+.inbox-inline-details .workspace-links {margin-bottom:0}

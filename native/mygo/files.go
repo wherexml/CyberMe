@@ -69,7 +69,7 @@ func fileAllowed(path string) bool {
 }
 func (d *DesktopFiles) ChooseFolder(ctx context.Context) (string, error) {
 	g := d.generation()
-	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: mygo.CallerWindow(ctx), Title: "选择屏蔽文件夹", Directory: true})
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: mygo.CallerWindow(ctx), Title: "选择文件夹", Directory: true})
 	if err != nil {
 		return "", err
 	}
@@ -259,7 +259,7 @@ func (d *DesktopFiles) OpenExternal(raw string) error {
 	if err != nil || u.User != nil {
 		return errors.New("url_not_allowed")
 	}
-	allowed := u.Scheme == "https" && u.Host != "" || u.Scheme == "x-apple.systempreferences" && u.Opaque == "com.apple.preference.security" && regexp.MustCompile(`^Privacy_[A-Za-z]+$`).MatchString(u.RawQuery)
+	allowed := u.Scheme == "x-apple.systempreferences" && (u.Opaque == "com.apple.LoginItems-Settings.extension" || u.Opaque == "com.apple.Notifications-Settings.extension") && u.RawQuery == "" && u.Fragment == "" || u.Scheme == "https" && u.Host != "" || u.Scheme == "x-apple.systempreferences" && u.Opaque == "com.apple.preference.security" && regexp.MustCompile(`^Privacy_[A-Za-z]+$`).MatchString(u.RawQuery)
 	if !allowed {
 		return errors.New("url_not_allowed")
 	}

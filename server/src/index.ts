@@ -1,7 +1,12 @@
 import {ideaIconInstruction,resolveIdeaIcon} from '../../shared/idea-icons';
 import {startIdeasBackground,ideasBackgroundStatus,refreshIdeas} from './ideas-background';
 import {mountIdeasConsole} from './ideas-console';
+import {mountVirtualIm,startVirtualImScheduler} from './virtual-im';
+import {wechatSyncOverview,saveWechatSyncSettings,startWechatSync,startWechatScheduler} from './wechat-background-sync';
 import {startInboxChat} from './inbox-chat';
+import {startIdeasChat} from './ideas-chat';
+import {knowledgePaths,saveKnowledgePaths} from './knowledge-paths';
+import {mountTaskAgents} from './executors/desktop';
 import {mountMemory,enqueueMemory,startMemory} from './conversation-memory';
 import {queryFeishuContext} from './feishu-context';
 import {CODE_ROOT,STANDALONE} from './runtime-paths';
@@ -23,6 +28,7 @@ import {analyzeInbox,startInboxTriage} from './inbox-triage';
 import {prepareSemanticAuthorization,getSemanticAuthorization,revalidateSemanticAuthorization,invalidateSemanticAuthorizationsForEntity,installSemanticCalendarProvider} from './semantic-authorization';
 import {semanticCalendarProvider} from './semantic-calendar-provider';
 import {installChatContinuation} from './chat-continuation';
+import {installChatWork,stopChatWork} from './chat-work';
 import {autonomousState,tickAutonomousDispatches,cancelAutonomousDispatch,reconcileAutonomousDispatch,retryAutonomousDispatch,startAutonomousDispatch} from './autonomous-dispatch';
 import {notificationState,notificationPreview,tickNotifications,reconcileNotification,retryNotification,startNotifications} from './notifications';
 import {enqueueSourceProcessing,retrySourceProcessing,startSourceProcessing} from './source-processing';
@@ -53,7 +59,7 @@ import {completedAgentWrites} from './agent-effects';
 import {readConnectionResource,callConnectionTool} from './connection-resources';
 import {mountNativeApi} from './native-api';
 import {installWorkspaceSearch} from './workspace-search';
-import {mountChatStatus} from './chat-status';
+import {mountChatStatus,chatRequestStatus} from './chat-status';
 import {validateConnectionConfig,putConnection} from './connection-auth';
 
 migrateAutomaticReplyFiles();
@@ -69,6 +75,7 @@ app.use('/api/*',async(c,next)=>{const origin=c.req.header('origin');if(origin&&
 app.onError((e,c)=>{const api=e instanceof ApiError?e:new ApiError(500,'internal_error',String(e));return c.json(publicValue({error:api.code,message:api.message,...(api.detail?{detail:api.detail}:{})}),api.status as any);});
 mountMemory(app);
 mountIdeasConsole(app);
+mountVirtualIm(app);
 app.get('/api/wechat/status',c=>c.json(wechatReadStatus()));
 app.get('/api/connections/google/status',c=>c.json(googleStatus()));
 app.post('/api/connections/google/authorize',c=>c.json(beginGoogle()));
@@ -89,7 +96,9 @@ function listResponse(c:any,values:any[],legacyLimit?:number){
 }
 function need(type:string,id:string,includeDeleted=false) {const item=get(type,id,includeDeleted);if(!item)throw new ApiError(404,'not_found','对象不存在');return item;}
 function validate(type:string,input:any,old:any={}) {
- if(type==='inbox')for(const field of ['forwardedRequestId','sourceUnavailable','sourceParentInboxId','requestRoundId','closedAt','approvalSourceVersion','disposition','attentionOverrideVersion','draftPreparation','sourceRule','dismissalFeedbackActive','surfacing','attentionOverride','triage','sourceProcessing','draftRunId','semanticAuthorization','semanticAuthorizationId','semanticClassification','semanticClassificationId','effectiveCategory','autonomousDispatch'])if(input[field]!==undefined&&JSON.stringify(input[field])!==JSON.stringify(old[field]))throw new ApiError(403,'server_managed_field',field+' is managed by the server');
+ if(type==='inbox'&&(input.channel==='VirtualIM'&&!old.sourceSystem||['virtualImInstanceId','virtualImConversationId','virtualImSourceSeq','virtualImLastMessageId'].some(k=>input[k]!==undefined&&input[k]!==old[k])))throw new ApiError(403,'virtual_source_managed','模拟来源由连接器管理');
+ if(type==='inbox'&&old.sourceSystem==='virtual-im'&&['sourceId','connectionId','channel','messages','body','sender','senderId'].some(k=>input[k]!==undefined&&JSON.stringify(input[k])!==JSON.stringify(old[k])))throw new ApiError(403,'virtual_source_managed','模拟来源与目标不能手动改写');
+ if(type==='inbox')for(const field of ['forwardedRequestId','sourceUnavailable','sourceAttentionExcluded','sourceAttentionReason','wechatCategory','wechatOfficialAccount','groupAttention','sourceParentInboxId','requestRoundId','closedAt','approvalSourceVersion','disposition','attentionOverrideVersion','draftPreparation','sourceRule','dismissalFeedbackActive','surfacing','attentionOverride','triage','sourceProcessing','draftRunId','semanticAuthorization','semanticAuthorizationId','semanticClassification','semanticClassificationId','effectiveCategory','autonomousDispatch'])if(input[field]!==undefined&&JSON.stringify(input[field])!==JSON.stringify(old[field]))throw new ApiError(403,'server_managed_field',field+' is managed by the server');
  if(type==='inbox'&&['sending','sent','recalled','send_unknown'].includes(old.status))for(const field of ['draft','body','attachments','recipientId','isSelfTest','testMarker','sentDraft','sentText','sentAttachments'])if(input[field]!==undefined&&JSON.stringify(input[field])!==JSON.stringify(old[field]))throw new ApiError(409,'locked_send_payload','已外发或结果未知的消息内容已冻结，请复制创建新的审批项');
  const data={...old,...input};delete data.deleted;delete data.localEdited;delete data.diskPath;delete data.sourceSystem;delete data.receipt;delete data.recallReceipt;delete data.baseUpdatedAt;for(const field of ['calendarEvent','calendarReceipt','calendarStatus','calendarIntentKey','calendarRunId']){delete data[field];if(old[field]!==undefined)data[field]=old[field];}
  if(old.sourceSystem)data.sourceSystem=old.sourceSystem;
@@ -130,6 +139,9 @@ app.post('/api/notifications/tick',async c=>{await tickNotifications();return js
 app.post('/api/notifications/:id/reconcile',async c=>json(c,await reconcileNotification(c.req.param('id'))));
 app.post('/api/notifications/:id/retry',async c=>json(c,await retryNotification(c.req.param('id'))));
 app.get('/api/settings',c=>json(c,settings()));
+app.get('/api/settings/knowledge-paths',c=>json(c,knowledgePaths()));
+app.patch('/api/settings/knowledge-paths',async c=>json(c,await saveKnowledgePaths(await body(c))));
+mountTaskAgents(app);
 app.get('/api/settings/models',c=>{c.header('Cache-Control','no-store');return json(c,modelSettings());});
 app.patch('/api/settings/models/providers',async c=>json(c,saveModelProvider(await body(c))));
 app.patch('/api/settings/models',async c=>json(c,saveModelSettings(await body(c))));
@@ -141,7 +153,7 @@ app.post('/api/settings/models/test',async c=>{
  if(input.version!==modelSettings().version)throw new ApiError(409,'model_settings_changed','配置已变更，请先重新读取。 / Configuration changed. Reload first.');
  return json(c,await runAgent('Reply with exactly OK.',{kind:'model_probe',title:'Model connection test: '+input.role,mode:input.role==='deep'?'deep':'chat',readOnly:true}));
 });
-app.patch('/api/settings',async c=>{const input=await body(c);if(input.baseSettings!==undefined){if(!input.baseSettings||typeof input.baseSettings!=='object'||Array.isArray(input.baseSettings))throw new ApiError(400,'invalid_baseline','设置基线无效');const current=settings() as any;for(const [group,value] of Object.entries(input.baseSettings)){if(!['identity','autonomy'].includes(group))throw new ApiError(400,'invalid_baseline','设置分组无效');if(hash(current[group])!==hash(value))throw new ApiError(409,'edit_conflict','设置已更新，请读取最新版本并保留输入');}delete input.baseSettings;}if(input.identity && Object.hasOwn(input.identity,'language') && !['en','zh-CN'].includes(input.identity.language))throw new ApiError(400,'invalid_language','Choose English or 简体中文.');for(const key of ['memories','memory','memorySnapshots','memoryHistory'])delete input[key];if(input.autonomy?.levels){for(const value of Object.values(input.autonomy.levels))if(!['observe','draft','send_undo','autonomous','approval','auto'].includes(String(value)))throw new ApiError(400,'invalid_autonomy','自主级别无效');}return json(c,patchSettings(input));});
+app.patch('/api/settings',async c=>{const input=await body(c);if(input.baseSettings!==undefined){if(!input.baseSettings||typeof input.baseSettings!=='object'||Array.isArray(input.baseSettings))throw new ApiError(400,'invalid_baseline','设置基线无效');const current=settings() as any;for(const [group,value] of Object.entries(input.baseSettings)){if(!['identity','autonomy'].includes(group))throw new ApiError(400,'invalid_baseline','设置分组无效');if(hash(current[group])!==hash(value))throw new ApiError(409,'edit_conflict','设置已更新，请读取最新版本并保留输入');}delete input.baseSettings;}if(input.identity && Object.hasOwn(input.identity,'language') && !['en','zh-CN'].includes(input.identity.language))throw new ApiError(400,'invalid_language','Choose English or 简体中文.');for(const key of ['memories','memory','memorySnapshots','memoryHistory'])delete input[key];if(input.knowledgePaths!==undefined)throw new ApiError(400,'version_required','请通过知识资料路径接口保存');if(input.autonomy?.permissions){const allowed=['reply','tasks','files','calendar','connections','deep'];if(Object.entries(input.autonomy.permissions).some(([k,v])=>!allowed.includes(k)||!['read','confirm','auto'].includes(String(v))))throw new ApiError(400,'invalid_autonomy','操作权限无效');}if(input.autonomy?.levels){for(const value of Object.values(input.autonomy.levels))if(!['observe','draft','send_undo','autonomous','approval','auto'].includes(String(value)))throw new ApiError(400,'invalid_autonomy','自主级别无效');}return json(c,patchSettings(input));});
 app.get('/api/settings/documents/:kind/history',c=>json(c,settingsDocumentHistory(c.req.param('kind'))));
 app.get('/api/settings/documents/:kind',c=>json(c,settingsDocument(c.req.param('kind'))));
 app.patch('/api/settings/documents/:kind',async c=>json(c,saveSettingsDocument(c.req.param('kind'),await body(c))));
@@ -179,6 +191,9 @@ app.get('/api/activities/:id',c=>json(c,need('activities',c.req.param('id'))));
 app.get('/api/artifacts',c=>json(c,listResponse(c,list('artifacts'))));
 app.get('/api/artifacts/:id',c=>json(c,need('artifacts',c.req.param('id'))));
 
+app.get('/api/wechat/sync',c=>json(c,wechatSyncOverview()));
+app.patch('/api/wechat/sync',async c=>json(c,saveWechatSyncSettings(await body(c))));
+app.post('/api/wechat/sync',c=>json(c,startWechatSync(),202));
 app.post('/api/wechat/connect',async c=>json(c,await connectWechat()));
 app.get('/api/wechat/chats',async c=>json(c,await wechatChats(c.req.query('cursor'),c.req.query('limit'))));
 app.get('/api/wechat/capabilities',c=>json(c,wechatCapabilities()));
@@ -204,12 +219,14 @@ app.post('/api/chat',async c=>{
  if(input.preservePrimary!==undefined&&typeof input.preservePrimary!=='boolean')throw new ApiError(400,'invalid_preserve_primary','preservePrimary必须是布尔值');
  if(input.interruptCurrent!==undefined&&typeof input.interruptCurrent!=='boolean')throw new ApiError(400,'invalid_interrupt','interruptCurrent必须是布尔值');
  const requestId=String(input.requestId||uid('request'));if(requestId.length>128||!/^[\w-]+$/.test(requestId))throw new ApiError(400,'invalid_request_id','请求 ID 无效');const fingerprint=hash({message,attachmentIds:input.attachmentIds||[],mode:input.mode||'chat',contextIds:input.contextIds||[],...(input.readOnly?{readOnly:true}:{}),...(input.retryOfRunId?{retryOfRunId:input.retryOfRunId}:{}),...(input.interruptCurrent?{interruptCurrent:true,conversationId:input.conversationId}: {})});const existing=db.prepare('SELECT * FROM chat_requests WHERE id=?').get(requestId) as any;const requestData=existing?JSON.parse(existing.data):undefined;
- if(existing){if(existing.hash!==fingerprint)throw new ApiError(409,'request_conflict','此请求 ID 已用于另一条消息');if(existing.state==='succeeded')return json(c,{...requestData.result,replayed:true});if(existing.state==='running')throw new ApiError(409,'request_in_progress','原消息正在处理中；请等待原运行终态',{conversationId:requestData.conversationId,requestId,runId:requestData.runId});if(existing.state==='partial')throw new ApiError(409,'partial_run_requires_review','原运行已执行本地写入，请先检查这些结果再提出新请求',{conversationId:requestData.conversationId,requestId,run:requestData.run,completedWrites:requestData.completedWrites});}
+ if(existing){if(existing.hash!==fingerprint)throw new ApiError(409,'request_conflict','此请求 ID 已用于另一条消息');if(existing.state==='succeeded')return json(c,{...requestData.result,replayed:true});if(existing.state==='running')throw new ApiError(409,'request_in_progress','原消息正在处理中；请等待原运行终态',{conversationId:requestData.conversationId,requestId,runId:requestData.runId});if(chatRequestStatus(existing,requestData,get('runs',requestData?.runId))==='cancelled')throw new ApiError(409,'chat_interrupted','原回复已停止；请发送新消息',{conversationId:requestData.conversationId,requestId,runId:requestData.runId});if(existing.state==='partial')throw new ApiError(409,'partial_run_requires_review','原运行已执行本地写入，请先检查这些结果再提出新请求',{conversationId:requestData.conversationId,requestId,run:requestData.run,completedWrites:requestData.completedWrites});}
  const primaryId=meta<string|undefined>('primaryConversationId',undefined);const priorPrimary=primaryId?get('conversations',primaryId):undefined;
  const conversation=requestData?.conversationId?need('conversations',requestData.conversationId):input.conversationId?need('conversations',input.conversationId):priorPrimary||put('conversations',{title:message.slice(0,60),mode:input.mode||'chat',status:'active'});if(!conversation.sideChat&&input.preservePrimary!==true)setMeta('primaryConversationId',conversation.id);
  const busy=([...db.prepare("SELECT id,data FROM chat_requests WHERE state='running' ORDER BY rowid DESC").all(),...db.prepare("SELECT id,data FROM draft_requests WHERE state='running'").all()] as any[]).find(row=>JSON.parse(row.data).conversationId===conversation.id);if(busy&&(!input.interruptCurrent||existing||!db.prepare('SELECT id FROM chat_requests WHERE id=?').get(busy.id)))throw new ApiError(409,'conversation_busy','此会话已有运行，请等待后继续',{conversationId:conversation.id,requestId:busy.id});
  const userMessage=requestData?.userMessage||put('messages',{id:uid('message'),conversationId:conversation.id,role:'user',content:message,attachments:input.attachmentIds||[],contextIds:input.contextIds||[],requestId});const thread=list('messages').filter(m=>m.conversationId===conversation.id&&m.id!==userMessage.id).reverse();const replyItem=(input.contextIds||[]).map((id:string)=>get('inbox',id)).find(Boolean);const previous=replyItem?replyMessages(replyItem,conversation.id,thread,list('conversations')):thread;const run=beginRun('chat',message.slice(0,90),{requestId,conversationId:conversation.id,mode:input.mode||'chat',retryOf:requestData?.runId,...retryLineage(input)});const intent={conversationId:conversation.id,userMessage,runId:run.id};db.prepare('INSERT INTO chat_requests VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,data=excluded.data,updated_at=excluded.updated_at').run(requestId,fingerprint,'running',JSON.stringify(intent),now());
  try{
+ // A new message retires undecided work choices and stops this conversation's own document runs first.
+ if(!await stopChatWork(conversation.id,undefined,false))throw new ApiError(409,'interrupt_timeout','旧整理尚未确认停止，请回查原记录');
  if(busy){
   const old=JSON.parse(busy.data);const deadline=Date.now()+10000;
   while((db.prepare('SELECT state FROM chat_requests WHERE id=?').get(busy.id) as any)?.state==='running'){
@@ -220,7 +237,7 @@ app.post('/api/chat',async c=>{
  }
  const older=(db.prepare("SELECT data FROM chat_requests WHERE state='running' AND rowid < (SELECT rowid FROM chat_requests WHERE id=?)").all(requestId) as any[]).some(row=>JSON.parse(row.data).conversationId===conversation.id);
  if(older)throw new ApiError(409,'interrupt_timeout','旧回复尚未确认停止，请回查原请求');
- const result=await runAgent(message,{mode:input.mode||'chat',conversationId:conversation.id,history:previous,attachmentIds:input.attachmentIds,contextIds:input.contextIds,readOnly:input.readOnly===true,runId:run.id});const assistantMessage=put('messages',{id:uid('message'),conversationId:conversation.id,role:'assistant',content:result.text,runId:result.run.id,attachments:result.artifacts.map(a=>a.id),contextIds:input.contextIds||[]});put('conversations',{...get('conversations',conversation.id),lastRunId:result.run.id,lastMessageAt:now(),status:'active'});activity('完成 Twin 对话','chat','succeeded',undefined,conversation.id);const output={conversationId:conversation.id,userMessage,assistantMessage,run:result.run,artifacts:result.artifacts,requestId};db.prepare('UPDATE chat_requests SET state=?,data=?,updated_at=? WHERE id=?').run('succeeded',JSON.stringify({...intent,result:output,memoryPending:input.readOnly!==true}),now(),requestId);try{enqueueMemory(requestId);}catch{}return json(c,output);}catch(e){put('conversations',{...get('conversations',conversation.id),status:'failed',lastError:String(e)});let failedRun=(e instanceof ApiError?e.detail?.run:undefined)||get('runs',run.id);if(failedRun?.status==='running')failedRun=put('runs',{...failedRun,status:'failed',completedAt:now(),error:String(e)});const completedWrites=completedAgentWrites(failedRun);db.prepare('UPDATE chat_requests SET state=?,data=?,updated_at=? WHERE id=?').run(completedWrites.length?'partial':'failed',JSON.stringify({...intent,run:failedRun,completedWrites}),now(),requestId);if(completedWrites.length)throw new ApiError(409,'partial_run_requires_review','原运行已有完成的本地写入，请检查结果后继续',{conversationId:conversation.id,userMessage,requestId,run:failedRun,completedWrites});if(e instanceof ApiError)e.detail={...(e.detail||{}),conversationId:conversation.id,userMessage,requestId};throw e;}
+ const result=await runAgent(message,{mode:input.mode||'chat',conversationId:conversation.id,history:previous,attachmentIds:input.attachmentIds,contextIds:input.contextIds,readOnly:input.readOnly===true,runId:run.id});const assistantMessage=put('messages',{id:uid('message'),conversationId:conversation.id,role:'assistant',content:result.text,runId:result.run.id,attachments:result.artifacts.map(a=>a.id),contextIds:input.contextIds||[]});put('conversations',{...get('conversations',conversation.id),lastRunId:result.run.id,lastMessageAt:now(),status:'active'});activity('完成 Twin 对话','chat','succeeded',undefined,conversation.id);const output={conversationId:conversation.id,userMessage,assistantMessage,run:result.run,artifacts:result.artifacts,requestId};db.prepare('UPDATE chat_requests SET state=?,data=?,updated_at=? WHERE id=?').run('succeeded',JSON.stringify({...intent,result:output,memoryPending:input.readOnly!==true}),now(),requestId);try{enqueueMemory(requestId);}catch{}return json(c,output);}catch(e){const interrupted=e instanceof ApiError&&e.code==='chat_interrupted';put('conversations',{...get('conversations',conversation.id),status:interrupted?'active':'failed',lastError:interrupted?undefined:String(e)});let failedRun=(e instanceof ApiError?e.detail?.run:undefined)||get('runs',run.id);if(failedRun?.status==='running')failedRun=put('runs',{...failedRun,status:interrupted?'cancelled':'failed',...(interrupted?{stopReason:'new_message'}:{}),completedAt:now(),error:String(e)});const completedWrites=completedAgentWrites(failedRun);db.prepare('UPDATE chat_requests SET state=?,data=?,updated_at=? WHERE id=?').run(completedWrites.length?'partial':interrupted?'cancelled':'failed',JSON.stringify({...intent,run:failedRun,completedWrites}),now(),requestId);if(completedWrites.length)throw new ApiError(409,'partial_run_requires_review','原运行已有完成的本地写入，请检查结果后继续',{conversationId:conversation.id,userMessage,requestId,run:failedRun,completedWrites});if(e instanceof ApiError)e.detail={...(e.detail||{}),conversationId:conversation.id,userMessage,requestId};throw e;}
 });
 app.get('/api/inbox/:id/feedback',c=>json(c,inboxFeedback(need('inbox',c.req.param('id')))));
 app.get('/api/inbox-source-rules',c=>json(c,{sources:inboxSources(c.req.query('query')||''),rules:list('inbox_source_rules')}));
@@ -321,12 +338,15 @@ for(const row of db.prepare("SELECT * FROM calendar_intents WHERE state='creatin
 for(const automation of list('automations').filter(row=>row.status==='running'))put('automations',{...automation,status:'failed',lastError:'server_interrupted',nextRun:automation.enabled?nextScheduled(automation.schedule):undefined});
 for(const run of list('runs').filter(row=>row.status==='running'))put('runs',{...run,status:'failed',completedAt:now(),error:'server_interrupted',events:[...(run.events||[]),{type:'server_interrupted',at:now()}]});
 installChatContinuation(app);
+installChatWork(app);
 const stopMemory=startMemory(runAgent,process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_MEMORY_BACKGROUND==='1');
 const backgroundTimers: ReturnType<typeof setInterval>[] = [];
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_IDEAS_BACKGROUND==='1')backgroundTimers.push(startIdeasBackground());
+if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_VIRTUAL_IM_BACKGROUND==='1')backgroundTimers.push(startVirtualImScheduler());
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_INBOX_BACKGROUND==='1'||process.env.OPSTWIN_CONNECTION_BACKGROUND==='1'||process.env.OPSTWIN_INBOX_CHAT_BACKGROUND==='1')backgroundTimers.push(startInboxChat());
+if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_IDEAS_BACKGROUND==='1'||process.env.OPSTWIN_IDEAS_CHAT_BACKGROUND==='1')backgroundTimers.push(startIdeasChat());
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'){
- backgroundTimers.push(startInboxTriage(),startScheduler(),startConnectionScheduler(),
+ backgroundTimers.push(startInboxTriage(),startScheduler(),startConnectionScheduler(),startWechatScheduler(),
   startSourceProcessing(),startDefaultDrafts(),startNotifications(),startAutonomousDispatch());
 }
 // Allow Inbox-only preparation without enabling schedulers or external delivery.
@@ -336,7 +356,7 @@ if(process.env.OPSTWIN_NO_BACKGROUND==='1'&&process.env.OPSTWIN_INBOX_BACKGROUND
 // Desktop reads and prepares configured sources independently of automation,
 // notifications and autonomous delivery. Keep the user's saved sync intervals.
 if(process.env.OPSTWIN_NO_BACKGROUND==='1'&&process.env.OPSTWIN_CONNECTION_BACKGROUND==='1'){
- backgroundTimers.push(startConnectionScheduler(),startSourceProcessing());
+ backgroundTimers.push(startConnectionScheduler(),startWechatScheduler(),startSourceProcessing());
 }
 if(process.env.OPSTWIN_NO_LISTEN!=='1'){
  const port=Number(process.env.OPSTWIN_API_PORT||46110);

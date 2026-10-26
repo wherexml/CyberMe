@@ -1,0 +1,60 @@
+/* October 17 review: local scopes preserve model, chat and source quote controls. */
+.inbox-item {padding:13px 10px;gap:10px}
+.inbox-item .item-meta {gap:10px;margin-bottom:5px}
+.item-sender {display:flex;align-items:center;gap:6px;min-width:0;flex:1}
+.item-sender b {overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item-sender .inbox-channel {width:15px;height:15px;object-fit:contain;flex:none}
+.inbox-item .item-copy p {margin:0;font-size:12px;line-height:1.65;color:var(--muted);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.item-status {display:inline-block;margin-top:5px;font-size:10px;color:var(--muted);line-height:1.5}
+.inbox-actions {height:48px;min-height:48px;padding:7px 18px;gap:6px}
+.inbox-actions button {min-height:30px;padding:4px 10px;font-size:12px}
+.inbox-actions .icon {width:15px;height:15px}
+.settings-support {margin-top:auto;padding-top:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.settings-support>button {height:34px;min-height:34px;justify-content:flex-start;padding:7px 10px;font-size:13px;gap:10px;color:var(--muted)}
+.settings-support>button .icon {width:17px;height:17px}
+.settings-support>button.selected {background:var(--hover);color:var(--ink)}
+.document-card {gap:12px;flex-wrap:nowrap;padding:13px 2px;min-height:76px}
+.document-card .document-icon {width:36px;height:36px;border-radius:10px;background:var(--hover);display:grid;place-items:center;flex:none;color:var(--ink)}
+.document-card .document-icon .icon {width:20px;height:20px}
+.document-card>div {min-width:0;flex:1}
+.document-card>.icon:last-child {width:16px;height:16px;color:var(--muted)}
+.settings-content:has(.document-card) .settings-section {margin-bottom:24px}
+.device-current {display:flex;align-items:center;gap:14px;padding:10px 0 26px;margin-bottom:20px;border-bottom:1px solid var(--line)}
+.device-illustration {width:56px;height:50px;border-radius:12px;display:grid;place-items:center;background:var(--hover)}
+.device-illustration .icon {width:30px;height:30px;stroke-width:1.3}
+.device-current h2 {font-size:15px;font-weight:550}
+.device-current p {font-size:12px;color:var(--muted);margin-top:3px}
+.device-current .status-dot {margin-left:auto;white-space:nowrap;font-size:11px}
+.device-unavailable {display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12px;margin-top:34px}
+.device-unavailable .icon {width:17px;height:17px}
+.help-shortcuts {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:32px}
+.help-shortcut {display:flex;flex-direction:column;gap:10px;padding:18px 8px;font-size:12px;background:var(--hover);border-radius:10px;white-space:nowrap}
+.help-shortcut .icon {width:21px;height:21px;color:var(--muted)}
+.settings-content .faq {border:0;border-bottom:1px solid var(--line);border-radius:0;padding:0;margin:0}
+.settings-content .faq summary {display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;padding:15px 0;font-size:13px;font-weight:400;cursor:pointer}
+.settings-content .faq summary::-webkit-details-marker {display:none}
+.settings-content .faq summary .icon {width:14px;height:14px;flex:none;color:var(--muted);transition:transform .15s}
+.settings-content .faq[open] summary .icon {transform:rotate(180deg)}
+.settings-content .faq p {padding:0 20px 17px 0;font-size:12px;line-height:1.85;color:var(--muted)}
+.privacy-intro {display:flex;align-items:center;gap:10px;font-size:13px;margin:4px 0 32px;color:var(--muted)}
+.privacy-intro .icon {width:19px;height:19px}
+.settings-prose {font-size:13px;line-height:1.85;color:var(--muted);max-width:520px}
+.about-product {padding:12px 0 28px}
+.about-product>img {display:block;width:48px;height:48px;margin-bottom:18px}
+.about-product h2 {font-size:22px;letter-spacing:-.5px;font-weight:600}
+.about-product p {font-size:13px;margin-top:8px;color:var(--muted)}
+.about-version {display:block;font-size:11px;margin-top:15px;color:var(--muted)}
+.about-links {border-top:1px solid var(--line);margin-bottom:24px}
+.about-links .setting-row {font-size:12px;min-height:46px}
+.about-links .setting-row>div:first-child>span {font-size:13px}
+
+.knowledge-path-list {margin-top:14px}
+.knowledge-path-row {display:flex;align-items:center;gap:10px;min-height:48px;border-bottom:1px solid var(--line);padding:8px 0}
+.knowledge-path-row>.icon {width:18px;height:18px;color:var(--muted)}
+.knowledge-path-row>span {min-width:0;flex:1;overflow-wrap:anywhere;font-size:13px;line-height:1.6}
+.knowledge-path-row>.icon-button {width:28px;height:28px}
+.knowledge-path-row>.icon-button>.icon {width:15px;height:15px}
+.knowledge-path-entry {display:flex;align-items:center;gap:8px;margin-top:14px}
+.knowledge-path-entry>input {flex:1;min-width:0;width:0;font-size:13px;height:38px}
+.knowledge-path-entry>button {flex:none;font-size:12px;min-height:34px}
+.settings-content .document-card small {overflow-wrap:anywhere}

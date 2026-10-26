@@ -1,5 +1,7 @@
 # PI SDK 发行物
 
+2026-10-17 Mock引入：[Inbox Zero选定源码](inbox-zero/README.md)、[remend](remend/UPSTREAM.md)。两者固定上游commit、保留LICENSE与SHA256；仅当前46400本地Mock使用，不改变下述生产SDK或发布范围。
+
 当前使用官方 npm `@earendil-works/pi-coding-agent@1.3.0`，精确版本与完整依赖树由根 package.json / package-lock.json 固定；不再使用本目录的 0.86.1 tarball。1.3.0 的 pi-agent-core 与 pi-ai 同为精确 1.3.0。
 
 历史 0.86.1 tarball 保留以便核验：其来源为官方 npm 发行物，仅移除 `npm-shrinkwrap.json`，用于解除有漏洞的 brace-expansion 5.0.9 锁定；没有修改 SDK 源码。新版本可直接从官方 registry 安装，不沿用旧包重打包方式。根 overrides 仍由 npm 审计验证。

@@ -7,6 +7,7 @@ import {ApiError,command} from './integrations';
 import {get,list,put,activity,now,meta,setMeta} from './store';
 import {attachmentKind,exactAttachmentEnabled,inspectWechatAttachment,materializeWechatAttachment,verifyWechatAttachmentCli,type WechatAttachmentKind} from './wechat-attachment-cli';
 import {wechatRuntimeSelection} from './wechat-runtime-selector';
+import {wechatCategory} from './wechat-categories';
 const ID='wechat-sync-local';
 const seenConversations=new Map<string,{version:string,sourceHash:string,at:number}>();
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)??'').digest('hex');
@@ -27,9 +28,9 @@ export async function connectWechat(){
   try{
     const source=await query(['source','status']);
     if(!(source.databaseCount>0))throw new ApiError(503,'wechat_source_empty','尚未发现可读取的微信数据库。');
-    sample=await query(['chats','--limit','1']);rows(sample);
+    sample=await query(['chats','--limit','1']);rows(sample);if(!source.source?.identity||digest(source.source.identity)!==digest(sample.source?.identity))throw new ApiError(409,'wechat_source_changed','微信来源已变化，请重新连接');
     status='connected';message='已连接本机个人微信（wechat-sync），仅支持读取。';
-    evidence={readOnly:true,databaseCount:source.databaseCount,coverageComplete:sample.consistency?.coverageComplete===true,verifiedAt:now()};
+    evidence={readOnly:true,sourceHash:digest(source.source.identity),databaseCount:source.databaseCount,coverageComplete:sample.consistency?.coverageComplete===true,verifiedAt:now()};
   }catch(error){message=error instanceof ApiError?error.message:'微信连接检测失败，请重试。';}
   if(get('connections',ID)?.updatedAt!==old?.updatedAt)throw new ApiError(409,'connection_changed','连接状态已变更，请刷新后重试。');
   const connection=put('connections',{...old,id:ID,name:'微信',provider:'wechat',type:'CLI',status,permissions:['read'],capabilities:status==='connected'?['wechat.chats.read','wechat.contacts.read','wechat.messages.read','wechat.messages.search','wechat.message.read']:[],config:{adapter:'wechat-sync',readOnly:true},message,evidence,lastTestAt:now()});
@@ -39,6 +40,7 @@ export async function connectWechat(){
   activity('连接个人微信','connection',status==='connected'?'succeeded':'failed',message,ID);
   return {ok:status==='connected',connection,message,capabilities:connection.capabilities};
 }
+export function wechatConnectionLease(){return requireConnection().updatedAt;}
 function requireConnection(){wechatRuntimeSelection();const c=get('connections',ID);if(c?.status!=='connected'||!c.permissions?.includes('read')){clearWechatReader();throw new ApiError(409,'wechat_not_connected','请先连接本机微信。');}return c;}
 function rememberConversations(items:any[],value:any,version=requireConnection().updatedAt){if(!value.source?.identity)return;if([...seenConversations.values()].some(v=>v.version!==version||v.sourceHash!==digest(value.source.identity)))clearWechatReader();for(const item of items)if(typeof item.id==='string')seenConversations.set(item.id,{version,sourceHash:digest(value.source.identity),at:Date.now()});for(const [id,v] of seenConversations)if(Date.now()-v.at>3600000)seenConversations.delete(id);while(seenConversations.size>1000){const oldest=seenConversations.keys().next().value;if(!oldest)break;seenConversations.delete(oldest);}}
 function verifiedConversation(input:unknown){requireConnection();const id=exactId(input,'conversation');const selected=seenConversations.get(id);if(!selected||selected.version!==requireConnection().updatedAt||Date.now()-selected.at>3600000)throw new ApiError(409,'wechat_conversation_unverified','请刷新联系人或会话列表，并选择精确会话标识。');return id;}
@@ -52,13 +54,15 @@ function pageInfo(value:any){return {hasMore:value.page?.hasMore===true,nextCurs
 async function read(args:string[],stdin?:string){const before=requireConnection();const value=await query(args,stdin);if(requireConnection().updatedAt!==before.updatedAt)throw new ApiError(409,'connection_changed','连接已变更，请重新读取。');setMeta('wechatLastReadAt',now());return value;}
 export function wechatReadStatus(){const c=get('connections',ID);return {connected:c?.status==='connected',lastReadAt:meta('wechatLastReadAt',null)||c?.evidence?.verifiedAt||null,mode:'local-read-only'};}
 // A contact name is never sufficient proof of account ownership.
-async function boundOwner(source:any){try{const value=await read(['contacts','list','--kind','account-holder','--limit','1','--details']);const items=rows(value);if(!source?.identity||!value.source?.identity||digest(value.source?.identity)!==digest(source?.identity)||items.length!==1||items[0].isAccountHolder!==true||typeof items[0].id!=='string')return undefined;return items[0].id;}catch{return undefined;}}
-function message(m:any,owner?:string){
+async function boundOwner(source:any){try{const value=await read(['contacts','list','--kind','account-holder','--limit','1','--details']);const items=rows(value);if(!source?.identity||!value.source?.identity||digest(value.source?.identity)!==digest(source?.identity)||items.length!==1||items[0].isAccountHolder!==true||typeof items[0].id!=='string')return undefined;return {id:items[0].id,names:[...new Set([items[0].displayName,items[0].nickname,items[0].alias].filter((v):v is string=>typeof v==='string'&&v.trim().length>0&&v!=='我'))]};}catch{return undefined;}}
+function message(m:any,owner?:{id:string;names:string[]}){
   const text=typeof m.content?.Text==='string'?m.content.Text:m.content&&typeof m.content==='object'?JSON.stringify(m.content):undefined;
+  const visible=typeof m.content?.Text==='string'?m.content.Text:'';
+  const mentionsOwner=owner?m.sender!==owner.id&&owner.names.some(name=>{const token='@'+name;let at=visible.indexOf(token);while(at>=0){const end=at+token.length;if((at===0||/[\s\u2005]/u.test(visible[at-1]))&&(end===visible.length||/[\s\u2005]/u.test(visible[end])))return true;at=visible.indexOf(token,at+1);}return false;}):null;
   const max=262144;const originalLength=text?.length??0;const adapterTruncated=originalLength>max;
-  return {id:m.id,conversationId:m.conversationId,senderId:m.sender,sender:m.senderDisplayName||m.sender||'微信联系人',at:m.createdAtUnix,text:text===undefined?`[${m.messageTypeLabel||'非文本消息'}]`:text.slice(0,max),messageType:m.messageType,messageTypeLabel:m.messageTypeLabel,messageSubtype:m.messageSubtype,contentDecodeState:m.contentDecodeState,contentTruncated:m.contentTruncated===true||adapterTruncated,cliContentTruncated:m.contentTruncated===true,adapterTruncated,originalLength,self:owner&&typeof m.sender==='string'?m.sender===owner:null,directionEvidence:owner?'cli-account-holder-id':'unknown',untrustedSource:true};
+  return {id:m.id,conversationId:m.conversationId,senderId:m.sender,sender:m.senderDisplayName||m.sender||'微信联系人',at:m.createdAtUnix,text:text===undefined?`[${m.messageTypeLabel||'非文本消息'}]`:text.slice(0,max),messageType:m.messageType,messageTypeLabel:m.messageTypeLabel,messageSubtype:m.messageSubtype,contentDecodeState:m.contentDecodeState,contentTruncated:m.contentTruncated===true||adapterTruncated,cliContentTruncated:m.contentTruncated===true,adapterTruncated,originalLength,self:owner&&typeof m.sender==='string'?m.sender===owner.id:null,mentionsOwner,mentionEvidence:mentionsOwner?'visible-account-name':undefined,directionEvidence:owner?'cli-account-holder-id':'unknown',untrustedSource:true};
 }
-export async function wechatChats(cursor?:string,limit?:unknown){const value=await read(['chats','--limit',String(boundedLimit(limit,20,100)),...cursorArgs(cursor)]);rememberConversations(rows(value),value);return {...pageInfo(value),items:rows(value).map((c:any)=>({id:c.id,name:c.displayName||c.id,lastAt:c.sortTimestamp,summaryTruncated:c.summaryTruncated===true}))};}
+export async function wechatChats(cursor?:string,limit?:unknown){const value=await read(['chats','--limit',String(boundedLimit(limit,20,100)),...cursorArgs(cursor)]);rememberConversations(rows(value),value);return {...pageInfo(value),items:rows(value).map((c:any)=>({id:c.id,name:c.displayName||c.id,isOfficialAccount:c.isOfficialAccount===true,category:wechatCategory(c.id,c.isOfficialAccount,digest(value.source?.identity)),lastAt:c.sortTimestamp,syncFingerprint:digest({id:c.id,at:c.sortTimestamp,summary:c.summary,type:c.lastMessageType,sender:c.lastMessageSender}),summaryTruncated:c.summaryTruncated===true}))};}
 export async function wechatMessages(conversation:string,cursor?:string,limit?:unknown){
   const id=verifiedConversation(conversation);const before=requireConnection();const value=await read(['messages','list','--conversation',id,'--limit',String(boundedLimit(limit,50,100)),'--json',...cursorArgs(cursor)]);assertConversationSource(id,value);const owner=await boundOwner(value.source);if(requireConnection().updatedAt!==before.updatedAt)throw new ApiError(409,'connection_changed','连接已变更，请重新读取。');
   return {...pageInfo(value),accountHolderKnown:!!owner,items:rows(value).map((m:any)=>message(m,owner))};

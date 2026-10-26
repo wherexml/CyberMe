@@ -1,0 +1,58 @@
+// Run with ego-browser nodejs in the existing TaskSpace. Public 46500/46510 only.
+// Full failure modes were written before implementation in the matching journey contract.
+import fs from 'node:fs/promises';
+const R='/Users/steve/Projects/opstwin-advance',O=(globalThis.RC18_OUT||R+'/output/mygo-v17-opus-acceptance-20261017/release-candidate-17')+'/e2e-'+Date.now();
+await fs.mkdir(O,{recursive:true});
+const p=(await taskSpace(116)).page('p3'),checks=[],info={controlledResponseHold:false};
+const api=async(method,path,body)=>{const r=await fetch('http://127.0.0.1:46500'+path,{method,headers:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json()}};
+const check=(name,pass,detail)=>{checks.push({name,status:pass?'PASS':'FAIL',detail});if(!pass)throw Error(name)};
+const W=(f,a)=>p.waitForFunction(f,a,{timeout:12000});
+const shot=async n=>{await p.screenshot({path:O+'/'+n+'.png'});await fs.writeFile(O+'/'+n+'.ax.txt',await p.snapshot())};
+const paths=async()=>(await api('GET','/api/settings/knowledge-paths')).data;
+const val=()=>p.evaluate(()=>document.querySelector('[aria-label="知识资料文件夹路径"]').value);
+const fill=v=>p.fill('[aria-label="知识资料文件夹路径"]',v);
+const submit=()=>p.click('.knowledge-path-form button:not([type=button])');
+const rowAction=async(path,label)=>{const result=await p.evaluate(({path,label})=>{const r=[...document.querySelectorAll('.knowledge-path-row')].find(n=>n.querySelector('span')?.textContent===path);if(!r)return false;r.querySelector('[aria-label="'+label+'"]').click();return true},{path,label});if(!result)throw Error('row missing')};
+const section=async n=>{if(!await p.evaluate(()=>document.querySelector('#settings-window').open))await p.click('button[aria-label="设置"]');await p.click('[data-setting='+n+']')};
+const knowledge=async()=>{await section('identity');if(await p.evaluate(()=>!!document.querySelector('.identity-back')))await p.click('.identity-back');await p.click('.identity-document-entry:last-child');await p.waitForSelector('.knowledge-path-form');await W(()=>!!document.querySelector('.knowledge-path-form button:not([type=button])')&&!document.querySelector('.knowledge-path-form button:not([type=button])').disabled)};
+const cancel=()=>p.click('.knowledge-path-entry button:last-child');
+const recover=()=>p.click('.knowledge-add-new');
+const baseline=await paths();await fs.writeFile(O+'/baseline.json',JSON.stringify(baseline,null,2));
+const A=O+'/public-A',B=O+'/public-B',C=O+'/public-C';for(const f of [A,B,C])await fs.mkdir(f);
+const id='remaining-fixes-'+Date.now(),ADD='独立添加草稿-'+Date.now();
+async function missingEdit(){
+ const old=await paths();await api('PATCH','/api/settings/knowledge-paths',{version:old.version,paths:[...baseline.paths,{id,path:A}]});
+ await section('general');await knowledge();await fill(ADD);await rowAction(A,'修改路径');await fill(B);
+ const cur=await paths();await api('PATCH','/api/settings/knowledge-paths',{version:cur.version,paths:baseline.paths});await submit();
+ await W(()=>/更新/.test(document.querySelector('.desktop-knowledge [role=alert]')?.textContent||''));
+ await p.click('.desktop-knowledge [role=alert] button');await W(()=>!document.querySelector('.desktop-knowledge [role=alert]'));
+ await submit();await W(()=>/移除/.test(document.querySelector('.desktop-knowledge [role=alert]')?.textContent||''));
+ check('deleted owner blocked without dropping edit',await val()===B&&!(await paths()).paths.some(x=>x.id===id));
+}
+try{
+ await p.goto('http://127.0.0.1:46500/desktop.html#chat');await p.reload();await W(()=>!!window.OpsTwinsDesktop?.v17&&!document.querySelector('#desktop-boot'));
+ if(await p.evaluate(()=>document.querySelector('#task-dialog').open))await p.click('#close-task');await p.click('button[aria-label="对话"]');await W(()=>document.querySelector('#view-chat').classList.contains('active'));
+ info.modules=await p.evaluate(()=>[...document.scripts].map(s=>s.src).filter(s=>s.includes('islands')));
+ const bundle=await fs.readFile(R+'/native/mygo/assets/desktop-islands.html','utf8'),expected=bundle.match(/<script[^>]*src="([^"]+)"/)[1];check('loaded exact current islands module',info.modules.some(u=>u.endsWith(expected.replace(/^\.\//,''))),{expected,actual:info.modules});
+ const actions=await p.evaluate(()=>{const card=[...document.querySelectorAll('[data-chat-request]')].find(r=>[...r.querySelectorAll('button')].some(b=>b.textContent==='重试'));if(!card)return null;return [...card.querySelectorAll('button')].filter(b=>['重试','查看原记录'].includes(b.textContent)).map(b=>{const s=getComputedStyle(b),r=b.getBoundingClientRect();return {text:b.textContent,height:r.height,font:s.fontSize,fontWeight:s.fontWeight,border:s.border,background:s.backgroundColor,color:s.color,padding:s.padding}})});
+ info.chatActions=actions;check('chat failure actions share visible style',actions?.length===2&&actions.every(a=>a.height>=28&&a.font==='12px')&&['height','font','fontWeight','border','background','color','padding'].every(k=>actions[0][k]===actions[1][k]),actions);
+ await p.evaluate(()=>{const card=[...document.querySelectorAll('[data-chat-request]')].find(r=>r.querySelector('.chat-retry'));for(const b of card.querySelectorAll('.chat-agent-result>button'))if(['重试','查看原记录'].includes(b.textContent))b.dataset.remainingAction=b.textContent==='重试'?'retry':'record'});
+ for(const key of ['retry','record']){await p.focus('[data-remaining-action='+key+']');await p.keyboard.press('Tab');await p.keyboard.press('Shift+Tab');const f=await p.evaluate(key=>{const b=document.querySelector('[data-remaining-action='+key+']'),s=getComputedStyle(b);return {focused:document.activeElement===b,width:parseFloat(s.outlineWidth),style:s.outlineStyle}},key);check('chat '+key+' keyboard focus visible',f.focused&&f.width>=2&&f.style!=='none',f);const d=await p.evaluate(key=>{const b=document.querySelector('[data-remaining-action='+key+']'),old=b.disabled;b.disabled=true;const s=getComputedStyle(b),data={opacity:parseFloat(s.opacity),cursor:s.cursor,height:b.getBoundingClientRect().height};b.disabled=old;return data},key);check('chat '+key+' disabled style clear',d.opacity<=.6&&d.cursor==='default'&&d.height>=28,d);}
+ await shot('chat-actions');
+ await section('about');await W(()=>document.querySelector('#settings-window').textContent.includes('0.1.0'));check('About uses actual product version',await p.evaluate(()=>document.querySelector('#settings-window .ss-content').textContent.includes('0.1.0')&&!document.querySelector('#settings-window .ss-content').textContent.includes('0.2.15')));await shot('about');await p.click('#close-settings');
+ const notes='## Public unsafe link boundary\n\n[bad](javascript:alert%281%29) [payload](data:text/html,unsafe) [relative](/private) [**unsafe bold**](javascript:alert%281%29)\n\n<a href="javascript:alert(1)"><strong>unsafe bold</strong></a>\n\n[secure](https://example.com) [mail](mailto:qa@example.com)\n\n<script>window.remainingUnsafeExecuted=true</script><img src=x onerror="window.remainingUnsafeExecuted=true">';
+ const created=await api('POST','/api/tasks',{id:id+'-markdown',title:'公开链接安全验收',notes,status:'pending'});check('public Markdown task persisted',created.status===200||created.status===201);
+ await p.reload();await W(()=>!!window.OpsTwinsDesktop?.v17&&!document.querySelector('#desktop-boot'));await p.click('button[aria-label="任务"]');await p.click('[data-task-id="'+id+'-markdown"]');await p.waitForSelector('.v17-task-document');
+ const md=await p.evaluate(()=>{const n=document.querySelector('.v17-task-document');return {links:[...n.querySelectorAll('a')].map(a=>({href:a.getAttribute('href'),target:a.target,rel:a.rel})),unsafeBold:!![...n.querySelectorAll('strong')].find(s=>s.textContent==='unsafe bold'),text:n.textContent,script:!!n.querySelector('script,img,[onerror]'),executed:!!window.remainingUnsafeExecuted}});info.markdown=md;
+ check('unsafe links unwrap to inert readable content',md.links.length===2&&md.links.every(a=>/^(https:\/\/|mailto:)/.test(a.href))&&md.unsafeBold&&md.text.includes('bad')&&md.text.includes('payload')&&!md.script&&!md.executed,md);
+ check('valid links retain safe external attributes',md.links.every(a=>a.target==='_blank'&&a.rel.includes('noopener')&&a.rel.includes('noreferrer')));await p.waitForFunction(()=>getComputedStyle(document.querySelector('#task-dialog')).opacity==='1');await p.waitForTimeout(300);await shot('markdown-safe');await p.click('#close-task');
+ await knowledge();await missingEdit();await cancel();check('Cancel restores independent Add and clears stale failure',await val()===ADD&&await p.evaluate(()=>!document.querySelector('.desktop-knowledge [role=alert]')));
+ await missingEdit();await p.waitForSelector('.knowledge-add-new');await api('POST','/api/pilot/v17-fault',{name:'knowledge'});await recover();await W(()=>/公开故障/.test(document.querySelector('.desktop-knowledge [role=alert]')?.textContent||''));check('explicit re-add 503 preserves both row deletion and edit',await val()===B&&!(await paths()).paths.some(x=>x.path===B));await shot('readd-503');
+ await p.evaluate(()=>{const f=window.fetch;window.__remainingOriginalFetch=f;window.__remainingHold=false;window.fetch=async(...args)=>{const url=String(args[0]),opts=args[1];const r=await f(...args);if(url.includes('/api/settings/knowledge-paths')&&opts?.method==='PATCH'){window.__remainingHold=true;await new Promise(resolve=>window.__remainingRelease=resolve)}return r}});info.controlledResponseHold=true;
+ await p.click('.knowledge-retry');await W(()=>window.__remainingHold);await fill(C);await p.evaluate(()=>window.__remainingRelease());await W(()=>!document.querySelector('.knowledge-path-entry button:not([type=button])').disabled);await p.evaluate(()=>{window.fetch=window.__remainingOriginalFetch});
+ const saved=await paths(),newRow=saved.paths.find(x=>x.path===B);check('explicit re-add creates fresh canonical ID',!!newRow&&newRow.id!==id&&!saved.paths.some(x=>x.id===id));check('later input survives re-add response',await val()===C);
+ await submit();await W(C=>[...document.querySelectorAll('.knowledge-path-row>span')].some(n=>n.textContent===C),C);
+ const later=await paths();check('later edit saves under new canonical owner',later.paths.some(x=>x.id===newRow.id&&x.path===C)&&!later.paths.some(x=>x.path===B));check('original Add draft restored after later edit save',await val()===ADD);await shot('readd-recovered');
+ await section('general');await knowledge();check('recovered canonical row survives route reload',await p.evaluate(C=>[...document.querySelectorAll('.knowledge-path-row>span')].some(n=>n.textContent===C),C));
+}catch(e){info.error=String(e);checks.push({name:'exception',status:'FAIL',detail:String(e)});await shot('failure').catch(()=>{});process.exitCode=1}
+finally{await p.evaluate(()=>{if(window.__remainingOriginalFetch)window.fetch=window.__remainingOriginalFetch;window.__remainingRelease?.()}).catch(()=>{});const cur=await paths();const restored=await api('PATCH','/api/settings/knowledge-paths',{version:cur.version,paths:baseline.paths});const after=await paths();checks.push({name:'exact canonical baseline restored',status:restored.status===200&&after.version===baseline.version?'PASS':'FAIL'});await fill('').catch(()=>{});if(await p.evaluate(()=>document.querySelector('#settings-window').open).catch(()=>false))await p.click('#close-settings').catch(()=>{});await fs.writeFile(O+'/result.json',JSON.stringify({at:new Date().toISOString(),checks,info},null,2));console.log({out:O,passed:checks.filter(x=>x.status==='PASS').length,total:checks.length,error:info.error})}

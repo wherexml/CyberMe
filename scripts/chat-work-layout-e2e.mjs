@@ -1,0 +1,13 @@
+const fs=await import('node:fs/promises'),p=(await taskSpace(8)).page('p1'),out='/Users/steve/Projects/opstwin-advance/output/chat-work-real-20261023/layout-'+Date.now();await fs.mkdir(out,{recursive:true});const checks=[];
+try{
+ await p.reload();await p.waitForSelector('#chat-work-source-button');
+ for(const width of [1280,680,420]){
+  await p.cdp('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
+  await p.waitForFunction(w=>innerWidth===w,width);
+  const geometry=await p.evaluate(()=>{const input=document.querySelector('#input').getBoundingClientRect(),composer=document.querySelector('#composer').getBoundingClientRect();return {width:innerWidth,input:{x:input.x,y:input.y,width:input.width,height:input.height},composer:{x:composer.x,y:composer.y,width:composer.width,height:composer.height},overflow:document.documentElement.scrollWidth>innerWidth,buttons:[...document.querySelectorAll('#composer>button')].map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})}});
+  if(geometry.overflow||geometry.input.width<100||geometry.buttons.some(b=>b.x<geometry.composer.x||b.x+b.width>geometry.composer.x+geometry.composer.width+1||b.y<geometry.composer.y||b.y+b.height>geometry.composer.y+geometry.composer.height+1))throw Error('Composer overflow at '+width);
+  checks.push({name:'Composer and source button fit '+width+'px',status:'PASS',geometry});
+  await p.click('#chat-work-source-button');await p.waitForSelector('.chat-work-picker input[type=checkbox]');const picker=await p.evaluate(()=>({width:document.querySelector('#detail-dialog').getBoundingClientRect().width,checks:[...document.querySelectorAll('.chat-work-picker input[type=checkbox]')].map(e=>e.getBoundingClientRect().width),overflow:document.querySelector('#dialog-content').scrollWidth>document.querySelector('#dialog-content').clientWidth}));if(picker.width>width||picker.checks.some(w=>w!==16)||picker.overflow)throw Error('Source picker overflow at '+width);checks.push({name:'Source picker controls fit '+width+'px',status:'PASS',picker});await p.click('#detail-dialog button:text-is("完成")');
+ }
+ await p.cdp('Emulation.clearDeviceMetricsOverride',{});await p.click('#chat-work-source-button');await p.waitForSelector('.chat-work-picker input[type=checkbox]');await fs.writeFile(out+'/source-picker.snapshot.txt',await p.snapshot());await p.click('#detail-dialog button:text-is("完成")');
+}catch(e){checks.push({name:'Layout',status:'FAIL',error:e.message});process.exitCode=1;console.error(e.message)}finally{await p.cdp('Emulation.clearDeviceMetricsOverride',{});await fs.writeFile(out+'/result.json',JSON.stringify({checks},null,2));console.log(out)}

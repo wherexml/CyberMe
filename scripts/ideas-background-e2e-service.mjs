@@ -16,7 +16,14 @@ const {app}=await import('../server/src/index.ts');
 let calls=0,mode='normal',held=[],seenTools=[],lastResponse=null;
 const model=createServer(async(req,res)=>{
  let body='';for await(const c of req)body+=c;const input=JSON.parse(body);calls++;seenTools.push(input.tools?.length||0);
- const content=input.messages.at(-1).content,text=typeof content==='string'?content:content.map(c=>c.text||'').join('');
+ if(input.tools?.some(t=>t.function?.name==='search_idea_sources')&&!input.messages.some(m=>m.role==='tool')){
+  res.writeHead(200,{'content-type':'text/event-stream'});
+  const delta={role:'assistant',tool_calls:[{index:0,id:'public-source-check',type:'function',function:{name:'search_idea_sources',arguments:JSON.stringify({query:'公开'})}}]};
+  for(const [d,finish] of [[delta,null],[{},'tool_calls']])res.write('data: '+JSON.stringify({id:'public',object:'chat.completion.chunk',created:1,model:'public-ideas',choices:[{index:0,delta:d,finish_reason:finish}]})+'\n\n');
+  res.end('data: [DONE]\n\n');return;
+ }
+
+ const content=input.messages.findLast(m=>m.role==='user').content,text=typeof content==='string'?content:content.map(c=>c.text||'').join('');
  const ctx=JSON.parse(text.split('资料 JSON：\n').at(-1));
  const refs=ctx.sources,source=refs.find(x=>x.id==='public-source'),candidates=ctx.existingIdeas;
  let result={ideas:[],retire:[]};

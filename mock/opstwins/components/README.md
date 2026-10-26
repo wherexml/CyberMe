@@ -11,6 +11,6 @@
 
 `common.css` 将来源语义token映射到现有浅/深色主题。独立1000×700产品预览缩小时，adapter调整portalled菜单尺寸、坐标和边界，不修改上游选择器。原生select只隐藏显示，不移除name、value、disabled或表单关系。每次重绘先关闭旧菜单，选择通过vm-select-change映射原select的change。
 
-已接入所有现有下拉：顶部页面导航、通用主题/语言、当前模型/供应商、供应商协议、采集窗口、连接类型/权限、六类自主权限及听写语言。新增select通过render中的upgradeSelects自动接入；不得为绕过权限使用自定义选项写状态。
+已接入所有现有下拉：顶部页面导航、通用主题/语言、当前模型/供应商、供应商协议、采集窗口、连接类型/权限、六类自主权限。新增select通过render中的upgradeSelects自动接入；不得为绕过权限使用自定义选项写状态。
 
 入口：`mock/README.md`；设计：[共享组件和主会话](../../../docs/design/mock-shared-components-main-inbox.md)。复验脚本：`scripts/opstwins-mock-components-main-e2e.mjs` 和完整Mock E2E。复制一致性摘要位于本项目忽略目录 `output/mock-components-main-20261017/component-provenance.json`。
