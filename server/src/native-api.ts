@@ -51,7 +51,7 @@ export function mountNativeApi(app:Hono){
   const row=db.prepare('SELECT state,data FROM draft_requests WHERE id=?').get(requestId) as {state:string;data:string}|undefined;
   if(!row)throw new ApiError(404,'request_not_found','原请求尚未登记');const saved=JSON.parse(row.data);
   if(saved.itemId!==id)throw new ApiError(404,'request_not_found','原请求不属于此事项');
-  c.header('Cache-Control','no-store');return json(c,{requestId,status:row.state,itemId:id,runId:saved.runId||saved.run?.id,item});
+  c.header('Cache-Control','no-store');return json(c,{requestId,status:row.state,itemId:id,runId:saved.runId||saved.run?.id,...(saved.tone?{tone:saved.tone}:{}),item});
  });
  app.get('/api/native/version',c=>json(c,{apiVersion:1,revision:revision(),server:'opstwin-advance',features:['messages.page','events.sse']}));
 

@@ -24,3 +24,6 @@ doocs/sprint*
 *.p8
 *.key
 credentials/
+
+# Machine-local migration and private acceptance pointers.
+/CYBERME.md

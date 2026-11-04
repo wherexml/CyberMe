@@ -28,3 +28,16 @@ Web 使用 `46100`，API 使用 `46110`。`npm run build` 执行类型检查与 
 ## 公开范围
 
 本仓库包含清理后的源码历史和公开文档。业务资料、运行日志、真实验收截图、私有配置及历史内部文档不随源码发布。原项目历史另有私有备份；请不要将旧历史合并回本仓库。
+
+## V6 桌面候选界面
+
+当前源码的桌面入口为 `web/cyberme.html`：左侧对话，右侧简报、任务、记忆与设置。`desktop.html` 保留为经典工作区；已安装 App 使用包内资源，修改源码不会自动更新安装版。
+
+```sh
+npm run typecheck
+node node_modules/vite/bin/vite.js build --config web/mygo.vite.config.ts
+```
+
+资源输出到 `.local/mygo-web/`。单独托管这些静态文件不会自动接通 `/api`；需配套同源后端或原生桥。默认 `npm run dev` 仍启动原 Web 入口，不能用于证明 V6 原生安装完成。
+
+界面与能力边界见 [V6 规格](docs/public/cyberme-v6.md)，接口规则见 [V6 数据契约](docs/public/v6-data-contract.md)，本次变更见 [中文提交说明](docs/public/changes/2026-11-05-v6.md)。

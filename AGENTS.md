@@ -11,3 +11,5 @@
 - The ideas console is read-only. Registration, configuration, worker enablement and actual execution are separate facts; never infer completion from generation or conversion alone.
 - Update module specifications and provide precise validation boundaries in Chinese commit descriptions.
 - Workspace-local guidance, when present, remains private at `.local/private-project-instructions/AGENTS.md`; read it without publishing its contents.
+
+- For V6 changes, follow `docs/public/cyberme-v6.md` and `docs/public/v6-data-contract.md`; distinguish source preview from the installed app.

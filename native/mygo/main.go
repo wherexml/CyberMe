@@ -119,7 +119,7 @@ func main() {
 	mygo.App.WhenReady(func() {
 		width := 1000
  if serviceScope == "mygo-v17-public" { if n, err := strconv.Atoi(acceptanceWindowWidth); err == nil && n >= 640 && n <= 1600 { width = n } }
- w := mygo.NewWindow(mygo.WindowOptions{Title: "CyberMe", URL: assetPrefix + "/desktop.html", Width: width, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
+ w := mygo.NewWindow(mygo.WindowOptions{Title: "CyberMe", URL: assetPrefix + "/cyberme.html", Width: width, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
 		w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
 			if !localURL(e.URL) {
 				e.PreventDefault()

@@ -32,3 +32,15 @@ MyGO完整身份/记忆编辑器、连接查看和采集尺寸统一遵循 [sett
 ## MyGO 自动记忆
 
 桌面`src/desktop/full/memory.js`通过真实API显示摘要、来源、自动记忆撤销/忘记与失败重试；不写手动MEMORY、不缓存记忆正文到localStorage。完整契约及验收见[会话记忆](../docs/spec/conversation-memory.md)。
+
+## V6 入口与模块分工
+
+`cyberme.html` / `src/v6/` 为当前桌面候选入口，使用 `mygo.vite.config.ts` 构建到 `.local/mygo-web/`；普通 `vite.config.ts` 仍用于原 Web 页面。开发服务器 46300 只提供前端，当前配置没有 API 代理；完整交互须另接同源服务。
+
+- `App.tsx`、`store.ts`：会话、请求回执、界面偏好、原生状态桥与迟到响应归属。
+- `Brief.tsx`、`Tasks.tsx`、`Proposal.tsx`：简报、工作状态、草稿审阅与逐项回执；选择文案不代表执行完成。
+- `Memory.tsx`、`Settings.tsx`：版本化文档编辑与已有能力适配；未接入能力保持不可用。
+- `derive.ts`、`visuals.tsx`：依据已有记录绘图；共享校验位于 `shared/v6-visuals.ts`。
+- `src/desktop/full/v6-return.js`：经典版返回入口；当前只切换大页，不保证定位具体事项。
+
+详细规范：[V6 界面](../docs/public/cyberme-v6.md)、[数据契约](../docs/public/v6-data-contract.md)。Mock、浏览器隔离数据、真实模型与安装版分别验收。

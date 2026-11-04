@@ -94,3 +94,9 @@ API SIGTERM/SIGINT 最多3秒关闭，停止后台调度并终止残留SSE；重
 ## 会话记忆
 
 `conversation-memory.ts`为产品层持久摘要、按需召回和自动记忆；MyGO独立包通过`OPSTWIN_MEMORY_BACKGROUND=1`开启后台队列。真实模型与恢复验收分别运行 `node scripts/conversation-memory-live-e2e.mjs`、`node scripts/conversation-memory-recovery-e2e.mjs`（从仓库根目录）；详见[规格](../docs/spec/conversation-memory.md)。
+
+## V6 增量接口契约
+
+V6 复用既有业务接口。起草请求新增可选 `tone: brief | warm`，随原 `requestId` 持久化并参与请求指纹；改变语气不能重用旧请求。候选应用和原请求回查保留语气。Chat 工作面板与工作记录可透传仅展示用途的 `v6` 对象，不授予执行权限、不替代 canonical 状态。
+
+字段、错误、历史兼容与验证边界见 [V6 数据契约](../docs/public/v6-data-contract.md)。

@@ -68,13 +68,15 @@ function verifyArtifact(id:string):{id:string;verified:false;reason:string;name?
 }
 const runArtifacts=(runIds:string[])=>list('artifacts').filter(a=>a.runId&&runIds.includes(a.runId));
 
+// Optional V6 display payload (shared/v6-visuals.ts); the client validates it again before rendering.
+const displayOnly=(v:any)=>v&&typeof v==='object'&&!Array.isArray(v)?v:undefined;
 function publicPanel(p:any){
  if(!p)return undefined;
- return publicValue({id:p.id,conversationId:p.conversationId,messageId:p.messageId,userMessageId:p.userMessageId,operationId:p.operationId,status:p.status,revision:p.revision,prompt:p.prompt,sources:(p.sourceVersions||[]).map((s:any)=>({id:s.id,title:s.title})),options:(p.options||[]).map((o:any)=>({id:o.id,label:o.label,summary:o.summary,sourceIds:o.sourceIds,intent:o.intent,actionLabel:o.actionLabel,recommended:p.jev?.recommendedOptionId===o.id})),jev:p.jev,selectedOptionId:p.selectedOptionId,workId:p.workId,runId:p.runId,error:p.error,errorCode:p.errorCode,staleSource:p.staleSource,createdAt:p.createdAt,updatedAt:p.updatedAt});
+ return publicValue({id:p.id,conversationId:p.conversationId,messageId:p.messageId,userMessageId:p.userMessageId,operationId:p.operationId,status:p.status,revision:p.revision,prompt:p.prompt,sources:(p.sourceVersions||[]).map((s:any)=>({id:s.id,title:s.title})),options:(p.options||[]).map((o:any)=>({id:o.id,label:o.label,summary:o.summary,sourceIds:o.sourceIds,intent:o.intent,actionLabel:o.actionLabel,recommended:p.jev?.recommendedOptionId===o.id})),jev:p.jev,selectedOptionId:p.selectedOptionId,workId:p.workId,runId:p.runId,error:p.error,errorCode:p.errorCode,staleSource:p.staleSource,v6:displayOnly(p.v6),createdAt:p.createdAt,updatedAt:p.updatedAt});
 }
 function publicWork(w:any){
  if(!w)return undefined;const task=get('tasks',w.taskId);
- return publicValue({id:w.id,conversationId:w.conversationId,messageId:w.messageId,panelId:w.panelId,optionId:w.optionId,operationId:w.operationId,title:w.title,status:w.status,native:w.native?{requestId:w.native.requestId,engine:w.native.engine,access:w.native.access,model:w.native.model,effort:w.native.effort,receipt:w.native.receipt}:undefined,importErrors:w.importErrors,runId:w.runId,runIds:(w.attempts||[]).map((a:any)=>a.runId),task:task?{id:task.id,title:task.title,status:task.status,completed:task.completed}:{id:w.taskId,missing:true},artifacts:(w.artifactIds||[]).map(verifyArtifact),error:w.error,errorCode:w.errorCode,stopReason:w.stopReason,createdAt:w.createdAt,updatedAt:w.updatedAt,completedAt:w.completedAt});
+ return publicValue({id:w.id,conversationId:w.conversationId,messageId:w.messageId,panelId:w.panelId,optionId:w.optionId,operationId:w.operationId,title:w.title,status:w.status,native:w.native?{requestId:w.native.requestId,engine:w.native.engine,access:w.native.access,model:w.native.model,effort:w.native.effort,receipt:w.native.receipt}:undefined,importErrors:w.importErrors,runId:w.runId,runIds:(w.attempts||[]).map((a:any)=>a.runId),task:task?{id:task.id,title:task.title,status:task.status,completed:task.completed}:{id:w.taskId,missing:true},artifacts:(w.artifactIds||[]).map(verifyArtifact),error:w.error,errorCode:w.errorCode,stopReason:w.stopReason,v6:displayOnly(w.v6),createdAt:w.createdAt,updatedAt:w.updatedAt,completedAt:w.completedAt});
 }
 function projection(op:any){
  if(!op)return undefined;

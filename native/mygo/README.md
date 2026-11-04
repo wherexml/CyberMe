@@ -2,7 +2,7 @@
 
 当前目标为 macOS 完整产品 + 最新 HTML，原三页先导已扩展；完整交付尚须逐项验收，不能由编译或页面数量推定。
 
-固定 MyGO v0.2.15 / Go 1.27.1，当前唯一桌面客户端为 MyGO；GPUI 已于 2026-10-18 退役，Logo 位于 brand/cyberme.svg。入口为 `mygo://localhost/desktop.html`；`index.html` 仅公开视觉资格，`pilot.html` 仅历史先导诊断。
+固定 MyGO v0.2.15 / Go 1.27.1，当前唯一桌面客户端为 MyGO；GPUI 已于 2026-10-18 退役，Logo 位于 brand/cyberme.svg。当前源码入口为 `mygo://localhost/<资源摘要前缀>/cyberme.html`（旧安装版仍可能加载 `desktop.html`）；`index.html` 仅公开视觉资格，`pilot.html` 仅历史先导诊断。
 
 ## 运行
 
@@ -45,3 +45,9 @@ CyberMe 左下角更新图标通过 `DesktopUpdate` 原生桥检查本机固定�
 `update.go` 提供异步检查、下载、取消和状态轮询；`internal/updatefeed` 验证签名清单和安全归档；固定公钥与 feed 位于 `update-policy.json`。保留同用户已有本机候选渠道，否则使用当前用户 Application Support 内的私有更新目录。原子安装与回滚沿用 `scripts/cyberme-updater.mjs`。
 
 无新版不显示左下角按钮，手动检查位于设置→通用。正式包须签名、公证并附票；`scripts/cyberme-release.mjs` 从全新输出目录生成归档，用生产解包器与 Gatekeeper 再验后，经 draft/hash 回读才发布。私钥不入库。见 [规范](../../docs/spec/cyberme-online-updates.md) 与 [验收](../../docs/journeys/cyberme-online-update-20261023.md)。
+
+## V6 资源接线
+
+`main.go` 打开 `cyberme.html`；`scripts/mygo-build.mjs` 先构建 `web/mygo.vite.config.ts` 再嵌入资源。`scripts/mygo-full-assets.mjs` 保留经典工作区及 V6 返回入口。应用标识、用户数据目录和既有草稿不因界面切换而重命名。
+
+浏览器构建通过只证明前端资源可生成。重新打包、签名、安装升级、真实模型及业务数据兼容均需独立验证；本轮未替换安装版。见 [V6 规格](../../docs/public/cyberme-v6.md)。
