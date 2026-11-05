@@ -245,8 +245,8 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
   if(work){rows.push(<div key={msg.id} data-mid={msg.id} style={wrap(msg.id)}><WorkEvent ctx={ctx} work={work} label={T.taskCreated} onOpen={()=>openDetail({type:'task',id:work.id})}/></div>);continue}
   const panel=(ws.work?.panels||[]).find((p:any)=>p.messageId===msg.id);
   const text=msg.content||'';if(!text.trim()&&!panel)continue;
-  rows.push(<div key={msg.id} data-mid={msg.id} style={wrap(msg.id)}><div {...hoverProps(msg.id)} style={{display:'flex',gap:10,alignItems:'flex-start'}}><div style={{minWidth:0,maxWidth:panel?'85%':'80%',display:'flex',flexDirection:'column',gap:8}}>
-   {text.trim()?<div data-ai-text="1" style={{width:'fit-content',maxWidth:'100%',...bubble,padding:'10px 14px',textWrap:'pretty',lineHeight:1.6} as React.CSSProperties}><Md text={text}/></div>:null}
+  rows.push(<div key={msg.id} data-mid={msg.id} style={wrap(msg.id)}><div {...hoverProps(msg.id)} style={{display:'flex',gap:10,alignItems:'flex-start'}}><div style={{minWidth:0,maxWidth:'calc(100% - 38px)',display:'flex',flexDirection:'column',gap:8}}>
+   {text.trim()?<div data-ai-text="1" style={{maxWidth:'100%',...bubble,padding:'10px 14px',textWrap:'wrap',overflowWrap:'anywhere',lineHeight:1.6} as React.CSSProperties}><Md text={text}/></div>:null}
    {panel?<PanelCard ctx={ctx} panel={panel}/>:null}
   </div><button type="button" onClick={()=>quoteFrom(text)} aria-label="Quote reply" title={XL.quoteReply} style={quoteBtn(hoverMid===msg.id)}><I n="arrow-bend-up-left" style={{fontSize:14}}/></button></div></div>);
  }
@@ -272,7 +272,7 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
    </div>
 
    <div ref={scrollRef} className="cm-scroll" onScroll={e=>{const el=e.currentTarget;const far=el.scrollHeight-el.scrollTop-el.clientHeight>240;if(far!==showDown)setShowDown(far);if(sel)setSel(null);if(el.scrollTop<40&&hasMore)void older()}} onWheel={cancelNav} onTouchMove={cancelNav} onKeyDown={cancelNav} onMouseUp={()=>setTimeout(checkSel,0)} onMouseDown={()=>{cancelNav();if(sel)setSel(null)}} style={{flex:1,minHeight:0,overflowY:'auto',position:'relative'}}>
-    <div style={{maxWidth:720,margin:'0 auto',padding:'8px 32px 28px',display:'flex',flexDirection:'column',gap:14}}>
+    <div className="cm-chat-column" style={{padding:'8px 0 28px',display:'flex',flexDirection:'column',gap:14}}>
      {hasMore?<Hv onClick={()=>void older()} style={{alignSelf:'center',height:26,padding:'0 10px',border:'none',borderRadius:13,background:'transparent',color:'var(--text3)',font:'inherit',fontSize:12,cursor:'pointer'}} hover={{background:'var(--hover)',color:'var(--text)'}}>{loadingOlder?'…':T.loadOlder}</Hv>:null}
      {!rows.length&&!typing?<div style={{paddingTop:'24vh',display:'flex',flexDirection:'column',alignItems:'center',gap:6,textAlign:'center',animation:'cmIn 250ms ease-out both'}}><div style={{fontSize:20,fontWeight:600,letterSpacing:'-0.01em'}}>{T.greeting(ws.settings.identity.name||'')}</div><div style={{color:'var(--text2)'}}>{T.greetSub}</div></div>:null}
      {rows}
@@ -281,9 +281,9 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
    </div>
 
    {sel?<button type="button" onMouseDown={e=>e.preventDefault()} onClick={()=>{const q=sel.text;window.getSelection()?.removeAllRanges();setQuote(q);setSel(null);focus()}} style={{position:'absolute',zIndex:5,left:sel.x,top:sel.y,transform:'translateX(-50%)',height:30,padding:'0 12px',display:'flex',alignItems:'center',gap:6,border:'none',borderRadius:'var(--r-btn)',background:'var(--text)',color:'var(--convBg)',font:'inherit',fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',boxShadow:'0 6px 16px -6px rgba(0,0,0,.35)',animation:'cmPop 250ms ease-out both'}}><I n="arrow-bend-up-left" style={{fontSize:14}}/><span>{XL.quoteReply}</span></button>:null}
-   <div style={{flex:'none',padding:'0 32px 20px',position:'relative'}}>
+   <div style={{flex:'none',padding:'0 0 20px',position:'relative'}}>
     {showDown?<Hv onClick={()=>{cancelNav();scrollRef.current?.scrollTo({top:scrollRef.current.scrollHeight,behavior:'smooth'})}} aria-label="Scroll to latest" style={{position:'absolute',left:'50%',top:-46,marginLeft:-17,width:34,height:34,borderRadius:'50%',border:'none',background:'var(--composer)',boxShadow:'0 0 0 0.5px var(--lineStrong), 0 4px 12px -4px rgba(0,0,40,.18)',color:'var(--text2)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',animation:'cmIn 250ms ease-out both'}} hover={{color:'var(--text)'}}><I n="arrow-down" style={{fontSize:16}}/></Hv>:null}
-    <div style={{maxWidth:656,margin:'0 auto',display:'flex',flexDirection:'column',gap:10,position:'relative'}}>
+    <div className="cm-chat-column cm-composer-column" style={{display:'flex',flexDirection:'column',gap:10,position:'relative'}}>
      {menu?<div style={{position:'absolute',left:0,bottom:'calc(100% + 8px)',width:'min(420px, 100%)',maxHeight:360,overflowY:'auto',background:'var(--composer)',borderRadius:'var(--r-menu)',boxShadow:'0 0 0 0.5px var(--lineStrong), 0 12px 32px -8px rgba(0,0,40,.22)',padding:6,display:'flex',flexDirection:'column',gap:2,transformOrigin:'bottom left',animation:'cmPop 250ms ease-out both',zIndex:3}}>
       <div style={{padding:'6px 10px 4px',fontSize:12,color:'var(--text3)'}}>{T.attachH}</div>
       {!menuItems.length?<div style={{padding:'6px 10px 10px',color:'var(--text2)'}}>{T.insEmpty}</div>:null}
