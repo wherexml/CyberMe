@@ -4,7 +4,6 @@ import type {InboxItem} from '../../../shared/types';
 import {I} from './icons';
 import {Hv,pill,actBtn,unset,type PillStatus} from './ui';
 import {api,enc,uid,setUI,getUI,durable,type Proposal} from './store';
-import {openClassic} from './Brief';
 import {proposalState,emailSteps} from './proposal-state';
 
 // V6 email proposal → task → review → result → follow-up, mapped onto the real Inbox contracts:
@@ -133,7 +132,7 @@ function useProposal(ctx:Ctx,p:Proposal){
    if(prior?.requestId&&['unknown','starting'].includes(prior.status)){const r=await readDraft(it,prior.requestId,prior.tone);if(r.status!=='unregistered'){update(p.id,x=>({...x,drafts:{...x.drafts,[it.id]:{...prior,...r}}}));if(r.status!=='failed')continue}else{await draftOne(p.id,it,prior.tone,prior.requestId);continue}}
    // An existing draft is reused only in the proposal's tone; a different-tone draft the user edited is never overwritten.
    if(draftOf(it)&&!(it as any).draftStale&&toneOf(it)===tone){update(p.id,x=>({...x,drafts:{...x.drafts,[it.id]:{requestId:'',status:'succeeded',tone}}}));continue}
-   if(draftOf(it)&&(it as any).editedByUser&&toneOf(it)!==tone){update(p.id,x=>({...x,drafts:{...x.drafts,[it.id]:{requestId:'',status:'review',tone,error:zh?'已有你修改过的草稿，语气不同；请在完整收件箱中处理。':'An edited draft in a different tone already exists; review it in the full Inbox.'}}}));continue}
+   if(draftOf(it)&&(it as any).editedByUser&&toneOf(it)!==tone){update(p.id,x=>({...x,drafts:{...x.drafts,[it.id]:{requestId:'',status:'review',tone,error:zh?'已有你修改过的草稿，语气不同；请核对草稿。':'An edited draft in a different tone already exists; review the draft.'}}}));continue}
    // A request the server never registered is retried with the same id and tone; a confirmed failure gets a new id.
    await draftOne(p.id,it,prior?.status==='not_started'&&prior.requestId?prior.tone:tone,prior?.status==='not_started'?prior.requestId:undefined)}
  }
@@ -293,7 +292,7 @@ export function ProposalTaskDetail({ctx,p,task,discuss}:{ctx:Ctx;p:Proposal;task
  const failMsg=st==='failed'?(picked.map(it=>p.sends[it.id]?.error||p.drafts[it.id]?.error).find(Boolean)||T.ts.failed):'';
  const rowNote=(it:InboxItem)=>{const d=p.drafts[it.id],sd=p.sends[it.id];const dst=d?.status;
   return sd?(sd.status==='sent'?T.ts.done:sd.status==='sending'?T.ts.sending:sd.status==='failed'||sd.status==='not_sent'?(sd.error||T.ts.failed):sd.status==='recalled'?(zh?'已撤回':'Recalled'):T.ts.unknown)
-   :dst==='running'||dst==='starting'?T.ts.running:dst==='review'?(d?.error||(zh?'候选草稿待在完整收件箱中审阅':'Draft candidate needs review in the full Inbox')):dst&&dst!=='succeeded'?(d?.error||T.ts[dst==='failed'||dst==='not_started'?'failed':'unknown']):it.sensitive?(zh?'敏感事项需在完整收件箱中审批':'Sensitive: approve in the full Inbox'):!dst?(zh?'尚未起草':'Not drafted yet'):''};
+   :dst==='running'||dst==='starting'?T.ts.running:dst==='review'?(d?.error||(zh?'候选草稿待审阅':'Draft candidate needs review')):dst&&dst!=='succeeded'?(d?.error||T.ts[dst==='failed'||dst==='not_started'?'failed':'unknown']):it.sensitive?(zh?'敏感事项尚未审批':'Sensitive item awaiting approval'):!dst?(zh?'尚未起草':'Not drafted yet'):''};
  const small:React.CSSProperties={...ghost,height:26,fontSize:12};
  // Strict reference (R:877 `dT.isConfirm`, user-approved 2026-10-29): the whole draft region shows only while awaiting review.
  // Drafts and receipts stay recorded; the failure note and sent results remain outside this visibility gate.
@@ -318,7 +317,7 @@ export function ProposalTaskDetail({ctx,p,task,discuss}:{ctx:Ctx;p:Proposal;task
       {note||(dst==='failed'||dst==='not_started')||dst==='review'||((dst==='unknown'||dst==='running')&&d?.requestId)||sd?.status==='failed'||sd?.status==='not_sent'||sd?.status==='unknown'?<div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginTop:2}}>
        {note?<span style={{flex:1,minWidth:0,fontSize:12,color:sd?.status==='sent'?'var(--okText)':sd?.status==='failed'||dst==='failed'?'var(--errText)':'var(--text3)'}}>{note}</span>:<span style={{flex:1}}/>}
        {(dst==='failed'||dst==='not_started')&&!sd?<Hv onClick={()=>void m.retryDraft(it)} disabled={!!busy} style={small} hover={{background:'var(--hover)'}}>{T.retry}</Hv>:null}
-       {dst==='review'&&!sd?<Hv onClick={()=>openClassic('inbox',it.id)} style={small} hover={{background:'var(--hover)'}}>{zh?'在完整收件箱中打开':'Open in full Inbox'}</Hv>:null}
+       {dst==='review'&&!sd?<Hv onClick={()=>ctx.openDetail({type:'ins',id:it.id})} style={small} hover={{background:'var(--hover)'}}>{zh?'查看详情':'View details'}</Hv>:null}
        {(dst==='unknown'||dst==='running')&&d?.requestId&&!sd?<Hv onClick={()=>void m.checkDraft(it)} disabled={!!busy} style={small} hover={{background:'var(--hover)'}}>{T.checkAgain}</Hv>:null}
        {sd?.status==='failed'||sd?.status==='not_sent'?<Hv onClick={()=>void m.send([it],sd.status==='failed')} disabled={!!busy} style={small} hover={{background:'var(--hover)'}}>{T.retry}</Hv>:null}
        {sd?.status==='unknown'?<Hv onClick={()=>void m.recheck(it)} disabled={!!busy} style={small} hover={{background:'var(--hover)'}}>{T.checkAgain}</Hv>:null}

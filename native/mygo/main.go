@@ -112,6 +112,8 @@ func main() {
 	q := &Qualification{visible: true}
 	mygo.Bind(q)
 	mygo.Bind(&Bridge{})
+	notices := &DesktopNotifications{}
+	mygo.Bind(notices)
 	mygo.Bind(&DesktopUpdate{})
 	configureUpdates()
 	mygo.Bind(&WindowChrome{})
@@ -120,6 +122,7 @@ func main() {
 		width := 1000
  if serviceScope == "mygo-v17-public" { if n, err := strconv.Atoi(acceptanceWindowWidth); err == nil && n >= 640 && n <= 1600 { width = n } }
  w := mygo.NewWindow(mygo.WindowOptions{Title: "CyberMe", URL: assetPrefix + "/cyberme.html", Width: width, Height: 700, MinWidth: 640, MinHeight: 400, TitleBarStyle: mygo.TitleBarHidden, TrafficLightPosition: &mygo.Point{X: 16, Y: 18}})
+		notices.start(w)
 		w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
 			if !localURL(e.URL) {
 				e.PreventDefault()

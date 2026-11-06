@@ -10,7 +10,11 @@
   back.onclick=()=>{location.href='cyberme.html'};
   nav.prepend(back);
  }
- const [view]=decodeURIComponent(location.hash.slice(1)).split('/');
+ const [view,encodedId]=location.hash.slice(1).split('/');
  const page={inbox:'inbox',ideas:'ideas','ideas-console':'ideas',tasks:'tasks',search:'search',settings:'settings','settings-models':'settings','settings-connections':'settings','settings-autonomy':'settings'}[view];
- if(page)setTimeout(()=>document.querySelector(`button[data-page="${page}"]`)?.click(),0);
+ if(page)setTimeout(()=>{
+  if(view==='inbox'&&encodedId){
+   try{void window.OpsTwinsDesktop.openInbox(decodeURIComponent(encodedId))}catch{document.querySelector('button[data-page="inbox"]')?.click()}
+  }else document.querySelector(`button[data-page="${page}"]`)?.click();
+ },0);
 })();

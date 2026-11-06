@@ -1,3 +1,5 @@
+import {UpdateNotice} from './UpdateNotice';
+import {messageTime} from '../domain/message-time';
 import React,{useCallback,useEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import type {Message} from '../../../shared/types';
 import {THEMES} from './theme';
@@ -7,9 +9,10 @@ import {Hv} from './ui';
 import {Buddy,BUDDY} from './Buddy';
 import {Md} from './md';
 import {api,enc,uid,getUI,setUI,subscribeUI,loadWorkspace,loadWork,loadMessages,startChat,retryChat,recover,resumeChats,inFlight,unsent,uiError,type DraftPick,type DraftState,type Workspace,type ChatRecord,type UIState} from './store';
-import {decisions,insights,gallery,mood,relTime} from './model';
+import {decisions,insights,gallery,mood,relTime,fmtStamp} from './model';
 import {installWindowChrome,isNative} from './native';
-import Brief,{InsightDetail} from './Brief';
+import Brief,{InsightDetail,DismissAck} from './Brief';
+import {MessageActions,DigestBody} from './MessageActions';
 import Tasks,{TaskDetail,WorkEvent} from './Tasks';
 import Memory from './Memory';
 import Settings from './Settings';
@@ -29,8 +32,6 @@ export interface BuddyApi{k:string;hop:number;happy:boolean;pick:boolean;poke:(e
 
 const QUOTE_RE=/^((?:> ?.*(?:\n|$))+)\n?/;
 export function splitQuote(content:string){const m=String(content||'').match(QUOTE_RE);if(!m)return {quote:'',text:content};return {quote:m[1].split('\n').map(l=>l.replace(/^> ?/,'')).join('\n').trim(),text:content.slice(m[0].length)};}
-const dayKey=(v?:string)=>v?new Date(v).toDateString():'';
-const hhmm=(v?:string)=>v?new Date(v).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false}):'';
 
 export default function App(){
  const ui=useSyncExternalStore(subscribeUI,getUI);
@@ -38,12 +39,25 @@ export default function App(){
  const [vw,setVw]=useState(window.innerWidth);
  const [toast,setToast]=useState<{m:string;tone:string}|null>(null);
  const latestRevision=useRef(0);
- const refresh=useCallback(async()=>{
-  try{const data=await loadWorkspace();if(Number(data.revision)<latestRevision.current)return;latestRevision.current=Number(data.revision)||latestRevision.current;
-   const cid=getUI().conversationId||data.primaryConversationId;if(cid){try{data.work=await loadWork(cid)}catch{data.work={panels:[],works:[]}}}
-   setWs(data);setOffline('')}catch(e:any){setOffline(e.message||'offline')}
+ const refreshFlight=useRef<Promise<void>|null>(null);
+ const refresh=useCallback(()=>{
+  if(refreshFlight.current)return refreshFlight.current;
+  const pending=(async()=>{try{
+   const data=await loadWorkspace();if(Number(data.revision)<latestRevision.current)return;latestRevision.current=Number(data.revision)||latestRevision.current;
+   const cid=getUI().conversationId||data.primaryConversationId;
+   setWs(previous=>({...data,models:previous?.models||{unavailable:true},work:(getUI().conversationId||previous?.primaryConversationId)===cid?previous?.work:undefined}));setOffline('');
+   // Enrich independently: a slow model/settings endpoint cannot block work,
+   // and neither endpoint delays the first render or changes the active chat.
+   await Promise.allSettled([
+    api('GET','/api/settings/models',undefined,AbortSignal.timeout(15000)).then(models=>setWs(current=>current&&current.revision===data.revision?{...current,models}:current)),
+    cid?loadWork(cid).then(work=>setWs(current=>current&&current.revision===data.revision&&(getUI().conversationId||current.primaryConversationId)===cid?{...current,work}:current)):Promise.resolve(),
+   ]);
+  }catch(e:any){setOffline(e.message||'offline')}})();
+  refreshFlight.current=pending;
+  void pending.finally(()=>{if(refreshFlight.current===pending)refreshFlight.current=null});
+  return pending;
  },[]);
- useEffect(()=>{void refresh();resumeChats();const t=setInterval(()=>{if(document.visibilityState==='visible')void refresh()},15000);const r=()=>setVw(window.innerWidth);addEventListener('resize',r);return()=>{clearInterval(t);removeEventListener('resize',r)}},[refresh]);
+ useEffect(()=>{void refresh();resumeChats();const resume=()=>{if(document.visibilityState==='visible'){void refresh();resumeChats()}};const t=setInterval(resume,15000);const r=()=>setVw(window.innerWidth);addEventListener('resize',r);addEventListener('focus',resume);document.addEventListener('visibilitychange',resume);return()=>{clearInterval(t);removeEventListener('resize',r);removeEventListener('focus',resume);document.removeEventListener('visibilitychange',resume)}},[refresh]);
  const zh=(ws?.settings.identity.language||document.documentElement.lang)==='zh-CN';const lang:Lang=zh?'zh':'en';const T=L[lang],XL=X[lang];
  useEffect(()=>{document.documentElement.lang=zh?'zh-CN':'en';document.title='CyberMe'},[zh]);
  const notify=useCallback((m:string,tone:'error'|'ok'='ok')=>{setToast({m,tone});setTimeout(()=>setToast(t=>t?.m===m?null:t),tone==='error'?4200:2200)},[]);
@@ -61,6 +75,8 @@ function Frame({theme,children,winRef}:{theme:keyof typeof THEMES;children:React
 }
 
 function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspace;ui:UIState;zh:boolean;lang:Lang;T:typeof L.en;XL:typeof X.en;vw:number;refresh:()=>Promise<void>;notify:Ctx['notify'];toast:{m:string;tone:string}|null;offline:string}){
+ const [timeNow,setTimeNow]=useState(()=>new Date());
+ useEffect(()=>{const t=setInterval(()=>setTimeNow(new Date()),60000);return()=>clearInterval(t)},[]);
  const native=isNative();
  const winRef=useRef<HTMLDivElement>(null),scrollRef=useRef<HTMLDivElement>(null),taRef=useRef<HTMLTextAreaElement>(null),fileRef=useRef<HTMLInputElement>(null);
  const conversationId=ui.conversationId||ws.primaryConversationId||null;
@@ -100,29 +116,34 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  useEffect(()=>{const k=dkey;const t=setTimeout(()=>{if(owner.current===k)saveDraft(k,{draft,quote,refs,pick:pendPick,auto:autoFill.current})},400);return()=>clearTimeout(t)},[draft,quote,refs,pendPick,dkey]);// eslint-disable-line react-hooks/exhaustive-deps
  const [menu,setMenu]=useState(false),[cFlash,setCFlash]=useState(false),[showDown,setShowDown]=useState(false),[hoverMid,setHoverMid]=useState<string|null>(null),[sel,setSel]=useState<{text:string;x:number;y:number}|null>(null),[flash,setFlash]=useState<string|null>(null),[uploading,setUploading]=useState(false);
  latest.current={draft,quote,refs,pick:pendPick,auto:autoFill.current};
+ useEffect(()=>{const flush=()=>saveDraft(owner.current,latest.current);window.addEventListener('cyberme-before-update',flush);return()=>window.removeEventListener('cyberme-before-update',flush)},[]);
  const focus=()=>setTimeout(()=>taRef.current?.focus(),30);
  // ----- panel -----
  const [detail,setDetail]=useState<Detail>(null),[setPage,setSetPage]=useState<string|null>(null),[setSub,setSetSub]=useState<any>(null),[drag,setDrag]=useState(false),[hHover,setHHover]=useState(false);
- // Panel width (user correction 2026-10-26): up to two thirds of the actual app frame (browser: the constrained
- // ≤1360 window; native: the window itself, CSS px), with the 380 minimum while it fits. One bounds function serves
- // display clamping, pointer drag, keyboard and accessibility. The stored width is the preference, kept for re-enlarging.
- const [frameW,setFrameW]=useState(()=>native?vw:Math.min(1360,vw-48));
- useEffect(()=>{const el=winRef.current;if(!el)return;const set=()=>{const w=Math.round(el.getBoundingClientRect().width);if(w>0)setFrameW(w)};set();
+ // Store a fraction of the actual app frame, so resizing never grows the panel's share.
+ // Legacy pixel preferences migrate once against the first measured frame; unrelated UI state stays intact.
+ const [frameW,setFrameW]=useState(()=>Math.max(1,native?vw:Math.min(1360,vw-48)));
+ const clampRatio=(r:number)=>Math.max(1/3,Math.min(2/3,r));
+ useEffect(()=>{const el=winRef.current;if(!el)return;const set=()=>{const w=el.getBoundingClientRect().width;if(w<=0)return;setFrameW(w);
+   const saved=getUI();if(saved.panelRatio===null&&saved.panelW!==null)setUI({panelRatio:clampRatio(saved.panelW/w),panelW:null})};set();
   if(typeof ResizeObserver==='undefined'){addEventListener('resize',set);return()=>removeEventListener('resize',set)}const ro=new ResizeObserver(set);ro.observe(el);return()=>ro.disconnect()},[]);
- const bounds=(fw:number)=>{const max=Math.max(0,Math.floor(fw*2/3));return {min:Math.min(380,max),max}};
+ const bounds=(fw:number)=>({min:fw/3,max:fw*2/3});
  const {min:minW,max:maxW}=bounds(frameW);
- const W=Math.round(Math.max(minW,Math.min(ui.panelW||(vw<1180?400:460),maxW)));const tab=ui.tab;
+ const ratio=ui.panelRatio??(ui.panelW!==null?clampRatio(ui.panelW/frameW):0.4);
+ const W=frameW*ratio;const tab=ui.tab;
  const lastFrame=useRef(frameW);const resizing=lastFrame.current!==frameW;lastFrame.current=frameW;
  const openTab=(t:UIState['tab'])=>{setDetail(null);setSetPage(null);setSetSub(null);setUI({panel:true,tab:t})};
  const goSet=(page:string|null,sub?:any)=>{setDetail(null);setSetPage(page);setSetSub(sub||null);setUI({panel:true,tab:'settings'})};
  const openDetail=(d:Detail)=>{setDetail(d);if(d)setUI({panel:true,tab:d.type==='task'?'tasks':'today'})};
+ useEffect(()=>{const open=()=>{setDetail(null);setSetPage(null);setSetSub(null);setUI({panel:true,tab:'today',briefTab:'ins',conversationId:null});void refresh()};window.addEventListener('cyberme-open-insights',open);return()=>window.removeEventListener('cyberme-open-insights',open)},[refresh]);
  const backAny=()=>{if(detail)setDetail(null);else if(setSub)setSetSub(null);else setSetPage(null)};
  useEffect(()=>installWindowChrome(()=>{if(detail||setSub||setPage){backAny();return true}if(menu){setMenu(false);return true}return false}),[detail,setSub,setPage,menu]);// eslint-disable-line react-hooks/exhaustive-deps
- function startDrag(e:React.MouseEvent){e.preventDefault();const win=winRef.current;if(!win)return;const rect=win.getBoundingClientRect();let last=W;
-  const b=bounds(rect.width);const move=(ev:MouseEvent)=>{last=Math.round(Math.max(b.min,Math.min(b.max,rect.right-ev.clientX)));setUI({panelW:last})};
+ function startDrag(e:React.MouseEvent){e.preventDefault();const win=winRef.current;if(!win)return;
+  const move=(ev:MouseEvent)=>{const rect=win.getBoundingClientRect();if(rect.width>0)setUI({panelRatio:clampRatio((rect.right-ev.clientX)/rect.width),panelW:null})};
   const up=()=>{removeEventListener('mousemove',move);removeEventListener('mouseup',up);document.body.style.cursor='';document.body.style.userSelect='';setDrag(false)};
   addEventListener('mousemove',move);addEventListener('mouseup',up);document.body.style.cursor='col-resize';document.body.style.userSelect='none';setDrag(true)}
- function keyResize(e:React.KeyboardEvent){if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const b=bounds(winRef.current?.getBoundingClientRect().width||frameW);const next=e.key==='Home'?b.min:e.key==='End'?b.max:Math.max(b.min,Math.min(b.max,W+(e.key==='ArrowLeft'?16:-16)));setUI({panelW:next})}
+ function keyResize(e:React.KeyboardEvent){if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const fw=winRef.current?.getBoundingClientRect().width||frameW;
+  const next=e.key==='Home'?1/3:e.key==='End'?2/3:clampRatio(ratio+(e.key==='ArrowLeft'?16:-16)/fw);setUI({panelRatio:next,panelW:null})}
 
  // ----- buddy -----
  const [buddyHop,setBuddyHop]=useState(0),[buddyHappy,setBuddyHappy]=useState(false),[buddyPick,setBuddyPick]=useState(false),[happy,setHappy]=useState(false);
@@ -153,13 +174,13 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  const typing=ui.requests.some(r=>(r.conversationId===conversationId||!r.conversationId)&&inFlight(r));
  const titleOf=useCallback((id:string)=>ws.inbox.find(x=>x.id===id)?.title||ws.ideas.find(x=>x.id===id)?.title||ws.tasks.find(x=>x.id===id)?.title||id,[ws]);
  const submitting=useRef(false);
- // Reference canSend/send (R2047, R1392): no new send while CyberMe is replying in this conversation; the draft stays editable.
+ // New chat messages use the existing interruptCurrent handshake; executable choices keep their busy gate.
  // Id-less requests go to the primary conversation (server), so they block only there; other conversations stay free.
  const replying=ui.requests.some(r=>inFlight(r)&&(r.conversationId?r.conversationId===conversationId:(!conversationId||conversationId===ws.primaryConversationId)));
  async function send(){
-  if(replying)return;
+  if(submitting.current)return;
   const text=draft.trim();if(!text&&!refs.length&&!quote&&!attachments.length)return;
-  const pk=pendPick;const clear=()=>{autoFill.current=null;setDraft('');setRefs([]);setQuote(null);setPendPick(null);setMenu(false);setSel(null);setAttachments([])};
+  const pk=pendPick;if(replying&&((pk?.k==='work'&&pk.optionId&&text===pk.label&&(!quote||quote===pk.quote))||(pk?.k==='idea'&&text===pk.label)))return;const clear=()=>{autoFill.current=null;setDraft('');setRefs([]);setQuote(null);setPendPick(null);setMenu(false);setSel(null);setAttachments([])};
   const k0=dkey,sent=draft;const clearIfUnchanged=()=>{if(owner.current===k0&&taRef.current?.value===sent)clear();setUI(s=>s.drafts[k0]?.text===sent?{drafts:{...s.drafts,[k0]:{text:'',quote:null,refs:[],pick:null,auto:null}}}:{})};
   // A work option runs only when the composer still holds exactly that option (its automatic quote allowed); edited or combined text is sent as a conversation message.
   if(pk?.k==='work'&&pk.optionId&&text===pk.label&&(!quote||quote===pk.quote)){if(submitting.current)return;submitting.current=true;const panel=(ws.work?.panels||[]).find((p:any)=>p.id===pk.id);
@@ -216,7 +237,8 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  const m=mood(ui,ws,conversationId);const capsuleShow=happy||m.mode!=='idle';
  const sideTitle=conversationId&&ws.primaryConversationId&&conversationId!==ws.primaryConversationId?(ws.conversations.find(c=>c.id===conversationId)?.title||''):'';
  const capsuleText=happy?XL.hi:{think:XL.capThink,work:XL.capWork(m.running),wait:XL.capWait,idle:XL.capIdle}[m.mode];
- const canSend=!!(draft.trim()||refs.length||quote||attachments.length)&&!replying;
+ const executablePick=(pendPick?.k==='work'&&!!pendPick.optionId&&draft.trim()===pendPick.label&&(!quote||quote===pendPick.quote))||(pendPick?.k==='idea'&&draft.trim()===pendPick.label);
+ const canSend=!!(draft.trim()||refs.length||quote||attachments.length)&&!(replying&&executablePick);
  const circle:React.CSSProperties={width:32,height:32,flex:'none',display:'flex',alignItems:'center',justifyContent:'center',border:'none',borderRadius:'50%',transition:'background 250ms ease-out, color 250ms ease-out, transform 250ms ease-out'};
  const menuItems=[...decs.map(d=>({id:d.id,title:d.q,status:T.st.decide})),...ins.map(i=>({id:i.id,title:i.title,status:i.status})),...gal.map(g=>({id:g.id,title:g.title,status:g.kind}))];
  const lastRef=refs[refs.length-1];const sugg=lastRef?(decs.find(d=>d.id===lastRef)?.opts.map(o=>o.label)||[]):[];
@@ -227,35 +249,42 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  const bubble:React.CSSProperties={background:'var(--aiBubble)',boxShadow:'0 0 0 0.5px var(--aiLine)',borderRadius:'var(--r-bubble)'};
  const hoverProps=(id:string)=>({onMouseEnter:()=>{if(hoverMid!==id)setHoverMid(id)},onMouseLeave:()=>setHoverMid(x=>x===id?null:x)});
  const quoteFrom=(text:string)=>{setQuote(text.slice(0,800));setHoverMid(null);focus()};
- const userBubble=(id:string,content:string,ctxIds:string[]|undefined,stamp?:string)=>{const {quote:q,text}=splitQuote(content);return <div key={'u'+id} data-mid={id} style={wrap(id)} title={stamp}><div style={{display:'flex',justifyContent:'flex-end'}}><div style={{maxWidth:'78%',background:'var(--userBubble)',padding:'10px 14px',borderRadius:'var(--r-bubble)',display:'flex',flexDirection:'column',gap:4}}>
+ const metaStyle:React.CSSProperties={width:'100%',textAlign:'center',marginBottom:12,fontSize:12,lineHeight:'16px',color:'var(--text3)',overflowWrap:'anywhere'};
+ // One boundary cursor for the rendered timeline, independent of sender and source evidence.
+ let precedingTime:string|undefined;
+ const timeMeta=(at?:string)=>{const show=messageTime.showsSeparator(at,precedingTime);precedingTime=at;if(!show)return null;return <div data-msg-time style={metaStyle}>{zh?messageTime.label(at,timeNow):fmtStamp(at,false)}</div>};
+ const sourceMeta=(at?:string,source?:string)=>{const from=fmtStamp(source,zh);if(!from||source===at)return null;return <div data-source-time style={{fontSize:12,lineHeight:'16px',color:'var(--text3)',overflowWrap:'anywhere'}}>{zh?'来源':'From'} {from}</div>};
+ const userBubble=(id:string,content:string,ctxIds:string[]|undefined,stamp?:string)=>{const {quote:q,text}=splitQuote(content);return <div key={'u'+id} data-mid={id} style={wrap(id)}>{timeMeta(stamp)}<div style={{display:'flex',justifyContent:'flex-end'}}><div style={{maxWidth:'78%',background:'var(--userBubble)',padding:'10px 14px',borderRadius:'var(--r-bubble)',display:'flex',flexDirection:'column',gap:4}}>
   {q?<div style={{display:'flex',gap:6,fontSize:12,color:'var(--text2)',padding:'6px 10px',margin:'-4px -8px 2px',borderRadius:10,background:'var(--hover)'}}><I n="quotes" style={{fontSize:12,flex:'none',marginTop:3}}/><span style={{display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'} as React.CSSProperties}>{q}</span></div>:null}
   {(ctxIds||[]).map(r=><Hv key={r} onClick={()=>{const d=ws.inbox.some(x=>x.id===r);const t=ws.tasks.some(x=>x.id===r);openDetail({type:t?'task':d?'ins':'ins',id:r})}} style={{all:'unset',cursor:'pointer',display:'flex',gap:8,fontSize:12,color:'var(--text2)',minWidth:0}} hover={{color:'var(--text)'}}><span style={{color:'var(--text3)',flex:'none'}}>{T.insightRef}</span><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{titleOf(r)}</span></Hv>)}
   {text?<span style={{whiteSpace:'pre-wrap',textWrap:'pretty'} as React.CSSProperties}>{text}</span>:null}</div></div></div>};
 
- const rows:React.ReactNode[]=[];let prev:string|undefined;
+ const rows:React.ReactNode[]=[];
  // Email proposals are placed in the timeline at their creation time, among the server messages.
  const props=ui.proposals.filter(x=>x.conversationId===conversationId).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));let pi=0;
- const flush=(until?:string)=>{while(pi<props.length&&(!until||props[pi].createdAt<=until)){const x=props[pi++];rows.push(<div key={'p'+x.id} data-pid={x.id} style={{...wrap('prop:'+x.id),animation:'none',display:'flex',flexDirection:'column',gap:16}}><ProposalBlocks ctx={ctx} p={x}/></div>)}};
- const dayLabel=(v?:string)=>{if(!v)return '';const d=new Date(v),n=new Date();const y=new Date();y.setDate(n.getDate()-1);const name=d.toDateString()===n.toDateString()?T.todayL:d.toDateString()===y.toDateString()?T.yesterday:(zh?`${d.getMonth()+1} 月 ${d.getDate()} 日`:d.toLocaleDateString('en-US',{month:'short',day:'numeric'}));return `${name} ${hhmm(v)}`};
- for(const msg of msgs){const at=msg.createdAt;flush(at);if(at&&(dayKey(at)!==dayKey(prev)||(prev&&Date.parse(at)-Date.parse(prev)>3*3600e3)))rows.push(<div key={'d'+msg.id} style={{textAlign:'center',fontSize:12,color:'var(--text3)',padding:'10px 0 2px'}}>{dayLabel(at)}</div>);prev=at||prev;
+ // WeSync: compare adjacent rendered events; only first, 15-minute gaps or day boundaries get a separator.
+ const flush=(until?:string)=>{while(pi<props.length&&(!until||props[pi].createdAt<=until)){const x=props[pi++];rows.push(<div key={'p'+x.id} data-pid={x.id} style={{...wrap('prop:'+x.id),animation:'none'}}>{timeMeta(x.createdAt)}<div style={{display:'flex',flexDirection:'column',gap:16}}><ProposalBlocks ctx={ctx} p={x}/></div></div>)}};
+ for(const msg of msgs){const at=msg.createdAt;flush(at);
   const anyMsg=msg as any;
-  if(msg.role==='user'){const rec=anyMsg.requestId?ui.requests.find(r=>r.requestId===anyMsg.requestId):undefined;rows.push(userBubble(msg.id,msg.content,rec?rec.refs:anyMsg.contextIds,hhmm(at)));if(rec&&['failed','unknown','partial','cancelled'].includes(rec.status))rows.push(<RequestCard key={'r'+rec.requestId} ctx={ctx} r={rec}/>);continue}
+  if(msg.role==='user'){const rec=anyMsg.requestId?ui.requests.find(r=>r.requestId===anyMsg.requestId):undefined;rows.push(userBubble(msg.id,msg.content,rec?rec.refs:anyMsg.contextIds,at));if(rec&&['failed','unknown','partial','cancelled'].includes(rec.status))rows.push(<RequestCard key={'r'+rec.requestId} ctx={ctx} r={rec}/>);continue}
   if(msg.role!=='assistant')continue;
   const workId=anyMsg.chatWork?.workId;const work=workId?(ws.work?.works||[]).find((w:any)=>w.id===workId):null;
-  if(work){rows.push(<div key={msg.id} data-mid={msg.id} style={wrap(msg.id)}><WorkEvent ctx={ctx} work={work} label={T.taskCreated} onOpen={()=>openDetail({type:'task',id:work.id})}/></div>);continue}
+  if(work){rows.push(<div key={msg.id} data-mid={msg.id} style={wrap(msg.id)}>{timeMeta(at)}<WorkEvent ctx={ctx} work={work} label={T.taskCreated} onOpen={()=>openDetail({type:'task',id:work.id})}/></div>);continue}
   const panel=(ws.work?.panels||[]).find((p:any)=>p.messageId===msg.id);
   const text=msg.content||'';if(!text.trim()&&!panel)continue;
-  rows.push(<div key={msg.id} data-mid={msg.id} style={wrap(msg.id)}><div {...hoverProps(msg.id)} style={{display:'flex',gap:10,alignItems:'flex-start'}}><div style={{minWidth:0,maxWidth:'calc(100% - 38px)',display:'flex',flexDirection:'column',gap:8}}>
-   {text.trim()?<div data-ai-text="1" style={{maxWidth:'100%',...bubble,padding:'10px 14px',textWrap:'wrap',overflowWrap:'anywhere',lineHeight:1.6} as React.CSSProperties}><Md text={text}/></div>:null}
+  rows.push(<div key={msg.id} data-mid={msg.id} style={wrap(msg.id)}>{timeMeta(at)}<div {...hoverProps(msg.id)} style={{display:'flex',gap:10,alignItems:'flex-start'}}><div style={{minWidth:0,maxWidth:'calc(100% - 38px)',display:'flex',flexDirection:'column',gap:8}}>
+   {sourceMeta(at,anyMsg.inboxAnalysis?.occurredAt||anyMsg.ideaAnalysis?.occurredAt)}
+   {text.trim()?<div data-ai-text="1" style={{maxWidth:'100%',...bubble,padding:'10px 14px',textWrap:'wrap',overflowWrap:'anywhere',lineHeight:1.6} as React.CSSProperties}>{anyMsg.inboxAnalysis?.digest?<DigestBody ctx={ctx} message={anyMsg}/>:<Md text={text}/>}</div>:null}
    {panel?<PanelCard ctx={ctx} panel={panel}/>:null}
-  </div><button type="button" onClick={()=>quoteFrom(text)} aria-label="Quote reply" title={XL.quoteReply} style={quoteBtn(hoverMid===msg.id)}><I n="arrow-bend-up-left" style={{fontSize:14}}/></button></div></div>);
+  </div><button type="button" onClick={()=>quoteFrom(text)} aria-label="Quote reply" title={XL.quoteReply} style={quoteBtn(hoverMid===msg.id)}><I n="arrow-bend-up-left" style={{fontSize:14}}/></button></div><div style={{marginTop:anyMsg.inboxAnalysis||anyMsg.ideaAnalysis?6:0}}><MessageActions ctx={ctx} message={anyMsg}/></div></div>);
  }
  flush();
- for(const r of pending){rows.push(userBubble(r.requestId,r.message,r.refs));if(inFlight(r))continue;rows.push(<RequestCard key={'r'+r.requestId} ctx={ctx} r={r}/>)}
+ for(const r of pending){rows.push(userBubble(r.requestId,r.message,r.refs,r.createdAt));if(inFlight(r))continue;rows.push(<RequestCard key={'r'+r.requestId} ctx={ctx} r={r}/>)}
 
  const panelStyle:React.CSSProperties={width:ui.panel?W:0,flex:'none',overflow:'hidden',background:'var(--panel)',boxShadow:ui.panel?'inset 0.5px 0 0 var(--line)':'none',transition:drag||resizing?'none':'width 250ms ease-out'};
  const hasAdd=tab==='settings'&&!detail&&!setSub&&(setPage==='connections'||setPage==='skills');
  return <Frame theme={ui.theme} winRef={winRef}>
+  <UpdateNotice zh={zh}/>
   <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',position:'relative'}}>
    <div data-drag-region="" style={{height:100,flex:'none',display:'grid',gridTemplateColumns:'1fr auto 1fr',alignItems:'start',padding:'18px 16px 0 18px'}}>
     <div style={{display:'flex',gap:8,paddingTop:2}}>{native?null:<><span style={{width:12,height:12,borderRadius:'50%',background:'#ff5f57',boxShadow:'inset 0 0 0 0.5px rgba(0,0,0,.15)'}}/><span style={{width:12,height:12,borderRadius:'50%',background:'#febc2e',boxShadow:'inset 0 0 0 0.5px rgba(0,0,0,.15)'}}/><span style={{width:12,height:12,borderRadius:'50%',background:'#28c840',boxShadow:'inset 0 0 0 0.5px rgba(0,0,0,.15)'}}/></>}</div>
@@ -271,8 +300,8 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
     <div style={{display:'flex',justifyContent:'flex-end'}}>{!ui.panel?<Hv onClick={()=>setUI({panel:true})} aria-label="Show panel" style={{height:30,padding:'0 10px',display:'flex',alignItems:'center',gap:6,border:'none',borderRadius:'var(--r-sm)',background:'transparent',color:'var(--text2)',font:'inherit',fontSize:14,cursor:'pointer',whiteSpace:'nowrap',animation:'cmIn 250ms ease-out both'}} hover={{background:'var(--hover)',color:'var(--text)'}}><span>{T.today}</span><I n="sidebar-simple" style={{fontSize:16,transform:'scaleX(-1)'}}/></Hv>:null}</div>
    </div>
 
-   <div ref={scrollRef} className="cm-scroll" onScroll={e=>{const el=e.currentTarget;const far=el.scrollHeight-el.scrollTop-el.clientHeight>240;if(far!==showDown)setShowDown(far);if(sel)setSel(null);if(el.scrollTop<40&&hasMore)void older()}} onWheel={cancelNav} onTouchMove={cancelNav} onKeyDown={cancelNav} onMouseUp={()=>setTimeout(checkSel,0)} onMouseDown={()=>{cancelNav();if(sel)setSel(null)}} style={{flex:1,minHeight:0,overflowY:'auto',position:'relative'}}>
-    <div className="cm-chat-column" style={{padding:'8px 0 28px',display:'flex',flexDirection:'column',gap:14}}>
+   <div ref={scrollRef} className="cm-scroll cm-chat-scroll" onScroll={e=>{const el=e.currentTarget;const far=el.scrollHeight-el.scrollTop-el.clientHeight>240;if(far!==showDown)setShowDown(far);if(sel)setSel(null);if(el.scrollTop<40&&hasMore)void older()}} onWheel={cancelNav} onTouchMove={cancelNav} onKeyDown={cancelNav} onMouseUp={()=>setTimeout(checkSel,0)} onMouseDown={()=>{cancelNav();if(sel)setSel(null)}} style={{flex:1,minHeight:0,overflowY:'auto',position:'relative'}}>
+    <div className="cm-chat-column" style={{padding:'calc(var(--chat-top-fade) + 8px) 0 28px',display:'flex',flexDirection:'column',gap:14}}>
      {hasMore?<Hv onClick={()=>void older()} style={{alignSelf:'center',height:26,padding:'0 10px',border:'none',borderRadius:13,background:'transparent',color:'var(--text3)',font:'inherit',fontSize:12,cursor:'pointer'}} hover={{background:'var(--hover)',color:'var(--text)'}}>{loadingOlder?'…':T.loadOlder}</Hv>:null}
      {!rows.length&&!typing?<div style={{paddingTop:'24vh',display:'flex',flexDirection:'column',alignItems:'center',gap:6,textAlign:'center',animation:'cmIn 250ms ease-out both'}}><div style={{fontSize:20,fontWeight:600,letterSpacing:'-0.01em'}}>{T.greeting(ws.settings.identity.name||'')}</div><div style={{color:'var(--text2)'}}>{T.greetSub}</div></div>:null}
      {rows}
@@ -291,6 +320,7 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
       <div style={{height:1,margin:'4px 6px',background:'var(--line)'}}/>
       <Hv onClick={()=>{setMenu(false);fileRef.current?.click()}} style={{all:'unset',boxSizing:'border-box',cursor:'pointer',padding:'8px 10px',borderRadius:'var(--r-menuItem)',display:'flex',alignItems:'center',gap:8,color:'var(--text2)'}} hover={{background:'var(--hover)',color:'var(--text)'}}><I n="paperclip" style={{fontSize:14}}/><span>{uploading?T.uploading:T.attachFile}</span></Hv>
      </div>:null}
+     <DismissAck ctx={ctx}/>
      {sugg.length>0&&!draft?<div style={{display:'flex',flexWrap:'wrap',gap:6,justifyContent:'flex-end',animation:'cmIn 250ms ease-out both'}}>{sugg.map(l=><Hv key={l} onClick={()=>{setDraft(l);focus()}} style={{height:30,padding:'0 12px',border:'none',borderRadius:'var(--r-pill)',background:'var(--composer)',boxShadow:'0 0 0 0.5px var(--lineStrong)',color:'var(--text2)',font:'inherit',fontSize:14,cursor:'pointer',whiteSpace:'nowrap'}} hover={{color:'var(--text)'}}>{l}</Hv>)}</div>:null}
      <div style={{background:'var(--composer)',borderRadius:'var(--r-pill)',boxShadow:(cFlash?'0 0 0 2px var(--accent)':'0 0 0 0.5px var(--lineStrong)')+', var(--composerShadow)',padding:6,display:'flex',flexDirection:'column',gap:4,transition:'box-shadow 250ms ease-out'}}>
       {quote?<div style={{display:'flex',alignItems:'center',gap:8,margin:'2px 2px 0',padding:'4px 4px 4px 12px',borderRadius:16,background:'var(--hover)',fontSize:12,color:'var(--text2)',animation:'cmIn 250ms ease-out both'}}><I n="arrow-bend-up-left" style={{fontSize:14,flex:'none'}}/><span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{quote}</span><Hv onClick={()=>{setQuote(null);setPendPick(null)}} aria-label="Remove quote" style={{width:22,height:22,flex:'none',display:'flex',alignItems:'center',justifyContent:'center',border:'none',borderRadius:'50%',background:'transparent',color:'inherit',cursor:'pointer'}} hover={{background:'var(--selected)'}}><I n="x" style={{fontSize:12}}/></Hv></div>:null}
@@ -310,7 +340,7 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
    {toast||offline||uiError()?<div role="status" style={{position:'absolute',left:'50%',bottom:96,transform:'translateX(-50%)',maxWidth:'80%',padding:'8px 14px',borderRadius:'var(--r-btn)',background:toast?.tone==='error'||offline||uiError()?'var(--errSoft)':'var(--card)',color:toast?.tone==='error'||offline||uiError()?'var(--errText)':'var(--text)',boxShadow:'0 0 0 0.5px var(--lineStrong), 0 8px 24px -8px rgba(0,0,40,.2)',fontSize:12,animation:'cmPop 250ms ease-out both',zIndex:6}}>{toast?.m||(offline?T.offline:T.saveFailed)}</div>:null}
   </div>
 
-  {ui.panel?<div onMouseDown={startDrag} onDoubleClick={()=>setUI({panelW:null})} onMouseEnter={()=>setHHover(true)} onMouseLeave={()=>setHHover(false)} onKeyDown={keyResize} role="separator" aria-orientation="vertical" aria-valuenow={W} aria-valuemin={minW} aria-valuemax={maxW} tabIndex={0} title="Drag to resize" style={{width:10,margin:'0 -5px',flex:'none',cursor:'col-resize',position:'relative',zIndex:4,outline:'none'}}><span style={{position:'absolute',top:'50%',left:3,width:4,height:drag?56:36,marginTop:drag?-28:-18,borderRadius:2,background:drag?'var(--accent)':hHover?'var(--lineStrong)':'transparent',transition:'all 250ms ease-out'}}/></div>:null}
+  {ui.panel?<div onMouseDown={startDrag} onDoubleClick={()=>setUI({panelRatio:null,panelW:null})} onMouseEnter={()=>setHHover(true)} onMouseLeave={()=>setHHover(false)} onKeyDown={keyResize} role="separator" aria-orientation="vertical" aria-valuenow={W} aria-valuemin={minW} aria-valuemax={maxW} tabIndex={0} title="Drag to resize" style={{width:10,margin:'0 -5px',flex:'none',cursor:'col-resize',position:'relative',zIndex:4,outline:'none'}}><span style={{position:'absolute',top:'50%',left:3,width:4,height:drag?56:36,marginTop:drag?-28:-18,borderRadius:2,background:drag?'var(--accent)':hHover?'var(--lineStrong)':'transparent',transition:'all 250ms ease-out'}}/></div>:null}
   <div style={panelStyle}>
    <div style={{width:'100%',minWidth:W,height:'100%',display:'flex',flexDirection:'column'}}>
     <div data-drag-region="" style={{height:56,flex:'none',display:'grid',gridTemplateColumns:'1fr auto 1fr',alignItems:'center',padding:'0 12px'}}>
@@ -343,7 +373,8 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
 // Chat request outcome card: failed / unknown / partial / stopped are kept visible and truthful.
 function RequestCard({ctx,r}:{ctx:Ctx;r:ChatRecord}){
  const {T}=ctx;const notSent=unsent(r);const status=r.status==='cancelled'?'cancelled':r.status==='partial'?'partial':r.status==='failed'||notSent?'failed':'unknown';
- const text=notSent?(ctx.zh?'未发送：本地保存失败，内容已保留。':'Not sent: saving locally failed. Your message is kept.'):r.status==='failed'?(r.failureCode==='model_quota_exceeded'?T.quotaReply:T.failedReply):r.status==='partial'?T.partialReply:r.status==='cancelled'?T.stoppedReply:T.unknownReply;
+ const failureText=r.failureCode==='model_quota_exceeded'?T.quotaReply:r.failureCode==='model_runtime_missing'?(ctx.zh?'模型组件缺失，请更新应用后重试。':'A model component is missing. Update the app and retry.'):r.failureCode==='model_timeout'?(ctx.zh?'模型响应超时，请重试。':'The model timed out. Please retry.'):T.failedReply;
+ const text=notSent?(ctx.zh?'未发送：本地保存失败，内容已保留。':'Not sent: saving locally failed. Your message is kept.'):r.status==='failed'?failureText:r.status==='partial'?T.partialReply:r.status==='cancelled'?T.stoppedReply:T.unknownReply;
  const tone={failed:['--errSoft','--errText'],unknown:['--warnSoft','--warnText'],partial:['--warnSoft','--warnText'],cancelled:['--hover','--text2']}[status]!;
  return <div style={{display:'flex',gap:10,alignItems:'flex-start',animation:'cmIn 250ms ease-out both'}}><div style={{flex:1,minWidth:0,maxWidth:'85%',background:'var(--aiBubble)',boxShadow:'0 0 0 0.5px var(--aiLine)',borderRadius:'var(--r-bubble)',padding:'12px 12px 12px 14px',display:'flex',flexDirection:'column',gap:10}}>
   <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:'8px 12px'}}>

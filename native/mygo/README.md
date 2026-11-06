@@ -48,6 +48,8 @@ CyberMe 左下角更新图标通过 `DesktopUpdate` 原生桥检查本机固定�
 
 ## V6 资源接线
 
-`main.go` 打开 `cyberme.html`；`scripts/mygo-build.mjs` 先构建 `web/mygo.vite.config.ts` 再嵌入资源。`scripts/mygo-full-assets.mjs` 保留经典工作区及 V6 返回入口。应用标识、用户数据目录和既有草稿不因界面切换而重命名。
+原生 `DesktopNotifications` 使用 MyGO 系统通知 API，服务端耐久去重并校验洞察来源；V6 的通知开关、测试和点击返回见 [本机主动提醒](../../docs/public/desktop-notifications.md)。需重新打包、签名、安装并实际确认 macOS 权限，不能只替换后端文件。
 
-浏览器构建通过只证明前端资源可生成。重新打包、签名、安装升级、真实模型及业务数据兼容均需独立验证；本轮未替换安装版。见 [V6 规格](../../docs/public/cyberme-v6.md)。
+`main.go` 打开 `cyberme.html`；`scripts/mygo-build.mjs` 先构建 `web/mygo.vite.config.ts` 再嵌入资源。`scripts/mygo-full-assets.mjs` 为正式与工作区构建把旧 `desktop.html` 改写为 V6 兼容跳转，历史 QA 保留经典入口。独立包用包内 Node 验证模型 SDK 可导入，并在 runtime manifest 记录结果。应用标识、用户数据目录和既有草稿不因界面切换而重命名。
+
+浏览器构建通过只证明前端资源可生成。重新打包、签名、安装升级、真实模型及业务数据兼容均需按对应构建独立验证。见 [V6 规格](../../docs/public/cyberme-v6.md)。

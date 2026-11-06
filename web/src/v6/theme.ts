@@ -1,6 +1,5 @@
-// V6 design tokens, copied from the reference. Paper uses the bundled Broadsheet ramp
-// (web/src/v6/broadsheet.css) instead of the remote design-system bundle.
-export type ThemeKey='quiet'|'paper'|'night';
+// V6 light and dark design tokens.
+export type ThemeKey='quiet'|'night';
 export const THEMES:Record<ThemeKey,Record<string,string>>={
  quiet:{
   '--desk':'#e0e1e6','--convBg':'#f7f7f9','--aiBubble':'#ffffff','--aiLine':'rgba(0,0,45,0.08)','--userBubble':'#e8e8ec',
@@ -15,19 +14,6 @@ export const THEMES:Record<ThemeKey,Record<string,string>>={
   '--r-win':'12px','--r-bubble':'16px','--r-card':'16px','--r-inner':'12px','--r-innerBtn':'8px','--r-btn':'10px','--r-pill':'22px','--r-chip':'16px','--r-menu':'14px','--r-menuItem':'8px','--r-seg':'10px','--r-segOn':'7px','--r-sm':'8px','--r-xs':'4px',
   '--winShadow':'0 0 0 0.5px rgba(0,0,0,0.14), 0 24px 64px -16px rgba(0,0,40,0.28), 0 8px 20px -8px rgba(0,0,40,0.12)',
   '--composerShadow':'0 2px 8px -2px rgba(0,0,40,0.06)','--segShadow':'0 0 0 0.5px rgba(0,0,40,0.08), 0 1px 2px rgba(0,0,40,0.08)'
- },
- paper:{
-  '--desk':'var(--color-neutral-300)','--convBg':'var(--color-bg)','--aiBubble':'var(--color-bg)','--aiLine':'var(--color-neutral-300)','--userBubble':'var(--color-surface)',
-  '--panel':'var(--color-surface)','--card':'var(--color-bg)','--cardLine':'var(--color-neutral-300)','--composer':'var(--color-bg)','--segBg':'var(--color-neutral-200)','--segOn':'var(--color-bg)',
-  '--line':'var(--color-neutral-300)','--lineStrong':'var(--color-neutral-400)','--hover':'var(--color-neutral-200)','--selected':'var(--color-neutral-300)',
-  '--text':'var(--color-text)','--text2':'var(--color-neutral-700)','--text3':'var(--color-neutral-600)',
-  '--accent':'var(--color-accent)','--accentHover':'var(--color-accent-600)','--accentText':'var(--color-accent-700)','--accentSoft':'var(--color-accent-100)','--onAccent':'#ffffff',
-  '--warnSoft':'color-mix(in oklch, var(--color-process-yellow) 22%, var(--color-bg))','--warnText':'var(--color-neutral-800)','--warnDot':'var(--color-process-yellow)',
-  '--errSoft':'var(--color-accent-2-100)','--errText':'var(--color-accent-2-700)','--errDot':'var(--color-accent-2-500)',
-  '--okSoft':'var(--color-neutral-200)','--okText':'var(--color-accent-700)','--okDot':'var(--color-accent)',
-  '--font':'var(--font-body), "Songti SC", serif',
-  '--r-win':'3px','--r-bubble':'2px','--r-card':'2px','--r-inner':'2px','--r-innerBtn':'2px','--r-btn':'2px','--r-pill':'2px','--r-chip':'2px','--r-menu':'2px','--r-menuItem':'2px','--r-seg':'2px','--r-segOn':'2px','--r-sm':'2px','--r-xs':'2px',
-  '--winShadow':'var(--shadow-lg)','--composerShadow':'0 0 0 0 transparent','--segShadow':'0 0 0 0.5px var(--color-neutral-400)'
  },
  night:{
   '--desk':'#0c0c0e','--convBg':'#111113','--aiBubble':'#1c1d20','--aiLine':'rgba(255,255,255,0.06)','--userBubble':'#2b2d31',
@@ -44,4 +30,4 @@ export const THEMES:Record<ThemeKey,Record<string,string>>={
   '--composerShadow':'0 0 0 0 transparent','--segShadow':'0 0 0 0.5px rgba(255,255,255,0.08)'
  }
 };
-export const isTheme=(v:unknown):v is ThemeKey=>v==='quiet'||v==='paper'||v==='night';
+export const isTheme=(v:unknown):v is ThemeKey=>v==='quiet'||v==='night';

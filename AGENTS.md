@@ -12,4 +12,4 @@
 - Update module specifications and provide precise validation boundaries in Chinese commit descriptions.
 - Workspace-local guidance, when present, remains private at `.local/private-project-instructions/AGENTS.md`; read it without publishing its contents.
 
-- For V6 changes, follow `docs/public/cyberme-v6.md` and `docs/public/v6-data-contract.md`; distinguish source preview from the installed app.
+- For V6 changes, follow `docs/public/cyberme-v6.md` and `docs/public/v6-data-contract.md`; distinguish source preview from the installed app. Follow the module links in `docs/public/README.md` for attention, execution, memory, and insight contracts.

@@ -4,6 +4,11 @@ import {host} from './store';
 declare global{interface Window{OpsTwinsWindowChrome?:{closeFrontSurface:()=>boolean}}}
 const interactive='button,input,a,select,textarea,label,summary,[role="button"],[role="switch"],[role="separator"],[contenteditable]:not([contenteditable="false"])';
 export const isNative=()=>!!host();
+export const desktopNotifications={
+ status:()=>host()!.call('DesktopNotifications.Status'),
+ configure:(enabled:boolean,version:string)=>host()!.call('DesktopNotifications.Configure',enabled,version),
+ test:()=>host()!.call('DesktopNotifications.Test'),
+};
 export function installWindowChrome(closeFront:()=>boolean){
  window.OpsTwinsWindowChrome={closeFrontSurface:closeFront};
  if(!host())return()=>{};

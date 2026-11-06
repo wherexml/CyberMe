@@ -1,12 +1,12 @@
 // Build/start scripts/chat-width-fixture.mjs, then: ego-browser nodejs < scripts/chat-width-browser-e2e.mjs
 // Failure cases: output/chat-width-20261105/FAILURE-CASES.md (recorded before implementation).
 const task=await taskSpace('CyberMe 对话宽度验收'),page=task.page('p1');
-const fs=await import('node:fs/promises'),out='/Users/steve/Projects/CyberMe/output/chat-width-20261105';
+const fs=await import('node:fs/promises'),out=process.cwd()+'/output/chat-width-20261105';
 await fs.mkdir(out,{recursive:true});const checks=[],measurements=[];
 const check=(name,pass)=>{checks.push({name,pass:!!pass});if(!pass)throw Error(name)};
 try{
  await page.goto('http://127.0.0.1:46778');await page.waitForSelector('[data-mid="long"]');
- for(const [width,ratio,theme] of [[1600,.4,'quiet'],[1000,.4,'quiet'],[800,2/3,'quiet'],[1400,.4,'night'],[1400,.4,'paper']]){
+ for(const [width,ratio,theme] of [[1600,.4,'quiet'],[1000,.4,'quiet'],[800,2/3,'quiet'],[1400,.4,'night']]){
   await page.cdp('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
   await page.evaluate(p=>{const k='cyberme-v6-ui';localStorage.setItem(k,JSON.stringify({...JSON.parse(localStorage.getItem(k)||'{}'),...p}))},{panel:true,panelRatio:ratio,theme});
   await page.reload();await page.waitForSelector('[data-mid="long"]');

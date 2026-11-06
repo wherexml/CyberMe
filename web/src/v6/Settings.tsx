@@ -4,8 +4,8 @@ import {I} from './icons';
 import {Hv} from './ui';
 import {BrandLogo,brandKey} from './visuals';
 import {api,enc,uid,setUI,loadDoc,saveDoc} from './store';
-import {update,isNative} from './native';
-import {openClassic} from './Brief';
+import {isNative,desktopNotifications} from './native';
+import {useUpdate,updateAction,updateTitle,showUpdate} from './updates';
 import {relTime} from './model';
 import type {ModelSettings,ModelSelection} from '../../../shared/model-settings';
 
@@ -88,31 +88,36 @@ export default function Settings({ctx,page,sub}:{ctx:Ctx;page:string|null;sub:an
  const {ws,ui,lang,goSet,XL,T}=ctx;const S=ws.settings as any;
  const {z,fx,na,off,fxv,nav,act,tog,segR}=useRows(ctx);
  const [busy,setBusy]=useState<string>('');
+ const [desktopNotice,setDesktopNotice]=useState<any>(null);
+ useEffect(()=>{let active=true;if(page==='insights'&&isNative())desktopNotifications.status().then(s=>{if(active)setDesktopNotice(s)}).catch(()=>{if(active)setDesktopNotice(null)});return()=>{active=false}},[page]);
+ async function changeNotice(test=false){if(!desktopNotice||busy)return;setBusy('desktop-notice');try{if(test)await desktopNotifications.test();else await desktopNotifications.configure(!desktopNotice.enabled,desktopNotice.version);setDesktopNotice(await desktopNotifications.status());if(test)ctx.notify(z('Submitted to macOS','已提交给 macOS'))}catch(e:any){ctx.notify(e.message||String(e),'error');try{setDesktopNotice(await desktopNotifications.status())}catch{}}finally{setBusy('')}}
  async function patchSettings(patch:any,group:'identity'|'autonomy'){setBusy(group);try{await api('PATCH','/api/settings',{...patch,baseSettings:{[group]:S[group]}});await ctx.refresh()}catch(e:any){ctx.notify(e.status===409?T.conflict:e.message,'error');void ctx.refresh()}finally{setBusy('')}}
  const autonomy=S.autonomy||{};const perms=autonomy.permissions||{};
+ // Keep historical records in workspace state; omit replaced entries from current connection lists.
+ const visibleConnections=ws.connections.filter(c=>!c.supersededBy);
  const connStatus=(c:any)=>connStatusOf(c,ctx.zh);
  const profile=(extra:Partial<Row>={}):Row=>({isProfile:true,profileLetter:(S.identity?.name||'C').trim().slice(0,1).toUpperCase(),label:S.identity?.name||z('Your profile','你的资料'),sub:fx?.account?.email||S.identity?.role||'',pro:fx?.account?.plan?.toUpperCase(),labelStyle:{fontSize:16,fontWeight:600,color:'var(--text)'},...extra});
 
- if(!page){const warn=ws.connections.some(c=>connStatus(c)[1]==='var(--warnText)');
+ if(!page){const warn=visibleConnections.some(c=>connStatus(c)[1]==='var(--warnText)');
   return <Page sections={[
    {rows:[profile({onRow:()=>goSet('account'),caret:true})]},
    {rows:[nav(z('General','通用'),()=>goSet('general'),'ph-gear-six'),nav(z('Insights & notifications','洞察与通知'),()=>goSet('insights'),'ph-bell')]},
    {rows:[nav(z('Model','模型'),()=>goSet('model'),'ph-cpu'),nav(z('Connections','应用连接'),()=>goSet('connections'),'ph-plugs',{dot:warn}),nav(z('Skills','技能'),()=>goSet('skills'),'ph-puzzle-piece')]},
    {rows:[nav(z('Privacy & data','隐私与数据'),()=>goSet('privacy'),'ph-lock-simple')]},
-   {title:T.moreH,rows:[nav(z('Search','搜索'),()=>goSet('search'),'ph-magnifying-glass'),nav(z('Conversations','对话'),()=>goSet('conversations'),'ph-chat-circle'),nav(z('Full workspace','完整工作区'),()=>goSet('classic'),'ph-tray')]}
+   {title:T.moreH,rows:[nav(z('Search','搜索'),()=>goSet('search'),'ph-magnifying-glass'),nav(z('Conversations','对话'),()=>goSet('conversations'),'ph-chat-circle')]}
   ]}/>;}
 
  if(page==='general')return <Page title={z('General','通用')} sections={[
   {title:z('Language','语言'),rows:[{label:'English',check:lang==='en',onRow:()=>lang!=='en'&&void ctx.setLanguage('en')},{label:'中文（简体）',check:lang==='zh',onRow:()=>lang!=='zh'&&void ctx.setLanguage('zh')},{label:'日本語',sub:z('Coming soon','即将支持'),dim:true},{label:'Español',sub:z('Coming soon','即将支持'),dim:true}]},
-  {title:z('Appearance','外观'),rows:[segR(z('Theme','主题'),[['quiet',z('Light','浅色')],['night',z('Dark','深色')],['paper',z('Paper','纸张')]],ui.theme,k=>setUI({theme:k as any}))]},
+  {title:z('Appearance','外观'),rows:[segR(z('Theme','主题'),[['quiet',z('Light','浅色')],['night',z('Dark','深色')]],ui.theme,k=>setUI({theme:k as any}))]},
   {title:z('App','应用'),rows:[off(tog(z('Open at login','登录时打开'),!!fxv('launch',false))),off(tog(z('Show in menu bar','在菜单栏显示'),!!fxv('menubar',false))),off({label:z('Quick open','快速唤起'),value:String(fxv('quickOpen','—'))})]},
   {title:z('Conversation','对话'),rows:[tog(z('Press Enter to send','按 Enter 发送'),ui.cfg.enterSend,()=>setUI(s=>({cfg:{...s.cfg,enterSend:!s.cfg.enterSend}})),{sub:ui.cfg.enterSend?z('Shift Enter adds a new line','Shift Enter 换行'):z('⌘ Enter sends','⌘ Enter 发送')}),tog(z('Show task progress in conversation','在对话中显示任务进度'),ui.cfg.progress,()=>setUI(s=>({cfg:{...s.cfg,progress:!s.cfg.progress}})))]}
  ]}/>;
 
- if(page==='insights'){const live=ws.connections.filter(c=>connStatus(c)[1]==='var(--okText)');return <Page title={z('Insights & notifications','洞察与通知')} sections={[
+ if(page==='insights'){const live=visibleConnections.filter(c=>connStatus(c)[1]==='var(--okText)');return <Page title={z('Insights & notifications','洞察与通知')} sections={[
   {title:z('Insights','洞察'),rows:[off(segR(z('Delivery','推送方式'),[['live',z('As they come','实时')],['digest',z('Morning digest','早间汇总')]],String(fxv('delivery','live')))),off(segR(z('Signals needed to suggest an action','建议行动所需信号数'),[['3','3'],['5','5'],['8','8']],String(fxv('threshold','5'))))],note:z('Below the threshold, CyberMe only watches.','未达到阈值时，CyberMe 只观察。')},
   {title:z('Sources','来源'),rows:live.length?live.map(c=>({key:c.id,label:c.name,value:connStatus(c)[0],valueStyle:{fontSize:12,whiteSpace:'nowrap',color:'var(--okText)'},onRow:()=>goSet('connections',{type:'conn',id:c.id}),caret:true})):[nav(z('Connect a source','连接来源'),()=>goSet('connections'))]},
-  {title:z('Notifications','通知'),rows:[off(tog(z('A task needs your review','任务需要你确认'),!!fxv('notifyReview',false))),off(tog(z('A task fails','任务失败'),!!fxv('notifyFail',false))),
+  {title:z('Notifications','通知'),rows:[tog(z('macOS insight notifications','macOS 洞察通知'),!!desktopNotice?.enabled,()=>void changeNotice(),{dim:!isNative()||!desktopNotice||busy==='desktop-notice'}),isNative()&&act(z('Test notification','测试通知'),()=>void changeNotice(true),undefined,{dim:!desktopNotice||busy==='desktop-notice'}),off(tog(z('A task needs your review','任务需要你确认'),!!fxv('notifyReview',false))),off(tog(z('A task fails','任务失败'),!!fxv('notifyFail',false))),
    tog(z(`Quiet hours, ${autonomy.quietFrom||'22:00'} to ${autonomy.quietUntil||'08:00'}`,`免打扰 ${autonomy.quietFrom||'22:00'} 至 ${autonomy.quietUntil||'08:00'}`),!!autonomy.quietEnabled,()=>void patchSettings({autonomy:{quietEnabled:!autonomy.quietEnabled}},'autonomy'),{dim:busy==='autonomy'})]}
  ]}/>;}
 
@@ -120,7 +125,6 @@ export default function Settings({ctx,page,sub}:{ctx:Ctx;page:string|null;sub:an
  if(page==='skills')return <SkillsPage ctx={ctx} sub={sub}/>;
  if(page==='search')return <SearchPage ctx={ctx}/>;
  if(page==='conversations')return <ConversationsPage ctx={ctx}/>;
- if(page==='classic')return <Page title={z('Full workspace','完整工作区')} sections={classicSections(ctx.zh)}/>;
 
  if(page==='connections'&&sub?.type==='conn'){const c=ws.connections.find(x=>x.id===sub.id);if(!c)return <Page title={z('Connections','应用连接')} sections={[{rows:[{label:z('This connection no longer exists.','此连接已不存在。')}]}]}/>;
   return <ConnectionPage ctx={ctx} c={c} status={connStatus(c)}/>;}
@@ -131,12 +135,12 @@ export default function Settings({ctx,page,sub}:{ctx:Ctx;page:string|null;sub:an
    ['docs',z('Docs & files','文档与文件'),[['notion','Notion',undefined,'ph-notion-logo'],['drive',z('Google Drive','Google 云端硬盘'),undefined,'ph-google-drive-logo'],['dropbox','Dropbox',undefined,'ph-dropbox-logo'],['notes',z('Apple Notes','Apple 备忘录'),undefined,'ph-note'],['figma','Figma',undefined,'ph-figma-logo']]],
    ['work',z('Projects','项目'),[['linear','Linear',undefined,'ph-kanban'],['github','GitHub',undefined,'ph-github-logo'],['reminders',z('Apple Reminders','Apple 提醒事项'),undefined,'ph-list-checks']]],
    ['cust',z('Customers','客户'),[['crm','Salesforce',undefined,'ph-cloud'],['hubspot','HubSpot',undefined,'ph-address-book'],['support','Zendesk',undefined,'ph-headset'],['usage','Mixpanel',undefined,'ph-chart-bar']]]];
-  const have=(p?:string)=>!!p&&ws.connections.some(c=>String(c.provider||c.id).toLowerCase().includes(p)&&connStatus(c)[1]==='var(--okText)');
-  return <Page title={XL.addConn} sections={groups.map(([,name,list])=>({title:name,rows:list.map(([k,label,brand,icon,provider])=>{const on=have(provider);const supported=!!provider;
+  const have=(p?:string)=>!!p&&visibleConnections.some(c=>String(c.provider||c.id).toLowerCase().includes(p)&&connStatus(c)[1]==='var(--okText)');
+  return <Page title={XL.addConn} sections={groups.map(([,name,list])=>({title:name,rows:list.map(([k,label,brand,icon,provider])=>{const on=have(provider);const supported=false;
    const b=brand||({amail:'apple',cal:'apple',notes:'apple',reminders:'apple',drive:'google-drive',crm:'salesforce',support:'zendesk',usage:'mixpanel'} as Record<string,string>)[k]||k;
-   return {key:k,label,brand:b,logoIcon:icon,value:on?z('Connected','已连接'):supported?'':z('Not available','暂不支持'),valueStyle:{fontSize:12,color:on?'var(--okText)':'var(--text3)',whiteSpace:'nowrap'},tip:supported?undefined:na,btn:supported&&!on?{label:z('Connect','连接'),on:()=>openClassic('settings-connections',provider)}:undefined} as Row})}))}/>;}
+   return {key:k,label,brand:b,logoIcon:icon,value:on?z('Connected','已连接'):supported?'':z('Not available','暂不支持'),valueStyle:{fontSize:12,color:on?'var(--okText)':'var(--text3)',whiteSpace:'nowrap'},tip:supported?undefined:na,btn:undefined} as Row})}))}/>;}
  if(page==='connections')return <Page title={z('Connections','应用连接')} sections={[
-  {rows:ws.connections.length?ws.connections.map(c=>{const [stt,col]=connStatus(c);return {key:c.id,label:c.name,brand:String(c.provider||c.type||c.name||''),logoIcon:'ph-plugs',value:stt,valueStyle:{fontSize:12,whiteSpace:'nowrap',color:col,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis'},onRow:()=>goSet('connections',{type:'conn',id:c.id}),caret:true} as Row}):[{label:z('No apps connected','尚未连接应用')}]},
+  {rows:visibleConnections.length?visibleConnections.map(c=>{const [stt,col]=connStatus(c);return {key:c.id,label:c.name,brand:String(c.provider||c.type||c.name||''),logoIcon:'ph-plugs',value:stt,valueStyle:{fontSize:12,whiteSpace:'nowrap',color:col,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis'},onRow:()=>goSet('connections',{type:'conn',id:c.id}),caret:true} as Row}):[{label:z('No apps connected','尚未连接应用')}]},
   {rows:[act(XL.addConn,()=>goSet('connections',{type:'add'}))]}
  ]}/>;
 
@@ -144,7 +148,6 @@ export default function Settings({ctx,page,sub}:{ctx:Ctx;page:string|null;sub:an
   return <Page title={z('Permissions & sending','权限与发送')} sections={[
    {rows:[P('reply',z('Replies','回复')),P('tasks',z('Tasks','任务')),P('files',z('Files','文件')),P('calendar',z('Calendar','日历')),P('connections',z('Connections','连接')),P('deep',z('Deep thinking','深度思考'))]},
    {rows:[tog(z('Hold every outgoing message for review','所有外发消息先等我确认'),!!autonomy.holdSending,()=>void patchSettings({autonomy:{holdSending:!autonomy.holdSending}},'autonomy'),{dim:busy==='autonomy'}),tog(z('Show what CyberMe did and why','展示 CyberMe 做了什么及原因'),!!autonomy.transparency,()=>void patchSettings({autonomy:{transparency:!autonomy.transparency}},'autonomy'),{dim:busy==='autonomy'})]},
-   {rows:[nav(z('Files, devices and advanced policies','文件、设备与高级策略'),()=>openClassic('settings-autonomy'))]}
   ]}/>;}
  if(page==='privacy')return <PrivacyPage ctx={ctx}/>;
 
@@ -169,17 +172,15 @@ function PrivacyPage({ctx}:{ctx:Ctx}){
 
 function AccountPage({ctx,profile}:{ctx:Ctx;profile:(extra?:Partial<Row>)=>Row}){
  const {z,fx,off,act}=useRows(ctx);
- const [up,setUp]=useState<any>(null),[upBusy,setUpBusy]=useState('');
- useEffect(()=>{let live=true;void update.status().then(v=>{if(live)setUp(v)}).catch(()=>{});return()=>{live=false}},[]);
- const run=async(k:'check'|'download'|'cancel'|'install')=>{setUpBusy(k);try{setUp(await update[k]())}catch(e:any){ctx.notify(e.message,'error')}finally{setUpBusy('')}};
- const state=String(up?.state||up?.status||'');const version=up?.currentVersion||up?.version||'';
- const upLabel=!isNative()?z('Check for updates','检查更新'):upBusy==='check'?z('Checking…','检查中…'):state==='available'?z('Download update','下载更新')+(up?.latestVersion?' '+up.latestVersion:''):state==='downloading'?z('Downloading…','下载中…'):state==='ready'||state==='downloaded'?z('Restart to update','重启以更新'):state==='current'||state==='up_to_date'?z('Up to date','已是最新'):z('Check for updates','检查更新');
- const upAct=()=>{if(!isNative()||upBusy)return;if(state==='available')void run('download');else if(state==='downloading')void run('cancel');else if(state==='ready'||state==='downloaded')void run('install');else void run('check')};
+ const {value:up,busy:upBusy}=useUpdate();
+ const state=up.status,version=up.current?.version||'';
+ const upLabel=updateTitle(up,ctx.zh);
+ const upAct=()=>{if(!isNative()||upBusy)return;if(up.available||up.ready)showUpdate();else void updateAction('check')};
  const a=fx?.account;const pct=typeof a?.usagePct==='number'&&Number.isFinite(a.usagePct)?Math.max(0,Math.min(100,a.usagePct)):undefined;
  return <Page title={z('Account','账户')} sections={[
   {rows:[profile({onRow:()=>ctx.goSet('account',{type:'profile'}),caret:true})]},
   {title:z('Plan','套餐'),rows:[off({label:z('Plan','套餐'),value:a?.plan||'—'}),off({label:z('Usage this month','本月用量'),value:pct===undefined?'—':pct+'%',meter:pct??0}),off({label:z('Renews','续费日期'),value:a?.renews||'—'})]},
-  {title:z('App','应用'),rows:[{label:z('Version','版本'),value:version||'—'},act(upLabel,upAct,undefined,{dim:!isNative(),tip:isNative()?undefined:z('Available in the desktop app','在桌面应用中可用'),sub:up?.error||up?.message||''})]},
+  {title:z('App','应用'),rows:[{label:z('Version','版本'),value:version||'—'},act(upLabel,upAct,undefined,{dim:!isNative(),tip:isNative()?undefined:z('Available in the desktop app','在桌面应用中可用'),sub:state==='error'?(ctx.zh?'请重新检查或重试下载。':'Check again or retry the download.'):''})]},
   {rows:[off(act(z('Sign out','退出登录'),NOOP,'danger'))]}
  ]}/>;
 }
@@ -228,7 +229,7 @@ function ModelRolesPage({ctx}:{ctx:Ctx}){
  return <Page title={z('Models and connection tests','模型与连接测试')} sections={[
   {title:z('Conversation','对话'),rows:roleRows('standard')},
   {title:z('Deep thinking','深度思考'),rows:roleRows('deep')},
-  {rows:[nav(z('Add or edit providers','添加或编辑服务'),()=>openClassic('settings-models'),undefined,{sub:m.providers.map(p=>p.name+(p.configured?'':' ('+z('not set up','未配置')+')')).join(' · ')})]}
+  {rows:[nav(z('Custom provider','自定义服务'),()=>ctx.goSet('model'),undefined,{sub:m.providers.map(p=>p.name+(p.configured?'':' ('+z('not set up','未配置')+')')).join(' · ')})]}
  ]}/>;
 }
 
@@ -238,17 +239,16 @@ function ConnectionPage({ctx,c,status}:{ctx:Ctx;c:any;status:[string,string]}){
  const provider=String(c.provider||c.type||c.id||'').toLowerCase();const connected=status[1]==='var(--okText)';
  const syncPath=provider.includes('feishu')||provider.includes('lark')?['/api/feishu/sync',{scope:'all'}] as const:provider.includes('wechat')||provider.includes('weixin')?['/api/wechat/sync',{}] as const:null;
  // Sync starts the provider's real sync job; the row shows the job's reported state, never an assumed success.
- async function sync(){if(busy)return;if(!syncPath){openClassic('settings-connections',c.id);return}setBusy('sync');setResult('');try{const r=await api('POST',syncPath[0],syncPath[1]);const st=r?.status??r?.state;setResult(typeof st==='string'?st:'');await ctx.refresh()}catch(e:any){setResult(e.message)}finally{setBusy('')}}
+ async function sync(){if(busy)return;if(!syncPath)return;setBusy('sync');setResult('');try{const r=await api('POST',syncPath[0],syncPath[1]);const st=r?.status??r?.state;setResult(typeof st==='string'?st:'');await ctx.refresh()}catch(e:any){setResult(e.message)}finally{setBusy('')}}
  async function disconnect(){if(busy)return;if(!confirm){setConfirm(true);t.current=window.setTimeout(()=>setConfirm(false),3000);return}clearTimeout(t.current);setBusy('off');try{await api('POST','/api/connections/'+enc(c.id)+'/disconnect',{});await ctx.refresh();ctx.goSet('connections')}catch(e:any){ctx.notify(e.message,'error')}finally{setBusy('')}}
  const perms:string[]=Array.isArray(c.permissions)?c.permissions:[];const hold=!!(ctx.ws.settings as any).autonomy?.holdSending;
- const setupTip=z('Change in connection setup','在连接设置中修改');
+ const setupTip=z('Read-only','只读');
  const ro=(label:string,on:boolean):Row=>tog(label,on,NOOP,{swRo:true,tip:setupTip});
  const last=c.lastSyncAt||c.syncedAt||c.config?.lastSyncAt;
  return <Page title={c.name} sections={[
   {rows:[{label:z('Status','状态'),value:status[0],valueStyle:{fontSize:14,color:status[1],whiteSpace:'nowrap',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis'}},{label:z('Last sync','上次同步'),value:busy==='sync'?z('Syncing…','同步中…'):(relTime(last,zh)||'—')},
-   connected?act(busy==='sync'?z('Syncing…','同步中…'):z('Sync now','立即同步'),()=>void sync(),undefined,{sub:result}):act(z('Reconnect','重新连接'),()=>openClassic('settings-connections',c.id))]},
+   connected?act(busy==='sync'?z('Syncing…','同步中…'):z('Sync now','立即同步'),()=>void sync(),undefined,{sub:result,dim:!syncPath}):off(act(z('Reconnect','重新连接'),NOOP))]},
   {title:z('Permissions','权限'),rows:[ro(z('Read','读取'),perms.includes('read')),ro(z('Create drafts','创建草稿'),perms.includes('draft')),ro(z('Ask before sending or changing','发送或修改前先询问'),!perms.includes('send')||hold),off(tog(z('Use as an insight source','作为洞察来源'),perms.includes('insight')))]},
-  {rows:[nav(z('Connection setup','连接设置'),()=>openClassic('settings-connections',c.id))]},
   {rows:[act(busy==='off'?'…':confirm?z('Click again to disconnect','再次点击以断开'):z('Disconnect','断开连接'),()=>void disconnect(),'danger')]}
  ]}/>;
 }
@@ -271,7 +271,6 @@ function SkillsPage({ctx,sub}:{ctx:Ctx;sub:any}){
   const a=sub.id?cap.actions.find((x:any)=>x.name===sub.id):null;const yes=(v:boolean)=>v?z('Yes','是'):z('No','否');
   if(a)return <Page title={a.name} sub={a.description} sections={[
    {rows:[{label:z('Registered','已登记'),value:yes(a.registered)},{label:z('Model configured','模型已配置'),value:cap.model?.state==='configured'?z('Yes','是'):cap.model?.state==='invalid'?z('Invalid','无效'):z('No','否')},{label:z('Background worker','后台处理'),value:cap.worker?.enabled?z('Enabled','已启用'):z('Off','未启用')},{label:z('Availability','可用性'),value:a.availability==='not_checked'?z('Not checked','未检测'):a.availability},{label:z('Reaches outside this Mac','会访问外部'),value:yes(!!a.external)},{label:z('Effect','作用'),value:a.effect||'—'}]},
-   {rows:[nav(z('Open capability console','打开能力后台'),()=>openClassic('ideas-console'))]}
   ]}/>;
   return <Page title={z('Capability registry','能力登记')} sections={[{rows:cap.actions.map((x:any)=>({key:x.name,label:x.name,sub:x.description,value:x.external?z('External','外部'):z('Local','本机'),valueStyle:{fontSize:12,color:'var(--text3)',whiteSpace:'nowrap'},onRow:()=>ctx.goSet('skills',{type:'registry',id:x.name}),caret:true}))}]}/>;}
  if(!skills)return <Page title={z('Skills','技能')} sections={[{rows:[{label:err||'…'}]}]}/>;
@@ -306,13 +305,6 @@ function ConversationsPage({ctx}:{ctx:Ctx}){
  const current=ctx.conversationId||ws.primaryConversationId;
  return <Page title={z('Conversations','对话')} sections={[
   {rows:list.map(c=>({key:c.id,label:c.title||z('Untitled','未命名'),sub:[c.id===ws.primaryConversationId?z('Main conversation','主对话'):z('Side conversation','侧边对话'),relTime(c.lastMessageAt||c.updatedAt,zh)].filter(Boolean).join(' · '),check:c.id===current,onRow:()=>ctx.setConversation(c.id===ws.primaryConversationId?null:c.id)}))},
-  {rows:[{label:busy?'…':z('New side conversation','新建侧边对话'),onRow:()=>busy||void create(),labelStyle:{fontSize:14,fontWeight:500,color:'var(--accentText)'}}],note:z('The main conversation is always kept. Archive or delete side conversations in the full workspace.','主对话始终保留。侧边对话的归档和删除请在完整工作区中进行。')}
+  {rows:[{label:busy?'…':z('New side conversation','新建侧边对话'),onRow:()=>busy||void create(),labelStyle:{fontSize:14,fontWeight:500,color:'var(--accentText)'}}]}
  ]}/>;
 }
-
-// Secondary entry page for capabilities that keep their full-workspace home.
-function classicSections(zh:boolean):Sec[]{const z=(en:string,c:string)=>zh?c:en;return [{rows:[
- {label:z('Inbox, sources and approvals','收件箱、来源与审批'),icon:'ph-tray',onRow:()=>openClassic('inbox'),caret:true},
- {label:z('Ideas and capability console','灵感与能力后台'),icon:'ph-lightbulb',onRow:()=>openClassic('ideas'),caret:true},
- {label:z('Tasks, projects and files','任务、项目与文件'),icon:'ph-list-checks',onRow:()=>openClassic('tasks'),caret:true},
- {label:z('Settings: devices, files and providers','设置：设备、文件与模型服务'),icon:'ph-gear-six',onRow:()=>openClassic('settings'),caret:true}]}]}

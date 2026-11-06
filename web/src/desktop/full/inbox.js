@@ -2,6 +2,18 @@
 (() => {
  const B=window.OpsTwinsBusinessUI,D=window.OpsTwinsDesktop,enc=encodeURIComponent;
  const analyzing=new Set(),manualReplies=new Set();
+ let navigation=0;
+ D.openInbox=async id=>{
+  const generation=++navigation;go('inbox');
+  try{
+   const item=await D.api('GET','/api/inbox/'+enc(id));
+   if(generation!==navigation||current!=='inbox')return;
+   const index=data.inbox.findIndex(x=>x.id===id);if(index<0)data.inbox.push(item);else data.inbox[index]=item;
+   filter='all';queryInbox='';$('#inbox-query').value='';selected=id;
+   $$('[data-filter]').forEach(button=>button.setAttribute('aria-pressed',button.dataset.filter===filter));
+   renderInbox();$('.inbox-layout').classList.add('show-detail');
+  }catch(error){if(generation===navigation&&current==='inbox')toast(error.status===404?'这项收件箱记录已不存在':error.message)}
+ };
  $('#retry-draft')?.remove();
  const terminal=new Set(['done','dismissed','sent','delivered','recalled','cancelled']);
  const actions=$('#send-reply').parentElement;actions.insertBefore($('#view-reply-analysis'),$('#send-reply'));const aiButton=$('#inspire');aiButton.textContent='Chat With AI';aiButton.setAttribute('aria-label','Chat With AI');aiButton.title='Chat With AI';aiButton.classList.add('inbox-chat-ai');aiButton.prepend(icon('bulb'));$('.detail-person').append(aiButton);
@@ -18,7 +30,7 @@
   $('#ignore').disabled=locked;$('#mark-done').disabled=locked;
   let notice=$('#desktop-reply-status');if(!notice){notice=node('p','inline-note');notice.id='desktop-reply-status';notice.setAttribute('role','status');draft.after(notice)}
   const prep=item.draftPreparation,running=D.inboxDraftRunning(item.id);
-  notice.textContent=running?'正在生成回复…':item.sourceUnavailable?'来源连接不可用，请恢复连接后重试':noReply?(item.quiet?'无需回复，已保留在安静记录中':'无需回复，此事项仍保留供你查看判断依据'):closed?'此事项已结束，无需准备回复':item.draftError?'草稿生成失败：'+item.draftError:prep?.status==='queued'?'回复正在排队':prep?.status==='running'?'正在生成回复…':prep?.status==='unknown'?'上次生成结果未确认，请回查原请求':prep?.status==='failed'?'草稿生成失败，可重新生成':'';
+  notice.textContent=running?'正在生成回复…':item.sourceUnavailable?'来源连接不可用，请恢复连接后重试':noReply?(item.quiet?'无需回复，已保留在安静记录中':'无需回复，此事项仍保留供你查看判断依据'):closed?'此事项已结束，无需准备回复':item.draftStale?'来源已更新，草稿待重新核对':item.draftError?'草稿生成失败：'+item.draftError:prep?.status==='queued'?'回复正在排队':prep?.status==='running'?'正在生成回复…':prep?.status==='unknown'?'上次生成结果未确认，请回查原请求':prep?.status==='failed'?'草稿生成失败，可重新生成':'';
   if(item.draftError&&!locked&&!running&&prep?.status!=='unknown')notice.append(btn('重试草稿',()=>{manualReplies.add(item.id);void D.retryInboxDraft(item.id,'draft-'+crypto.randomUUID(),'chat')}));
   if(noReply&&!closed&&!locked)notice.append(btn('手动回复',()=>{manualReplies.add(item.id);local.drafts[item.id]='';save();renderInbox();$('#draft').focus()}));
   $('#desktop-judgment-status')?.remove();$('#desktop-handling-status')?.remove();

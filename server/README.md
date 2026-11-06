@@ -100,3 +100,12 @@ API SIGTERM/SIGINT 最多3秒关闭，停止后台调度并终止残留SSE；重
 V6 复用既有业务接口。起草请求新增可选 `tone: brief | warm`，随原 `requestId` 持久化并参与请求指纹；改变语气不能重用旧请求。候选应用和原请求回查保留语气。Chat 工作面板与工作记录可透传仅展示用途的 `v6` 对象，不授予执行权限、不替代 canonical 状态。
 
 字段、错误、历史兼容与验证边界见 [V6 数据契约](../docs/public/v6-data-contract.md)。
+
+- [连接新鲜度](../docs/public/connection-freshness.md)记录同步续页、判断重算和自动草稿版本约束。
+- [注意力投递](../docs/public/attention-delivery.md)和[意图处理](../docs/public/intent-handling.md)记录提醒、摘要、动作及请求轮次绑定。
+- [通用执行](../docs/public/agent-execution.md)和[分析证据](../docs/public/analysis-identity-and-time.md)记录工具权限、命令回执与身份和时间约束。
+- [灵感分类](../docs/public/idea-content-categories.md)和[洞察视觉](../docs/public/insight-visuals.md)记录只读投影、后台门控及来源变化时的失效规则。
+
+## 本机主动提醒
+
+原生通知的启用、耐久去重、来源复核与模型输出约束见 [本机主动提醒](../docs/public/desktop-notifications.md)。它与飞书私聊通知、自动发送独立。

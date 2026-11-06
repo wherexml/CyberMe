@@ -1,4 +1,4 @@
-import {fullAssets,appVersion} from './mygo-full-assets.mjs';
+import {fullAssets,appVersion,retireClassicEntry} from './mygo-full-assets.mjs';
 import {mkdir, readFile, writeFile, copyFile, readdir, cp, rm, rename} from 'node:fs/promises';
 import {resolve, dirname, extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -46,6 +46,7 @@ const qaWidthArg=process.argv.find(x=>x.startsWith('--acceptance-width='));
 const qaWidth=qaWidthArg?Number(qaWidthArg.slice(19)):1000;
 if(qaWidthArg&&(!v17||standalone||!Number.isInteger(qaWidth)||qaWidth<640||qaWidth>1600))throw Error('Invalid public QA initial width');
 const live=standalone||process.argv.includes('--workspace');
+if(live)await retireClassicEntry(assets);
 const currentApp=resolve(root,v17?'.local/apps/CyberMe V17 QA.app':standalone?'.local/apps/CyberMe.app':live?'.local/apps/CyberMe Workspace.app':'.local/apps/CyberMe QA.app');
 const app=process.env.OPSTWIN_BUILD_OUTPUT;
 if(app!==resolve(root,'.local/apps/.build-transaction/staged.app'))throw Error('Invalid build staging path');

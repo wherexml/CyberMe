@@ -1,4 +1,4 @@
-import {communicationMessages} from './communication-context';
+import {communicationMessages,preciseMessageTime} from './communication-context';
 import {pinyin} from 'pinyin-pro';
 /** Typed, read-only Feishu context. No shell/tool chosen by model, no message audit. */
 import {DatabaseSync} from 'node:sqlite';
@@ -14,13 +14,13 @@ type Chat={id:string;name:string;mode:string;personId:string;syncedAt?:string};
 type Message={id:string;chatId:string;chatName:string;mode:string;senderId:string;senderName:string;isMine?:boolean;sentAt:string;displayTime?:string;text:string;parentId?:string;threadId?:string;mentions:string[];truncated:boolean};
 const normalize=(s:unknown)=>String(s??'').trim().toLocaleLowerCase();
 const parse=(s:any)=>typeof s==='string'?JSON.parse(s):s;
-function stamp(v:any){const n=Number(v);return Number.isFinite(n)&&n>0?new Date(n<1e12?n*1000:n).toISOString():typeof v==='string'&&/(?:Z|[+-]\d\d:\d\d)$/.test(v)&&Number.isFinite(Date.parse(v))?new Date(v).toISOString():'';}
+const stamp=(v:any)=>preciseMessageTime(v)||'';
 function chat(v:any):Chat{return {id:String(v.chat_id||v.id||''),name:String(v.name||''),mode:v.chat_mode||'',personId:v.p2p_target_id||v.p2p_target?.id||'',syncedAt:v.synced_at};}
 function message(v:any,c:Chat,owner:string):Message|undefined{
  if(v.deleted||v.is_deleted||v.recalled||v.is_recalled)return;
- const senderId=v.sender?.id||v.sender_id||v.senderId||'',raw=v.text||extractMessageText(v.body?.content||v.content||'',v.msg_type||v.type,v.mentions||[]);
+ const senderId=(typeof v.sender?.id==='object'?v.sender.id.open_id:v.sender?.id)||v.sender_id||v.senderId||'',raw=v.text||extractMessageText(v.body?.content||v.content||'',v.msg_type||v.type,v.mentions||[]);
  const text=String(raw),id=String(v.message_id||v.id||'');if(!id)return;
- return {id,chatId:c.id,chatName:c.name,mode:c.mode,senderId,senderName:v.sender?.name||v.sender_name||v.senderName||senderId,isMine:owner&&senderId&&(!v.sender?.id_type||v.sender.id_type==='open_id')?senderId===owner:undefined,sentAt:stamp(v.create_time||v.sent_at||v.sentAt),displayTime:String(v.create_time||v.sent_at||v.sentAt||''),text:text.slice(0,12000),parentId:v.parent_id||v.reply_to_message_id||v.replyToId,threadId:v.thread_id,mentions:(v.mentions||[]).map((x:any)=>typeof x.id==='string'?x.id:x.id?.open_id||x.open_id).filter(Boolean),truncated:text.length>12000};
+ return {id,chatId:c.id,chatName:c.name,mode:c.mode,senderId,senderName:v.sender?.name||v.sender_name||v.senderName||senderId,isMine:owner&&senderId&&(!v.sender?.id_type||v.sender.id_type==='open_id')?senderId===owner:undefined,sentAt:stamp(v.create_time)||stamp(v.sent_at)||stamp(v.sentAt),displayTime:String(v.create_time||v.sent_at||v.sentAt||''),text:text.slice(0,12000),parentId:v.parent_id||v.reply_to_message_id||v.replyToId,threadId:v.thread_id,mentions:(v.mentions||[]).map((x:any)=>typeof x.id==='string'?x.id:x.id?.open_id||x.open_id).filter(Boolean),truncated:text.length>12000};
 }
 function configGuard(){
  connectionPermission('read');const c=feishuConnection();if(!c||c.status!=='connected')throw new ApiError(403,'feishu_not_connected','请先连接飞书用户身份');
@@ -105,6 +105,21 @@ export async function queryFeishuContext(input:any){
  for(const host of threadHosts.slice(0,10)){try{const p=page(await live.call(['im','+messages-mget','--message-ids',host.id,'--no-reactions']));const v=p.rows.find(v=>(v.message_id||v.id)===host.id&&(!v.chat_id||v.chat_id===host.chatId));if(v)addReplies(v,byId.get(host.chatId)!);else gaps.push('thread_host_missing');}catch{guard();gaps.push('thread_read_failed');}}
  const ids=new Set(items.map(m=>m.id)),parents=[...new Set(items.map(m=>m.parentId).filter((x):x is string=>!!x&&!ids.has(x)))];
  for(const id of parents.slice(0,10)){const child=items.find(m=>m.parentId===id)!;try{const p=page(await live.call(['im','+messages-mget','--message-ids',id,'--no-reactions']));for(const v of p.rows){if((v.message_id||v.id)!==id||(v.chat_id||v.chatId)&& (v.chat_id||v.chatId)!==child.chatId)continue;const c=byId.get(child.chatId)!;const m=message(v,c,live.owner);if(m&&matchesConnectionFilter(c,m,feishuConnection()?.config?.filter)){items.push(m);ids.add(id);addReplies(v,c);}}}catch{guard();gaps.push('parent_read_failed');}}
+ // Resolve formatted timestamps using exact source IDs, including parents and thread replies.
+ // Bound additional reads within the same overall deadline; missing evidence remains partial.
+ const exactItems=[...new Map(items.map(m=>[m.id,m])).values()];let rawReads=0;
+ for(const m of exactItems){
+  if(m.sentAt)continue;
+  if(rawReads++>=50){gaps.push('timestamp_read_limit');continue;}
+  try{
+   const p=page(await live.call(['api','GET','/open-apis/im/v1/messages/'+encodeURIComponent(m.id)]));
+   const raw=p.rows.find(v=>v.message_id===m.id&&v.chat_id===m.chatId);
+   if(!raw){gaps.push('timestamp_identity_mismatch');continue;}
+   if(raw.deleted||raw.is_deleted||raw.recalled||raw.is_recalled){items.splice(0,items.length,...items.filter(x=>x.id!==m.id));continue;}
+   const time=stamp(raw.create_time);if(!time){gaps.push('timestamp_missing');continue;}
+   for(const x of items.filter(x=>x.id===m.id))x.sentAt=time;
+  }catch(e){guard();gaps.push('timestamp_read:'+(e instanceof ApiError?e.code:'failed'));}
+ }
  guard();return response(target,items,{source:'live',start,end,stale:false,limited,gaps:[...new Set(gaps)],missingParents:parents.filter(x=>!ids.has(x)).length,crossGroupCoverage:target.mode==='p2p'?'visible_allowed_groups; search_index_may_lag':'selected_group'});
 }
 

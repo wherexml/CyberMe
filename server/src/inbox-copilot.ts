@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 
-export const COPILOT_VERSION='feishu-omlx-cooldown-v1';
+export const COPILOT_VERSION='feishu-omlx-cooldown-v2-current-turn';
 export const isFeishuCopilot=(item:any)=>/^feishu$/i.test(item.channel)&&item.sourceSystem!=='virtual-im';
 export function messageTime(value:any):number|undefined {
  const n=typeof value==='number'||/^\d+$/.test(String(value))?Number(value):Date.parse(value);
@@ -11,7 +11,17 @@ export function copilotEvidence(item:any) {
  const messages=(item.messages||[]).filter((m:any)=>!m.deleted&&!m.recalled).slice().sort((a:any,b:any)=>(messageTime(a.sentAt)||0)-(messageTime(b.sentAt)||0));
  const incoming=messages.filter((m:any)=>m.isMine===false);
  const mentioned=(m:any)=>m.mentionsSelf===true||!!item.selfId&&(m.mentions||[]).some((x:any)=>(typeof x.id==='object'?x.id.open_id:x.id)===item.selfId);
- const requests=mode==='p2p'?incoming:mode==='group'?incoming.filter(mentioned):[];
+ // A bound first-person commitment is work, not an incoming request. Only the
+ // scoped model can resolve it; an unrelated later owner message is not proof.
+ const bound=item.requestRoundId?messages.find((m:any)=>m.id===item.requestRoundId):undefined;
+ if(bound&&(bound.isMine===true||(bound.isMine!==false&&bound.direction==='outgoing'))){
+  const at=messageTime(bound.sentAt);
+  return at?{state:'pending',reason:'本人承诺待核对',request:bound,messages,at}:{state:'unknown',reason:'原承诺时间待核实',messages};
+ }
+ const eligible=mode==='p2p'?incoming:mode==='group'?incoming.filter(mentioned):[];
+ // A durable round owns one request. Newer messages are resolution context, never a replacement request.
+ const requests=item.requestRoundId?eligible.filter((m:any)=>m.id===item.requestRoundId):eligible;
+ if(item.requestRoundId&&!requests.length)return {state:'unknown',reason:'原请求缺失或已撤回，不能改绑其他消息',messages};
  const last=requests.at(-1);
  if(!['p2p','group'].includes(mode))return {state:'unknown',reason:'会话类型待核实',messages};
  if(!last)return {state:mode==='group'?'excluded':'unknown',reason:mode==='group'?'群聊未发现明确 @ 本人':'没有可核实的来信',messages};
@@ -26,13 +36,16 @@ export function copilotEvidence(item:any) {
  return {state:'pending',reason:'待回复',request:unresolved.at(-1),messages,at:latestAt};
 }
 export function stampCopilot(item:any,previous:any,at=Date.now()) {
- if(!isFeishuCopilot(item))return item;
+ if(!isFeishuCopilot(item)){
+  if(previous&&JSON.stringify(previous.messages)!==JSON.stringify(item.messages))return {...item,approved:false,sensitiveApproved:false,approvalSourceVersion:undefined,...(previous.draft?{draftStale:true}:{}),...(previous.draftPreparation&&['succeeded','skipped','queued'].includes(previous.draftPreparation.status)?{draftPreparation:undefined}:{})};
+  return item;
+ }
  const evidence=copilotEvidence(item);
  const signature=createHash('sha256').update(JSON.stringify({mode:item.chatMode||item.sourceScope?.chatMode,selfId:item.selfId,messages:(item.messages||[]).map((m:any)=>({id:m.id,text:m.text,sentAt:m.sentAt,isMine:m.isMine,mentions:m.mentions,mentionsSelf:m.mentionsSelf,replyToId:m.replyToId,rootId:m.rootId,threadId:m.threadId,deleted:m.deleted,recalled:m.recalled}))})).digest('hex');
  const changed=previous?.copilot?.signature!==signature;
  // The first observed version and every changed version get a durable deadline. Metadata refreshes do not reset it.
  const notBefore=changed?new Date(at+180000).toISOString():previous.copilot.notBefore;
- return {...item,copilot:{version:COPILOT_VERSION,signature,notBefore,state:evidence.state,requestId:evidence.request?.id,replyId:evidence.reply?.id},...(changed?{approved:false,sensitiveApproved:false,approvalSourceVersion:undefined}:{}),...(changed&&previous?.draft&&!previous.editedByUser?{draftStale:true}:{}),...(changed&&previous?.draftPreparation?{draftPreparation:undefined}: {})};
+ return {...item,copilot:{version:COPILOT_VERSION,signature,notBefore,state:evidence.state,requestId:evidence.request?.id,replyId:evidence.reply?.id},...(changed?{approved:false,sensitiveApproved:false,approvalSourceVersion:undefined}:{}),...(changed&&previous?.draft?{draftStale:true}:{}),...(changed&&previous?.draftPreparation&&['succeeded','skipped','queued'].includes(previous.draftPreparation.status)?{draftPreparation:undefined}: {})};
 }
 export function copilotGate(item:any,at=Date.now()): {state:string;reason:string;request?:any;reply?:any;notBefore?:string} {
  if(!isFeishuCopilot(item))return {state:'ready',reason:''};

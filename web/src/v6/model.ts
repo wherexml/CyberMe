@@ -1,42 +1,79 @@
+import {categoryLabel} from '../../../shared/idea-category';
 // Maps canonical records to V6 card models. Status is projected truthfully: a chosen
 // option is only "sent to CyberMe", never "done", and unknown/partial stay visible.
 import type {InboxItem,Idea,Task,Automation} from '../../../shared/types';
-import {dispositionOf} from '../../../shared/inbox-surfacing';
+import {inboxAttention,ideaAttachedDecision,ideaSourcesClosed,snoozeActive,type InboxAttention} from '../../../shared/inbox-attention';
+import {inboxTimestamp} from '../../../shared/inbox-surfacing';
+import type {AttentionActionType} from '../../../shared/attention-actions';
 import {readVisual,readMeters,readSteps,type DecisionVisual,type DecisionMeters,type InsightVisual,type GalleryVisual,type WorkVisual,V6_GALLERY_KINDS,V6_WORK_KINDS,type V6Text,v6Text} from '../../../shared/v6-visuals';
 import {inFlight,type Workspace,type UIState,type ChatRecord,type Proposal} from './store';
 import {proposalForTask,proposalState,emailSteps} from './proposal-state';
 import type {PillStatus} from './ui';
 import {firstPara,plain} from './md';
-import {deriveDecision,deriveGallery} from './derive';
+import {deriveDecision,deriveGallery,ideaTimeStrip,timeStrip,type TimeStrip} from './derive';
+import {localDay,nextLocalDay} from '../../../shared/local-day';
 
-export const today=()=>new Date().toISOString().slice(0,10);
-export const tomorrow=()=>new Date(Date.now()+864e5).toISOString().slice(0,10);
+export const today=()=>localDay(new Date());
+export const tomorrow=()=>nextLocalDay(new Date());
+/** Absolute time for chat and cards: clock only today, otherwise with the date. Unknown stays empty, never guessed. */
+export function fmtStamp(value:unknown,zh:boolean){
+ const t=inboxTimestamp(value)??(typeof value==='string'?Date.parse(value):NaN);if(!Number.isFinite(t))return '';
+ const d=new Date(t),n=new Date(),clock=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});
+ if(d.toDateString()===n.toDateString())return clock;
+ const year=d.getFullYear()!==n.getFullYear();
+ return zh?`${year?d.getFullYear()+'年':''}${d.getMonth()+1}月${d.getDate()}日 ${clock}`:`${d.toLocaleDateString('en-US',{month:'short',day:'numeric',...(year?{year:'numeric'}:{})})} ${clock}`;
+}
+/** When the exact current request was sent; a record without a selected request has no such time. */
+export function requestAt(item:InboxItem):string|undefined{
+ const it:any=item,id=it.triage?.requestMessageId||it.lastOpenRequest?.requestMessageId,m=(Array.isArray(it.messages)?it.messages:[]).find((x:any)=>x.id===id);
+ const value=m?.sentAt??(!(it.messages||[]).length?it.eventAt||it.receivedAt||it.sentAt:undefined);
+ return inboxTimestamp(value)!==undefined?value:undefined;
+}
 const v6=(x:any)=>x&&x.v6&&typeof x.v6==='object'&&!Array.isArray(x.v6)?x.v6:{};
 const str=(v:unknown)=>typeof v==='string'&&v.length<=200?v:undefined;
 
-export interface DecisionOpt{label:string;effect?:string;next?:string;rec:boolean}
-export interface DecisionModel{id:string;kind:'inbox';q:string;ctx:string;due:string;urgent:boolean;opts:DecisionOpt[];visual:DecisionVisual|null;meters:DecisionMeters|null;prec:string;why:string[];item:InboxItem}
+export interface DecisionOpt{label:string;effect?:string;next?:string;rec:boolean;action?:AttentionActionType}
+export interface DecisionModel{id:string;kind:'inbox';q:string;ctx:string;due:string;urgent:boolean;opts:DecisionOpt[];visual:DecisionVisual|null;meters:DecisionMeters|null;prec:string;why:string[];item:InboxItem;kicker:string;sourceAt:string;strip:TimeStrip|null;statusNote:string;ideas:{id:string;title:string}[]}
 export function decisions(ws:Workspace,ui:UIState,zh:boolean):DecisionModel[]{
  const out:DecisionModel[]=[];
  for(const item of ws.inbox||[]){
-  let pending=false;try{pending=dispositionOf(item).placement==='pending'}catch{}
-  const mark=ui.brief[item.id];if(!pending&&!mark)continue;
+  // Same surface as chat and search: a sibling's re-judgment keeps its card here, and a snooze hides it everywhere.
+  let pending=false,attn:InboxAttention|null=null;try{attn=inboxAttention(item);pending=attn.surface==='decision'}catch{}
+  if(snoozeActive(item))continue;
+  // A local mark never brings back a closed or quiet matter; only a real, already sent pick keeps its result card.
+  const mark=ui.brief[item.id];if(!pending&&!mark?.pick)continue;if(item.status==='dismissed')continue;
   const x=v6(item),tri:any=(item as any).triage||{};
   const urgent=tri.priority==='high'||!!x.urgent;
-  const due=x.due?v6Text(x.due,zh):(item as any).dueDate?fmtDay((item as any).dueDate,zh):urgent?(zh?'今天':'Today'):'';
+  // Priority never invents a date; a due label exists only when the record has one.
+  const dueText=x.due?v6Text(x.due,zh):(item as any).dueDate?fmtDay((item as any).dueDate,zh):'';const due=dueText?(zh?'截止 ':'Due ')+dueText:'';
+  const isDecision=tri.actionType==='decision',at=requestAt(item),kicker=[isDecision?(zh?'待决策':'Decision'):(zh?'待回复':'Reply'),item.channel&&item.channel!=='Internal'?item.channel:'',at?(zh?'来源 ':'From ')+fmtStamp(at,zh):''].filter(Boolean).join(' · ');
+  const attachedIdeas=(ws.ideas||[]).filter(i=>(i as any).status==='new'&&ideaAttachedDecision(i,[item])).map(i=>({id:i.id,title:i.title}));
   const xo=Array.isArray(x.options)?x.options.filter((o:any)=>o&&typeof o==='object'&&!Array.isArray(o)):[];
   const opts:DecisionOpt[]=xo.length?xo.map((o:any)=>({label:v6Text(o.label,zh),effect:o.effect?v6Text(o.effect,zh):undefined,next:o.next?v6Text(o.next,zh):undefined,rec:!!o.recommended}))
    :defaultOptions(item,zh);
-  out.push({id:item.id,kind:'inbox',q:x.question?v6Text(x.question,zh):item.title,ctx:x.context?v6Text(x.context,zh):plain((item as any).summary||tri.reason||item.body,220),due,urgent,opts,
+  out.push({id:item.id,kind:'inbox',q:x.question?v6Text(x.question,zh):item.title,ctx:x.context?v6Text(x.context,zh):decisionContext(item),due,urgent,opts,
    visual:readVisual<DecisionVisual>(x.visual,['accts','quiet','gantt'])??deriveDecision(item),meters:readMeters(x.meters),
-   prec:x.precedent?v6Text(x.precedent,zh):(tri.priorityReason||''),why:Array.isArray(x.why)&&x.why.length?x.why.map((w:V6Text)=>v6Text(w,zh)):(zh?['最重要','最省事','风险最低']:['Matters most now','Least effort','Lowest risk']),item});
+   kicker,sourceAt:at||'',strip:timeStrip(item),statusNote:attn?.reason==='reevaluating_open'?attentionLabel(attn,zh):'',ideas:attachedIdeas,prec:x.precedent?v6Text(x.precedent,zh):'',why:Array.isArray(x.why)&&x.why.length?x.why.map((w:V6Text)=>v6Text(w,zh)):(zh?['最重要','最省事','风险最低']:['Matters most now','Least effort','Lowest risk']),item});
  }
  return out.sort((a,b)=>Number(b.urgent)-Number(a.urgent));
 }
+// A classifier label is not a summary, and priority criteria are not a precedent.
+function decisionContext(item:InboxItem):string{
+ const messages=Array.isArray(item.messages)?item.messages:[];
+ const requestId=item.triage?.requestMessageId||(item as any).lastOpenRequest?.requestMessageId;
+ if(requestId){
+  const request=messages.find((m:any)=>m.id===requestId);
+  return request&&!request.deleted&&!request.recalled?plain(request.text||request.body||request.content||'',220):'';
+ }
+ // A chat container can describe a superseded request; without a selected message do not guess.
+ return messages.length?'':plain(item.summary||item.body,220);
+}
 function defaultOptions(item:InboxItem,zh:boolean):DecisionOpt[]{
  const tri:any=(item as any).triage||{};const reply=tri.actionType==='reply'||['quick_reply','deep_reply','review'].includes(tri.route);
- const draft=zh?'起草一封回复，等我确认':'Draft a reply for my review',none=zh?'不需要回复，标记为已处理':'No reply needed, mark it handled',task=zh?'转成任务稍后处理':'Turn it into a task for later';
- return reply?[{label:draft,rec:true},{label:task,rec:false},{label:none,rec:false}]:[{label:task,rec:true},{label:draft,rec:false},{label:none,rec:false}];
+ const draft=zh?'起草回复，等我确认':'Draft a reply for my review',task=zh?'转成任务稍后处理':'Turn it into a task for later';
+ // "Nothing needed" is the direct Dismiss action on the card, not a sentence for the model.
+ const d:DecisionOpt={label:draft,rec:reply,action:'draft_reply'},t:DecisionOpt={label:task,rec:!reply,action:'create_task'};
+ return reply?[d,t]:[t,d];
 }
 export function fmtDay(value:string,zh:boolean){const d=new Date(value);if(!Number.isFinite(d.getTime()))return '';return zh?`${d.getMonth()+1} 月 ${d.getDate()} 日`:d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
 export function relTime(value:string|undefined,zh:boolean){
@@ -45,49 +82,59 @@ export function relTime(value:string|undefined,zh:boolean){
  const d=Math.floor((new Date().setHours(0,0,0,0)-new Date(t).setHours(0,0,0,0))/86400000);if(d===1)return zh?'昨天':'Yesterday';if(d<7)return zh?`${d} 天前`:`${d} days ago`;return fmtDay(value,zh);
 }
 
-// Brief › Inspirations: verification-needed items first (judgment cards), then Ideas gallery.
-export interface InsightModel{id:string;title:string;summary:string;status:string;tone:'accent'|'warn'|'muted'|'ok';visual:InsightVisual|null;actions:{label:string;prompt:string;primary?:boolean}[];sources:{name:string;quote:string}[];item:InboxItem}
+// Brief › Inspirations: only records the shared attention projection places here, each with its real reason.
+export interface InsightModel{id:string;title:string;summary:string;status:string;tone:'accent'|'warn'|'muted'|'ok';visual:InsightVisual|null;attention:InboxAttention;sources:{name:string;quote:string;at?:string}[];item:InboxItem;sourceAt:string}
 export function insights(ws:Workspace,zh:boolean,T:any):InsightModel[]{
  const out:InsightModel[]=[];
  for(const item of ws.inbox||[]){const m=insightOf(item,zh,T);if(m)out.push(m)}
- return out;
+ // Unconfirmed real outcomes first, then the newest source event. Never hidden, whatever else is waiting.
+ const rank=(m:InsightModel)=>m.attention.state==='execution'?0:1;
+ return out.sort((a,b)=>rank(a)-rank(b)||b.sourceAt.localeCompare(a.sourceAt));
 }
-/** The list projection of one verify item; the detail view binds the same title, summary, status and tone. */
-export function insightOf(item:InboxItem,zh:boolean,T:any):InsightModel|null{
- let d:any;try{d=dispositionOf(item)}catch{return null}if(d.placement!=='verify')return null;
- const x=v6(item);const thin=thinEvidence(item);const changed=!thin&&/source|time|context/.test(d.primaryReason);
- // Proven insufficient evidence uses the reference thin-evidence card (R:1683, 1804): "Not enough evidence", muted tone,
- // Watch for more / Dismiss prompts. Changed or unsafe verify cases keep the warn re-check card.
- const actions=thin?[{label:T.watch,prompt:zh?'继续关注，有更多再告诉我。':'Keep watching and tell me if more come in.'},{label:T.dismiss,prompt:zh?'忽略这条洞察。':'Dismiss this insight.'}]
-  :[{label:zh?'重新核对来源':'Re-check sources',prompt:zh?'帮我重新核对这条事项的来源。':'Re-check the sources for this item.',primary:true},{label:T.dismiss,prompt:zh?'这条不用处理了，忽略吧。':"This doesn't need anything, dismiss it."}];
- return {id:item.id,title:x.title?v6Text(x.title,zh):item.title,summary:x.summary?v6Text(x.summary,zh):plain(item.body,200),status:thin?T.st.thin:changed?T.st.changed:T.st.unknown,tone:thin?'muted':'warn',visual:readVisual<InsightVisual>(x.visual,['renew','cal','sig']),
-  actions,sources:sourcesOf(item),item};
+const REASONS:Record<string,[string,string]>={sending:['Sending','发送中'],send_unknown:['Send result not confirmed','发送结果待核实'],send_failed:['Send failed','发送失败'],draft_unknown:['Draft result not confirmed','草稿结果待核实'],draft_failed:['Draft failed','草稿生成失败'],processing_failed:['Source processing failed','资料处理失败'],manual_draft:['Unsent draft','有未发送的草稿'],approval:['Approved, not sent','已批准，尚未发送'],sensitive:['Sensitive item needs you','敏感事项待你确认'],time_unknown:['Message time unverified','消息时间待核实'],source_unavailable:['Source connection unavailable','来源连接不可用'],reevaluating_open:['Source updated, re-evaluating','来源有更新，正在重新判断'],new_request:['New request','新请求'],closure_unverified:['Close time unverified','结束时间待核实'],context_unknown:['Not enough evidence','证据不足']};
+const MISSING:Record<string,[string,string]>={missing_material:['Needed material or attachment content is missing','缺少所需资料或附件内容'],unclear:['Unclear who should answer or what is needed','不清楚该由谁回复或需要什么']};
+/** Honest, reason-specific status text. Never a generic "sources changed". */
+export function attentionLabel(a:InboxAttention,zh:boolean){
+ const pick=(x?:[string,string])=>x?x[zh?1:0]:'';
+ if(a.reason==='missing_context')return pick(MISSING[a.detail||''])||(zh?'还缺少关键信息':'Key information is missing');
+ return pick(REASONS[a.reason])||(zh?'待你确认':'Needs you');
 }
-/** Genuine insufficient-signal evidence (reference "Not enough evidence", R:1683): a verify item whose own successful
- *  judgment reports missing context (missingContext ≥ .5) or an unknown resolution/action. Sensitive, failed or pending
- *  judgments, unknown times, unavailable sources, send/draft/processing failures, recalls and unverified closures are
- *  verify cases too, but they are not thin evidence. */
-export function thinEvidence(item:InboxItem):boolean{
- let d:any;try{d=dispositionOf(item)}catch{return false}
- if(d.placement!=='verify'||d.primaryReason!=='context_unknown')return false;
- if(!(d.recoveryReasons as string[]).every(r=>r==='context_unknown'))return false;
- const it:any=item,t=it.triage;
- if(t?.status!=='succeeded'||it.sensitive||it.sourceUnavailable)return false;
- if(['sent','delivered','done','dismissed','cancelled','recalled','sending','send_unknown','send_failed','failed'].includes(String(it.status)))return false;
- return (t.missingContext??0)>=.5||t.resolution==='unknown'||t.actionType==='unknown';
+const looksRaw=(text:string)=>/^\s*[\[{]/.test(text);
+function insightSummary(item:InboxItem,zh:boolean,a:InboxAttention){
+ const x=v6(item);
+ if(a.question)return a.question;
+ if(x.summary)return v6Text(x.summary,zh);
+ const request=decisionContext(item);if(request)return request;
+ const body=String(item.body||'');
+ return (Array.isArray(item.messages)&&item.messages.length)||looksRaw(body)?'':plain(body,200);
 }
-export function sourcesOf(item:InboxItem):{name:string;quote:string}[]{
+/** The list projection of one record; the detail view binds the same title, summary, status and tone. */
+export function insightOf(item:InboxItem,zh:boolean,_T:any):InsightModel|null{
+ let a:InboxAttention;try{a=inboxAttention(item)}catch{return null}if(a.surface!=='insight')return null;
+ const x=v6(item),thin=a.reason==='context_unknown';
+ return {id:item.id,title:x.title?v6Text(x.title,zh):item.title,summary:insightSummary(item,zh,a),status:attentionLabel(a,zh),tone:thin?'muted':'warn',visual:readVisual<InsightVisual>(x.visual,['renew','cal','sig']),attention:a,sources:sourcesOf(item),item,sourceAt:requestAt(item)||''};
+}
+export function sourcesOf(item:InboxItem):{name:string;quote:string;at?:string}[]{
  const msgs=Array.isArray((item as any).messages)?(item as any).messages:[];
- const rows=msgs.slice(-4).map((m:any)=>({name:String(m.sender||m.from||item.sender||item.channel||''),quote:plain(String(m.text||m.body||m.content||''),280)})).filter((r:any)=>r.quote);
- return rows.length?rows:[{name:[item.sender,item.channel].filter(Boolean).join(' · '),quote:plain(item.body,400)}];
+ const rows=msgs.slice(-4).map((m:any)=>({name:String(m.senderName||m.sender||m.from||item.sender||item.channel||''),at:typeof m.sentAt==='string'?m.sentAt:undefined,quote:plain(String(m.text||m.body||m.content||''),280)})).filter((r:any)=>r.quote);
+ return rows.length?rows:[{name:[item.sender,item.channel].filter(Boolean).join(' · '),at:requestAt(item),quote:plain(item.body,400)}];
 }
-export interface GalleryModel{id:string;kind:string;icon:string;color:string;when:string;title:string;body:string;act:string;action:string;visual:GalleryVisual|null;idea:Idea}
-const CAT:Record<string,[string,string,string,string]>={productivity:['ph-sun-horizon','#ff9f0a','Focus','专注'],automation:['ph-clock-counter-clockwise','#30b0c7','Routine','例行'],communication:['ph-users-three','#5e5ce6','Relationships','人脉'],insight:['ph-brain','#af52de','Pattern','规律']};
+/** Evidence time first. Generation or refresh time is labelled as such, because it says nothing about how fresh the source is. */
+export function ideaWhen(idea:Idea,zh:boolean){const i:any=idea,from=fmtStamp(i.occurredAt,zh),upd=fmtStamp(i.refreshedAt,zh);return [from?(zh?'来源 ':'From ')+from:'',upd?(zh?'更新 ':'Updated ')+upd:(zh?'生成 ':'Created ')+relTime(idea.createdAt,zh)].filter(Boolean).join(' · ')}
+/** A passed deadline says only that: no outcome is implied. An inferred deadline is labelled as inferred. */
+export function ideaDeadline(idea:Idea,zh:boolean){const i:any=idea,t=inboxTimestamp(i.deadlineAt);if(t===undefined)return '';if(t<=Date.now())return zh?'已过期，结果未知':'Deadline passed, outcome unknown';return (zh?'截止 ':'Due ')+fmtStamp(i.deadlineAt,zh)+(i.deadlineBasis==='inferred'?(zh?'（推算）':' (inferred)'):(zh?'（来信写明）':' (stated)'))}
+/** A past schedule claims nothing about whether it happened. */
+export function ideaSchedule(idea:Idea,zh:boolean){const i:any=idea,t=inboxTimestamp(i.scheduledAt);if(t===undefined)return '';if(t<=Date.now())return zh?'安排时间已过，结果未知':'Scheduled time passed, outcome unknown';return (zh?'安排 ':'Scheduled ')+fmtStamp(i.scheduledAt,zh)+(i.scheduledBasis==='inferred'?(zh?'（推算）':' (inferred)'):(zh?'（来信写明）':' (stated)'))}
+/** Exact links only; a similar title never links a task. */
+export function linkedTasksOf(ws:Workspace,id:string):Task[]{return (ws.tasks||[]).filter((t:any)=>t.inboxId===id||t.sourceInboxId===id||t.ideaId===id||(Array.isArray(t.sourceIds)&&t.sourceIds.includes(id)))}
+export interface GalleryModel{id:string;kind:string;icon:string;color:string;when:string;title:string;body:string;act:string;action:string;visual:GalleryVisual|null;idea:Idea;deadline:string;schedule:string;strip:TimeStrip|null}
+const CAT:Record<string,[string,string,string,string]>={productivity:['ph-sun-horizon','#ff9f0a','Focus','专注'],automation:['ph-clock-counter-clockwise','#30b0c7','Routine','例行'],communication:['ph-users-three','#5e5ce6','Relationships','人脉'],insight:['ph-brain','#af52de','Insight','灵感']};
 export function gallery(ws:Workspace,zh:boolean):GalleryModel[]{
- return (ws.ideas||[]).filter(i=>!['executed','dismissed','archived'].includes(i.status)).map(idea=>{
+ // A snoozed, merged or attached Idea is not a separate card; an independent Idea in the same thread stays one.
+ return (ws.ideas||[]).filter(i=>!['executed','dismissed','archived','deferred','merged'].includes(i.status)&&!ideaSourcesClosed(i as any,ws.inbox||[])&&!ideaAttachedDecision(i,ws.inbox||[])).map(idea=>{
   const x=v6(idea),c=CAT[idea.category]||['ph-lightbulb','#0a84ff','Idea','灵感'];const action=idea.action||'task';
   const act=x.act?v6Text(x.act,zh):({task:zh?'创建任务':'Create a task',draft:zh?'起草草稿':'Draft it',automation:zh?'设置例行任务':'Set up a routine',file:zh?'整理成文件':'Make it a file'} as any)[action]||(zh?'处理这件事':'Take care of it');
-  return {id:idea.id,kind:x.kind?v6Text(x.kind,zh):c[zh?3:2],icon:str(x.icon)||c[0],color:str(x.color)||c[1],when:x.when?v6Text(x.when,zh):relTime(idea.createdAt,zh),title:idea.title,body:x.body?v6Text(x.body,zh):firstPara(idea.description,220),act,action,visual:readVisual<GalleryVisual>(x.visual,V6_GALLERY_KINDS)??deriveGallery(idea,ws.inbox||[]),idea};
+  return {id:idea.id,kind:categoryLabel(idea.contentCategory?.label)||(zh?'待分类':'Uncategorized'),icon:str(x.icon)||c[0],color:str(x.color)||c[1],when:x.when?v6Text(x.when,zh):ideaWhen(idea,zh),deadline:ideaDeadline(idea,zh),schedule:ideaSchedule(idea,zh),strip:ideaTimeStrip(idea),title:idea.title,body:x.body?v6Text(x.body,zh):firstPara(idea.description,220),act,action,visual:readVisual<GalleryVisual>(x.visual,V6_GALLERY_KINDS)??deriveGallery(idea,ws.inbox||[]),idea};
  });
 }
 

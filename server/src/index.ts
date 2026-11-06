@@ -1,4 +1,12 @@
+import {observeExecutionCredentials} from './agent-credential-capture';
+import {stopExecutionCommands} from './agent-execution';
+import {refreshIdeaCategories,ideaCategoryStatus,startIdeaCategories} from './idea-categories';
+import {ideaCategoryInstruction} from '../../shared/idea-category';
+import {categoryMetadata} from './idea-category-value';
+import {dismissalBlock} from '../../shared/inbox-attention';
 import {ideaIconInstruction,resolveIdeaIcon} from '../../shared/idea-icons';
+import {mountDesktopNotifications} from './desktop-notifications';
+import {mountAttention} from './attention-actions';
 import {startIdeasBackground,ideasBackgroundStatus,refreshIdeas} from './ideas-background';
 import {mountIdeasConsole} from './ideas-console';
 import {mountInsightVisuals,startInsightVisuals} from './insight-visuals';
@@ -7,6 +15,7 @@ import {wechatSyncOverview,saveWechatSyncSettings,startWechatSync,startWechatSch
 import {startInboxChat} from './inbox-chat';
 import {startIdeasChat} from './ideas-chat';
 import {knowledgePaths,saveKnowledgePaths} from './knowledge-paths';
+import {memoryPeople} from './memory-library';
 import {mountTaskAgents} from './executors/desktop';
 import {mountMemory,enqueueMemory,startMemory} from './conversation-memory';
 import {queryFeishuContext} from './feishu-context';
@@ -56,6 +65,7 @@ import {modelSettings,saveModelSettings,saveModelProvider} from './model-setting
 import {modelProbe,startModelProbe} from './model-probes';
 import {capabilityCatalog,installAgentOperations} from './agent-capabilities';
 import {queryInbox,bulkInboxStatus} from './inbox-operations';
+import {dismissalBinding,dismissInboxAttention,undoInboxDismissal} from './inbox-attention-actions';
 import {completedAgentWrites} from './agent-effects';
 import {readConnectionResource,callConnectionTool} from './connection-resources';
 import {mountNativeApi} from './native-api';
@@ -87,7 +97,7 @@ app.get('/api/feishu/binding',async c=>c.json(await feishuBindingStatus()));
 app.post('/api/feishu/binding',async c=>c.json(await beginFeishuBinding()));
 app.post('/api/feishu/binding/poll',async c=>c.json(await feishuBindingStatus(true)));
 app.notFound(c=>c.json({error:'not_found',message:'接口不存在'},404));
-const json=(c:any,value:any,status=200)=>c.json(publicValue(value),status);
+const json=(c:any,value:any,status=200)=>{if(status>=200&&status<300)observeExecutionCredentials(value);return c.json(publicValue(value),status)};
 async function body(c:any) {let value;try{value=await c.req.json();}catch{throw new ApiError(400,'invalid_json','请求必须是 JSON 对象');}if(!value||typeof value!=='object'||Array.isArray(value))throw new ApiError(400,'invalid_body','请求必须是 JSON 对象');return value;}
 // Existing UI callers keep arrays; Agent pagination requests receive an explicit envelope.
 function listResponse(c:any,values:any[],legacyLimit?:number){
@@ -100,7 +110,7 @@ function need(type:string,id:string,includeDeleted=false) {const item=get(type,i
 function validate(type:string,input:any,old:any={}) {
  if(type==='inbox'&&(input.channel==='VirtualIM'&&!old.sourceSystem||['virtualImInstanceId','virtualImConversationId','virtualImSourceSeq','virtualImLastMessageId'].some(k=>input[k]!==undefined&&input[k]!==old[k])))throw new ApiError(403,'virtual_source_managed','模拟来源由连接器管理');
  if(type==='inbox'&&old.sourceSystem==='virtual-im'&&['sourceId','connectionId','channel','messages','body','sender','senderId'].some(k=>input[k]!==undefined&&JSON.stringify(input[k])!==JSON.stringify(old[k])))throw new ApiError(403,'virtual_source_managed','模拟来源与目标不能手动改写');
- if(type==='inbox')for(const field of ['forwardedRequestId','sourceUnavailable','sourceAttentionExcluded','sourceAttentionReason','wechatCategory','wechatOfficialAccount','groupAttention','sourceParentInboxId','requestRoundId','closedAt','approvalSourceVersion','disposition','attentionOverrideVersion','draftPreparation','sourceRule','dismissalFeedbackActive','surfacing','attentionOverride','triage','sourceProcessing','draftRunId','semanticAuthorization','semanticAuthorizationId','semanticClassification','semanticClassificationId','effectiveCategory','autonomousDispatch'])if(input[field]!==undefined&&JSON.stringify(input[field])!==JSON.stringify(old[field]))throw new ApiError(403,'server_managed_field',field+' is managed by the server');
+ if(type==='inbox')for(const field of ['forwardedRequestId','forwardedRequestRevision','requestRevision','sourceUnavailable','sourceAttentionExcluded','sourceAttentionReason','wechatCategory','wechatOfficialAccount','groupAttention','sourceParentInboxId','requestRoundId','closedAt','approvalSourceVersion','disposition','attention','attentionDismissal','attentionDismissalUndone','attentionAck','attentionSnooze','deliveryStrategy','lastOpenRequest','attentionOverrideVersion','draftPreparation','sourceRule','dismissalFeedbackActive','surfacing','attentionOverride','triage','sourceProcessing','draftRunId','draftSourceVersion','draftStale','semanticAuthorization','semanticAuthorizationId','semanticClassification','semanticClassificationId','effectiveCategory','autonomousDispatch'])if(input[field]!==undefined&&JSON.stringify(input[field])!==JSON.stringify(old[field]))throw new ApiError(403,'server_managed_field',field+' is managed by the server');
  if(type==='inbox'&&['sending','sent','recalled','send_unknown'].includes(old.status))for(const field of ['draft','body','attachments','recipientId','isSelfTest','testMarker','sentDraft','sentText','sentAttachments'])if(input[field]!==undefined&&JSON.stringify(input[field])!==JSON.stringify(old[field]))throw new ApiError(409,'locked_send_payload','已外发或结果未知的消息内容已冻结，请复制创建新的审批项');
  const data={...old,...input};delete data.deleted;delete data.localEdited;delete data.diskPath;delete data.sourceSystem;delete data.receipt;delete data.recallReceipt;delete data.baseUpdatedAt;for(const field of ['calendarEvent','calendarReceipt','calendarStatus','calendarIntentKey','calendarRunId']){delete data[field];if(old[field]!==undefined)data[field]=old[field];}
  if(old.sourceSystem)data.sourceSystem=old.sourceSystem;
@@ -110,6 +120,11 @@ function validate(type:string,input:any,old:any={}) {
  if(type==='ideas'){data.iconKey=resolveIdeaIcon(data,old.iconKey);data.description=String(data.description||'');data.category=data.category||'productivity';data.status=data.status||'new';}
  if(type==='inbox'){data.sender=data.sender||'许茂林';data.channel=data.channel||'Internal';data.origin=data.origin||'human';data.body=String(data.body||'');data.status=data.status||'pending';if(['draft','body','attachments'].some(field=>input[field]!==undefined&&JSON.stringify(old[field])!==JSON.stringify(input[field]))){data.approved=false;data.sensitiveApproved=false;}if(['sending','sent','recalled','send_unknown'].includes(data.status)&&data.status!==old.status)throw new ApiError(400,'invalid_status','发送状态只能由真实发送/撤回结果更新');if(['sending','sent','recalled','send_unknown'].includes(old.status)&&data.status!==old.status)throw new ApiError(409,'locked_send_state','已有发送结果的状态只能通过发送回读或撤回更新');if(old.receipt)data.receipt=old.receipt;if(old.recallReceipt)data.recallReceipt=old.recallReceipt;if(data.isSelfTest){if(data.recipientId!=='self'||!/^OPSADV-QA-[\w-]{6,100}$/.test(data.testMarker||''))throw new ApiError(400,'invalid_self_test','本人测试项需要 recipientId:self 和独立 OPSADV-QA 标记');data.sender='许茂林';data.channel='Feishu';}}
  if(type==='inbox'&&['done','dismissed','cancelled'].includes(input.status)&&input.status!==old.status)data.closedAt=now();
+ if(type==='inbox'&&old.id&&input.status==='dismissed'&&dismissalBlock(old))throw new ApiError(409,'dismiss_blocked','发送或生成结果未确认的事项不能忽略，请先回查');
+ // Every path to a dismissal binds it to request identity; leaving dismissed ends that binding.
+ if(type==='inbox'&&old.id&&input.status==='dismissed'&&old.status!=='dismissed')data.attentionDismissal=dismissalBinding(old);
+ if(type==='inbox'&&input.status&&input.status!=='dismissed')delete data.attentionDismissal;
+ if(type==='inbox'&&input.editedByUser===true&&typeof input.draft==='string'){data.draftStale=false;data.draftSourceVersion=inboxTriageVersion(data);}
  if(type==='inbox'&&input.approved===true)data.approvalSourceVersion=inboxTriageVersion(data);
  if(type==='inbox'&&data.approved){const contradiction=attachmentContradiction(data);if(contradiction)throw new ApiError(409,'draft_attachment_mismatch',contradiction);}
  if(type==='memories'){data.kind=data.kind||'note';data.body=String(data.body||data.content||'');}
@@ -142,6 +157,7 @@ app.post('/api/notifications/:id/reconcile',async c=>json(c,await reconcileNotif
 app.post('/api/notifications/:id/retry',async c=>json(c,await retryNotification(c.req.param('id'))));
 app.get('/api/settings',c=>json(c,settings()));
 app.get('/api/settings/knowledge-paths',c=>json(c,knowledgePaths()));
+app.get('/api/memory-library/people',c=>json(c,memoryPeople()));
 app.patch('/api/settings/knowledge-paths',async c=>json(c,await saveKnowledgePaths(await body(c))));
 mountTaskAgents(app);
 app.get('/api/settings/models',c=>{c.header('Cache-Control','no-store');return json(c,modelSettings());});
@@ -170,6 +186,8 @@ app.get('/api/memories/history',c=>json(c,{history:memoryHistory(),version:memor
 app.post('/api/memories/snapshot',c=>json(c,snapshotMemories(),201));
 app.post('/api/memories/history/:id/restore',async c=>{const input=await body(c);if(input.baseMemoryVersion!==undefined&&input.baseMemoryVersion!==memoryVersion())throw new ApiError(409,'edit_conflict','记忆已更新，请重新读取历史后核对');const result=restoreMemories(c.req.param('id'));if(!result)throw new ApiError(404,'history_not_found','知识快照不存在');return json(c,result);});
 mountNativeApi(app);
+mountDesktopNotifications(app);
+mountAttention(app,id=>invalidateSemanticAuthorizationsForEntity(id));
 installWorkspaceSearch(app);
 mountChatStatus(app);
 app.get('/api/conversations/primary',c=>{const id=meta<string|undefined>('primaryConversationId',undefined);return json(c,{conversationId:id,conversation:id?get('conversations',id):undefined});});
@@ -223,7 +241,7 @@ app.post('/api/chat',async c=>{
  const requestId=String(input.requestId||uid('request'));if(requestId.length>128||!/^[\w-]+$/.test(requestId))throw new ApiError(400,'invalid_request_id','请求 ID 无效');const fingerprint=hash({message,attachmentIds:input.attachmentIds||[],mode:input.mode||'chat',contextIds:input.contextIds||[],...(input.readOnly?{readOnly:true}:{}),...(input.retryOfRunId?{retryOfRunId:input.retryOfRunId}:{}),...(input.interruptCurrent?{interruptCurrent:true,conversationId:input.conversationId}: {})});const existing=db.prepare('SELECT * FROM chat_requests WHERE id=?').get(requestId) as any;const requestData=existing?JSON.parse(existing.data):undefined;
  if(existing){if(existing.hash!==fingerprint)throw new ApiError(409,'request_conflict','此请求 ID 已用于另一条消息');if(existing.state==='succeeded')return json(c,{...requestData.result,replayed:true});if(existing.state==='running')throw new ApiError(409,'request_in_progress','原消息正在处理中；请等待原运行终态',{conversationId:requestData.conversationId,requestId,runId:requestData.runId});if(chatRequestStatus(existing,requestData,get('runs',requestData?.runId))==='cancelled')throw new ApiError(409,'chat_interrupted','原回复已停止；请发送新消息',{conversationId:requestData.conversationId,requestId,runId:requestData.runId});if(existing.state==='partial')throw new ApiError(409,'partial_run_requires_review','原运行已执行本地写入，请先检查这些结果再提出新请求',{conversationId:requestData.conversationId,requestId,run:requestData.run,completedWrites:requestData.completedWrites});}
  const primaryId=meta<string|undefined>('primaryConversationId',undefined);const priorPrimary=primaryId?get('conversations',primaryId):undefined;
- const conversation=requestData?.conversationId?need('conversations',requestData.conversationId):input.conversationId?need('conversations',input.conversationId):priorPrimary||put('conversations',{title:message.slice(0,60),mode:input.mode||'chat',status:'active'});if(!conversation.sideChat&&input.preservePrimary!==true)setMeta('primaryConversationId',conversation.id);
+ const conversation=requestData?.conversationId?need('conversations',requestData.conversationId):input.conversationId?need('conversations',input.conversationId):priorPrimary||put('conversations',{title:publicValue(message.slice(0,60)),mode:input.mode||'chat',status:'active'});if(!conversation.sideChat&&input.preservePrimary!==true)setMeta('primaryConversationId',conversation.id);
  const busy=([...db.prepare("SELECT id,data FROM chat_requests WHERE state='running' ORDER BY rowid DESC").all(),...db.prepare("SELECT id,data FROM draft_requests WHERE state='running'").all()] as any[]).find(row=>JSON.parse(row.data).conversationId===conversation.id);if(busy&&(!input.interruptCurrent||existing||!db.prepare('SELECT id FROM chat_requests WHERE id=?').get(busy.id)))throw new ApiError(409,'conversation_busy','此会话已有运行，请等待后继续',{conversationId:conversation.id,requestId:busy.id});
  const userMessage=requestData?.userMessage||put('messages',{id:uid('message'),conversationId:conversation.id,role:'user',content:message,attachments:input.attachmentIds||[],contextIds:input.contextIds||[],requestId});const thread=list('messages').filter(m=>m.conversationId===conversation.id&&m.id!==userMessage.id).reverse();const replyItem=(input.contextIds||[]).map((id:string)=>get('inbox',id)).find(Boolean);const previous=replyItem?replyMessages(replyItem,conversation.id,thread,list('conversations')):thread;const run=beginRun('chat',message.slice(0,90),{requestId,conversationId:conversation.id,mode:input.mode||'chat',retryOf:requestData?.runId,...retryLineage(input)});const intent={conversationId:conversation.id,userMessage,runId:run.id};db.prepare('INSERT INTO chat_requests VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,data=excluded.data,updated_at=excluded.updated_at').run(requestId,fingerprint,'running',JSON.stringify(intent),now());
  try{
@@ -245,6 +263,8 @@ app.get('/api/inbox/:id/feedback',c=>json(c,inboxFeedback(need('inbox',c.req.par
 app.get('/api/inbox-source-rules',c=>json(c,{sources:inboxSources(c.req.query('query')||''),rules:list('inbox_source_rules')}));
 app.post('/api/inbox-source-rules',async c=>{const input=await body(c);if(typeof input.sourceKey!=='string'||typeof input.excluded!=='boolean')throw new ApiError(400,'invalid_rule','sourceKey 和 excluded 必填');return json(c,setInboxSourceRule(input.sourceKey,input.excluded));});
 app.post('/api/inbox/:id/surface',async c=>{const item=need('inbox',c.req.param('id')),input=await body(c);if(!input.baseUpdatedAt||input.baseUpdatedAt!==item.updatedAt)throw new ApiError(409,'edit_conflict','事项已更新，请读取最新状态');if(!dispositionOf(item).canRestore)throw new ApiError(409,'inbox_restore_unavailable','过期、已结束或未确认的事项不能恢复待处理；请查看原因或转为任务');put('inbox',{...item,attentionOverride:true,attentionOverrideVersion:inboxTriageVersion(item)});activity('恢复到待处理','surfacing','succeeded',undefined,item.id);return json(c,get('inbox',item.id));});
+app.post('/api/inbox/:id/attention-dismissal',async c=>json(c,dismissInboxAttention(c.req.param('id'),await body(c),invalidateSemanticAuthorizationsForEntity)));
+app.post('/api/inbox/:id/attention-dismissal/undo',async c=>json(c,undoInboxDismissal(c.req.param('id'),await body(c),invalidateSemanticAuthorizationsForEntity)));
 app.post('/api/inbox/:id/triage',async c=>{const input=await body(c);return json(c,await analyzeInbox(c.req.param('id'),{force:input.force===true}));});
 app.get('/api/inbox/:id/policy',c=>json(c,draftPolicy(need('inbox',c.req.param('id')))));
 app.get('/api/connections/:id/working-window',c=>{const input=c.req.query('at');if(input&&(!/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(input)||!Number.isFinite(Date.parse(input))))throw new ApiError(400,'invalid_preview_time','Use an ISO timestamp with timezone');const at=input?new Date(input):new Date();return json(c,{...workingWindow(need('connections',c.req.param('id')).config,at),evaluatedAt:at.toISOString(),preview:!!input});});
@@ -254,13 +274,15 @@ app.post('/api/inbox/:id/draft-candidate/apply',async c=>{
 });
 // Retired route stays explicit for stale clients, without creating any files.
 app.post('/api/inbox/:id/automatic-files/retry',()=>{throw new ApiError(410,'automatic_files_removed','回复自动文件生成已移除');});
+app.get('/api/ideas/categories',c=>json(c,ideaCategoryStatus()));
+app.post('/api/ideas/categories/refresh',async c=>json(c,await refreshIdeaCategories()));
 app.get('/api/ideas/background',c=>json(c,ideasBackgroundStatus()));
 app.post('/api/ideas/refresh',async c=>{const input=await body(c);return json(c,await refreshIdeas('manual',String(input.prompt||'').slice(0,2000)));});
 app.post('/api/ideas/think',async c=>{
  const input=await body(c);const prompt=String(input.prompt||'').trim();if(!prompt)throw new ApiError(400,'prompt_required','请输入要思考的问题');if(input.mode&&!['chat','deep'].includes(input.mode))throw new ApiError(400,'invalid_mode','模式无效');const mode=input.mode||'deep';const lineage=retryLineage({...input,mode});const conversationId=input.conversationId||meta('primaryConversationId',undefined);const conversation=conversationId?need('conversations',conversationId):put('conversations',{title:'Ideas',mode,status:'active'});setMeta('primaryConversationId',conversation.id);const run=beginRun('ideas','发现 Ideas',{conversationId:conversation.id,mode,...lineage});const userMessage=put('messages',{conversationId:conversation.id,role:'user',content:prompt,runId:run.id});
- const result=await runAgent(`${ideaIconInstruction}\n基于用户目标和数据库实际上下文，最多提出 3 个现在值得处理的建议；没有足够证据可只给 1 项。同一决策及其准备清单、提醒安排必须合并为一项；不要为了凑数把同一件事拆成多条，也不要把数据库没有某配置当作必须新增流程的理由。先用只读 tools 核对相关事项最近状态、后续回复及关联任务，优先最新有效信息。旧记录只有仍影响当前选择时才引用；没有查到后续不等于至今未处理，采集窗口过旧时明确当前状态待核实，不推断逾期或按历史事项制造紧迫性。每项title是简短决策主题，不要P0/P1前缀。description使用规范Markdown：先一句结论；空行后以 **下一步** 为标题，换行用 - 列表写最多2条具体动作；必要时空行后以 **待确认** 为标题写一句缺口；每项约100–180字。禁止复述整段会话、无关旧事、原始ID/数据库字段/ISO时间/工具搜索过程，不用【事实】【建议】长串拼接。仅在改变决策时用自然日期附一句依据。用户目标：${prompt}\n只输出 JSON 对象 {"ideas":[{"title":"标题","description":"事实依据与建议","category":"productivity|automation|communication|insight","action":"task|automation|draft|file","iconKey":"从图标目录选择"}]}。不能虚构客户、任务、数据、连接状态。`,{mode,kind:'ideas',conversationId:conversation.id,readOnly:true,runId:run.id});let values:any[];
+ const result=await runAgent(`${ideaIconInstruction}\n${ideaCategoryInstruction}\n基于用户目标和数据库实际上下文，最多提出 3 个现在值得处理的建议；没有足够证据可只给 1 项。同一决策及其准备清单、提醒安排必须合并为一项；不要为了凑数把同一件事拆成多条，也不要把数据库没有某配置当作必须新增流程的理由。先用只读 tools 核对相关事项最近状态、后续回复及关联任务，优先最新有效信息。旧记录只有仍影响当前选择时才引用；没有查到后续不等于至今未处理，采集窗口过旧时明确当前状态待核实，不推断逾期或按历史事项制造紧迫性。每项title是简短决策主题，不要P0/P1前缀。description使用规范Markdown：先一句结论；空行后以 **下一步** 为标题，换行用 - 列表写最多2条具体动作；必要时空行后以 **待确认** 为标题写一句缺口；每项约100–180字。禁止复述整段会话、无关旧事、原始ID/数据库字段/ISO时间/工具搜索过程，不用【事实】【建议】长串拼接。仅在改变决策时用自然日期附一句依据。用户目标：${prompt}\n只输出 JSON 对象 {"ideas":[{"title":"标题","description":"事实依据与建议","category":"productivity|automation|communication|insight","categoryLabel":"内容分类","action":"task|automation|draft|file","iconKey":"从图标目录选择"}]}。不能虚构客户、任务、数据、连接状态。`,{mode,kind:'ideas',conversationId:conversation.id,readOnly:true,runId:run.id});let values:any[];
  try{const text=result.text.replace(/```(?:json)?/g,'');const match=text.match(/\{[\s\S]*\}/);values=JSON.parse(match?.[0]||text).ideas;if(!Array.isArray(values)||!values.length)throw new Error('No ideas');}catch{throw new ApiError(502,'invalid_ideas_output','AI 输出不是有效建议列表；原运行与候选结果已保留',{run:result.run,conversationId:conversation.id,userMessage});}
- const prepared=values.slice(0,3).map(value=>validate('ideas',{...value,id:uid('idea'),status:'new',runId:result.run.id,conversationId:conversation.id}));const ideas=prepared.map(value=>put('ideas',value));const assistantMessage=put('messages',{conversationId:conversation.id,role:'assistant',content:prepared.map((idea,i)=>`### ${i+1}. ${idea.title}\n\n${idea.description}`).join('\n\n'),runId:result.run.id});put('conversations',{...get('conversations',conversation.id),status:'active',lastRunId:result.run.id,lastMessageAt:now()});return json(c,{ideas,run:result.run,conversationId:conversation.id,userMessage,assistantMessage});
+ const prepared=values.slice(0,3).map(value=>validate('ideas',{...value,contentCategory:categoryMetadata(value.categoryLabel,value,result.run.id),id:uid('idea'),status:'new',runId:result.run.id,conversationId:conversation.id}));const ideas=prepared.map(value=>put('ideas',value));const assistantMessage=put('messages',{conversationId:conversation.id,role:'assistant',content:prepared.map((idea,i)=>`### ${i+1}. ${idea.title}\n\n${idea.description}`).join('\n\n'),runId:result.run.id});put('conversations',{...get('conversations',conversation.id),status:'active',lastRunId:result.run.id,lastMessageAt:now()});return json(c,{ideas,run:result.run,conversationId:conversation.id,userMessage,assistantMessage});
 });
 app.post('/api/ideas/:id/execute',async c=>{const idea=need('ideas',c.req.param('id'));let input:any={};try{input=await c.req.json();}catch{}if(idea.status==='executed')return json(c,{idea,replayed:true,...(idea.result||{})});const action=input.action||idea.action||'task';let result:any={};if(action==='automation'){result.automation=put('automations',validate('automations',{title:idea.title,prompt:idea.description,schedule:input.schedule||'daily 09:00',enabled:input.enabled??false,ideaId:idea.id}));}else if(['draft','send','reply'].includes(action)){result.inbox=put('inbox',{title:idea.title,body:idea.description,draft:idea.description,sender:'OpsTwin',origin:'ai',channel:'Internal',status:'pending',approved:false,ideaId:idea.id});}else if(['file','pdf','docx','chart','timeline','diagram','xlsx','markdown'].includes(action)){result.artifact=await generateArtifact({kind:action==='file'?(input.kind||'markdown'):action,title:idea.title,content:idea.description,sourceIds:input.sourceIds});}else if(action==='task'){result.task=put('tasks',validate('tasks',{title:idea.title,notes:idea.description,dueDate:input.dueDate||'',projectId:input.projectId,ideaId:idea.id,status:'active'}));}else throw new ApiError(400,'invalid_action','建议操作无效');const updated=put('ideas',{...idea,status:'executed',executedAt:now(),result});activity(`执行建议：${idea.title}`,'idea','succeeded',action,idea.id);return json(c,{idea:updated,...result});});
 
@@ -343,7 +365,7 @@ installChatContinuation(app);
 installChatWork(app);
 const stopMemory=startMemory(runAgent,process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_MEMORY_BACKGROUND==='1');
 const backgroundTimers: ReturnType<typeof setInterval>[] = [];
-if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_IDEAS_BACKGROUND==='1')backgroundTimers.push(startIdeasBackground());
+if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_IDEAS_BACKGROUND==='1')backgroundTimers.push(startIdeasBackground(),startIdeaCategories());
 // Insight visuals backfill shares the ideas background gate and is OFF unless CYBERME_INSIGHT_VISUALS=1.
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_IDEAS_BACKGROUND==='1')backgroundTimers.push(startInsightVisuals());
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_VIRTUAL_IM_BACKGROUND==='1')backgroundTimers.push(startVirtualImScheduler());
@@ -372,7 +394,7 @@ if(process.env.OPSTWIN_NO_LISTEN!=='1'){
  console.log(`OpsTwin Advance API http://127.0.0.1:${port}`);
  const shutdown=(signal:string)=>{
   if(stopping)return;
-  stopping=true;stopMemory();
+  stopping=true;stopExecutionCommands();stopMemory();
   for(const timer of backgroundTimers)clearInterval(timer);
   console.log(JSON.stringify({event:'api_shutdown',signal,graceMs:3000}));
   // SSE never ends on its own. Bound the drain, including already active Agent

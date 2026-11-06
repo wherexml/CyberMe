@@ -1,0 +1,36 @@
+// Continue after chat-update-browser-e2e.mjs (same fixture and TaskSpace).
+const task=await taskSpace('CyberMe 连续发送与自动更新'),page=task.page('p1');
+const fs=await import('node:fs/promises'),out=process.cwd()+'/output/chat-update-20261105';
+const report=JSON.parse(await fs.readFile(out+'/browser-result.json','utf8')),checks=report.checks;
+const control=body=>page.fetch('/__fixture/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+const evidence=()=>page.evaluate(async()=>await(await fetch('/__fixture/evidence')).json());
+// The account page is reachable by Settings -> the profile row.
+if(await page.evaluate(()=>!!document.querySelector('[aria-label="关闭更新提醒"]')))await page.click('[aria-label="关闭更新提醒"]');
+await page.click('loc=role:button[name="设置"]');await page.click('loc=role:button[name*="公开验收"]');
+checks.actualVersion=await page.evaluate(()=>document.body.innerText.includes('0.1.3'));
+await page.click('loc=role:button[name="更新已准备好安装"]');
+checks.reopenReady=await page.evaluate(()=>!!document.querySelector('[role="dialog"]'));
+await control({up:{status:'available',current:{version:'0.1.3'},available:{version:'0.1.5',build:'cancel'},ready:false},downloadMode:'hold'});
+await page.waitForSelector('css=button:text-is("取消下载")');const downloads=(await evidence()).downloadCalls;
+await page.click('css=button:text-is("取消下载")');await page.waitForSelector('css=button:text-is("下载更新")');
+await page.waitForTimeout(2500);checks.cancelDoesNotLoop=(await evidence()).downloadCalls===downloads;
+await control({up:{status:'available',current:{version:'0.1.3'},available:{version:'0.1.6',build:'failure'},ready:false},downloadMode:'error'});
+await page.waitForFunction(()=>document.querySelector('[role="dialog"]')?.textContent.includes('更新未完成'));
+const failed=(await evidence()).downloadCalls;await page.waitForTimeout(2500);checks.failureDoesNotLoop=(await evidence()).downloadCalls===failed;
+await control({downloadMode:'ready'});await page.click('css=button:text-is("下载更新")');await page.waitForSelector('css=button:text-is("安装并重启")');
+await control({failSave:true});await page.fill('textarea','保存失败时必须保留的公开草稿');
+await page.click('css=button:text-is("安装并重启")');
+await page.waitForFunction(()=>document.querySelector('[role="dialog"]')?.textContent.includes('更新未完成'));
+checks.failedSaveBlocksInstall=(await evidence()).installCalls===0;
+checks.failedSaveKeepsDraft=await page.evaluate(()=>document.querySelector('textarea').value==='保存失败时必须保留的公开草稿');
+await control({failSave:false,waitInstall:true});await page.fill('textarea','安装前即时输入的公开草稿');
+await page.click('css=button:text-is("安装并重启")');
+await page.waitForFunction(()=>document.querySelector('[role="dialog"]')?.textContent.includes('等待当前任务结束'));
+const waiting=await evidence();checks.waitsForIdle=waiting.up.status==='waiting';checks.flushBeforeInstall=JSON.parse(waiting.state.drafts['html:cyberme-v6-ui']).drafts.primary.text==='安装前即时输入的公开草稿';
+await control({waitInstall:false});await page.waitForFunction(()=>document.body.innerText.includes('正在重启'));
+checks.explicitRestartContinues=(await evidence()).installCalls>=2;
+await fs.writeFile(out+'/browser-result.json',JSON.stringify(report,null,2));console.log(checks);if(Object.values(checks).some(v=>!v))throw Error('recovery checks failed');
+await control({up:{status:'current',current:{version:'0.1.6'},ready:false}});await page.reload();await page.waitForSelector('textarea');
+checks.restartPreservesDraft=await page.evaluate(()=>document.querySelector('textarea').value==='安装前即时输入的公开草稿');
+checks.currentHidesNotice=await page.evaluate(()=>!document.querySelector('[role="dialog"]'));
+await fs.writeFile(out+'/browser-result.json',JSON.stringify(report,null,2));console.log(await page.snapshot());

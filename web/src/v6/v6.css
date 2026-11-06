@@ -1,82 +1,7 @@
 /* CyberMe V6 shell styles. Scoped to #cyberme-v6 so legacy dialog rules never apply here, and vice versa. */
-/* Broadsheet tokens (Paper theme), copied from the V6 reference design system without its remote font import. */
-#cyberme-v6 {
-  --color-bg: #f3f2f2;
-  --color-surface: #eae9e9;
-  --color-text: #201e1d;
-  --color-accent: #0088b0;
-  --color-accent-2: #d6006c;
-  --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
-
-  /* Tonal ramps — generated in OKLCH on one shared lightness scale, so the
-     same step of any role matches the others in visual value. */
-  --color-neutral-100: #f8f4f4;
-  --color-neutral-200: #eae7e7;
-  --color-neutral-300: #d7d3d3;
-  --color-neutral-400: #bab6b6;
-  --color-neutral-500: #9b9797;
-  --color-neutral-600: #7d7979;
-  --color-neutral-700: #605d5d;
-  --color-neutral-800: #444141;
-  --color-neutral-900: #2d2b2b;
-
-  --color-accent-100: #e9f8ff;
-  --color-accent-200: #cbeeff;
-  --color-accent-300: #99e0ff;
-  --color-accent-400: #62c5ee;
-  --color-accent-500: #38a6cf;
-  --color-accent-600: #1186ac;
-  --color-accent-700: #006786;
-  --color-accent-800: #004961;
-  --color-accent-900: #0a303e;
-
-  --color-accent-2-100: #fff1f4;
-  --color-accent-2-200: #ffdee6;
-  --color-accent-2-300: #ffc0d0;
-  --color-accent-2-400: #ff90b1;
-  --color-accent-2-500: #ff458e;
-  --color-accent-2-600: #d82071;
-  --color-accent-2-700: #aa0b56;
-  --color-accent-2-800: #790e3d;
-  --color-accent-2-900: #4b1528;
-
-  /* The third process ink — review round 3: the deck's print treatments
-     (the CMYK separation and the misregistered plate numerals below) need
-     the full four-color set. Cyan and magenta are the system's own accents;
-     this yellow completes them, muted to the same press-ink register. A
-     print treatment color, not an interface accent — body copy and chrome
-     never take it. */
-  --color-process-yellow: #edbb00;
-
-  --font-heading: "Source Serif 4", system-ui, sans-serif;
-  --font-heading-weight: 600;
-  --font-body: "Source Serif 4", system-ui, sans-serif;
-
-  --space-1: 5.0px;
-  --space-2: 10.0px;
-  --space-3: 15.0px;
-  --space-4: 20.0px;
-  --space-6: 30.0px;
-  --space-8: 40.0px;
-
-  --radius-sm: 1px;
-  --radius-md: 2px;
-  --radius-lg: 4px;
-
-  /* Elevation — derived from the ground: soft ink-tinted shadows on a
-     light theme, a hairline edge + ambient darkness on a dark one. */
-  --shadow-sm: 0 1px 2px color-mix(in srgb, #2d2b2b 14%, transparent);
-  --shadow-md: 0 3px 10px color-mix(in srgb, #2d2b2b 16%, transparent);
-  --shadow-lg: 0 12px 32px color-mix(in srgb, #2d2b2b 22%, transparent);
-}
-
 /* Bundled OFL fonts (Google Fonts latin + latin-ext subsets; licenses in vendor/fonts). CJK falls through to system fonts as in the reference. */
 @font-face{font-family:"IBM Plex Sans";font-weight:400 600;font-style:normal;font-display:swap;src:url("./vendor/fonts/IBMPlexSans-latin-ext.woff2") format("woff2");unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF}
 @font-face{font-family:"IBM Plex Sans";font-weight:400 600;font-style:normal;font-display:swap;src:url("./vendor/fonts/IBMPlexSans-latin.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
-@font-face{font-family:"Source Serif 4";font-weight:400 600;font-style:normal;font-display:swap;src:url("./vendor/fonts/SourceSerif4-latin-ext.woff2") format("woff2");unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF}
-@font-face{font-family:"Source Serif 4";font-weight:400 600;font-style:normal;font-display:swap;src:url("./vendor/fonts/SourceSerif4-latin.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
-@font-face{font-family:"Source Serif 4";font-weight:400;font-style:italic;font-display:swap;src:url("./vendor/fonts/SourceSerif4-Italic-latin-ext.woff2") format("woff2");unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF}
-@font-face{font-family:"Source Serif 4";font-weight:400;font-style:italic;font-display:swap;src:url("./vendor/fonts/SourceSerif4-Italic-latin.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
 
 html,body{margin:0;height:100%;background:#dfe0e6}
 body{-webkit-font-smoothing:antialiased}
@@ -92,6 +17,13 @@ body{-webkit-font-smoothing:antialiased}
 #cyberme-v6 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #cyberme-v6 button{-webkit-appearance:none;appearance:none;transition:transform 200ms cubic-bezier(.2,.8,.2,1)}
 #cyberme-v6 button:active:not(:disabled){transform:scale(.96)}
+/* Fade at the scroll viewport edge, independent of theme and message position.
+   Matching content padding keeps the first message fully readable at scrollTop 0. */
+#cyberme-v6 .cm-chat-scroll{
+  --chat-top-fade:32px;
+  -webkit-mask-image:linear-gradient(to bottom,transparent,#000 var(--chat-top-fade));
+  mask-image:linear-gradient(to bottom,transparent,#000 var(--chat-top-fade));
+}
 #cyberme-v6 .cm-chat-column{width:80%;min-width:0;margin:0 auto}
 #cyberme-v6 .cm-md p{margin:0 0 .5em}#cyberme-v6 .cm-md p:last-child{margin-bottom:0}
 #cyberme-v6 .cm-md ul,#cyberme-v6 .cm-md ol{margin:.25em 0 .5em;padding-left:1.25em}
@@ -108,12 +40,13 @@ body{-webkit-font-smoothing:antialiased}
 #cyberme-v6 .cm-md th,#cyberme-v6 .cm-md td{border:.5px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
 #cyberme-v6 .cm-md th{font-weight:600;background:var(--hover)}
 #cyberme-v6 .cm-select{appearance:none;-webkit-appearance:none}
-@keyframes cmIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-@keyframes cmSlide{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
-@keyframes cmPop{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+/* Content stays readable when a background WKWebView suspends its animation timeline. */
+@keyframes cmIn{from{opacity:1;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes cmSlide{from{opacity:1;transform:translateX(14px)}to{opacity:1;transform:none}}
+@keyframes cmPop{from{opacity:1;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
 @keyframes cmDot{0%,80%,100%{opacity:.25}40%{opacity:1}}
 @keyframes cmPulse{0%,100%{opacity:1}50%{opacity:.35}}
-@keyframes cmRise{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes cmRise{from{opacity:1;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
 @keyframes cmBar{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 @keyframes cmGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 @keyframes cmShine{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}

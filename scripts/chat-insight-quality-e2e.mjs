@@ -18,10 +18,10 @@ S.put('memories',{id:'research-older',title:'晨光体验观察',body:'公开研
 S.put('connections',{id:'revoked',status:'disconnected',permissions:[]});
 S.put('memories',{id:'research-private',title:'晨光不可读资料',body:'NEVER_READ_PRIVATE',connectionId:'revoked'});
 for(let i=0;i<27;i++)S.put('tasks',{id:'noise-'+i,title:'无关公开项目 '+i,notes:'本条为无关公开事项。',eventAt:new Date(Date.now()+i).toISOString(),status:'active'});
-const initialTasks=S.hash(S.list('tasks')),checks=[],runs=[];let mode='normal',calls=0,toolCatalogs=[];
+const initialTasks=S.hash(S.list('tasks')),checks=[],runs=[];let mode='normal',calls=0,toolCatalogs=[],payloadPolicies=[];
 const description='我建议先简化首次使用流程。已有访谈把问题指向配置入口过多、首个结果不清楚；“界面简洁”的评价本身不能证明产品能力更强。\n\n1. 首屏只保留一个目标输入，把连接配置推迟到确实需要时。\n2. 先做一条从输入到结果的完整流程，用新用户能否独立完成来检验。\n3. 官网尚未核验，暂不据此判断功能差异。';
 const model=!real?createServer(async(req,res)=>{
- let raw='';for await(const c of req)raw+=c;const input=JSON.parse(raw);calls++;toolCatalogs.push((input.tools||[]).map(t=>t.function.name));
+ let raw='';for await(const c of req)raw+=c;const input=JSON.parse(raw);calls++;toolCatalogs.push((input.tools||[]).map(t=>t.function.name));payloadPolicies.push({choice:input.tool_choice,json:input.response_format});
  const tools=input.messages.filter(m=>m.role==='tool'),n=tools.length;
  res.writeHead(200,{'content-type':'text/event-stream'});
  const chunk=(delta,finish=null)=>res.write('data: '+JSON.stringify({id:'public',object:'chat.completion.chunk',created:1,model:'public-research',choices:[{index:0,delta,finish_reason:finish}]})+'\n\n');
@@ -31,7 +31,8 @@ const model=!real?createServer(async(req,res)=>{
   if(mode==='drift')S.put('memories',{...S.get('memories','research-older'),body:'来源已改变，请勿采用旧结论。'});
   if(mode==='revoke')S.put('connections',{id:'readable',status:'disconnected',permissions:[]});
   const existing=S.list('ideas').find(i=>i.status==='new');
-  const result={ideas:[{title:'先简化首次使用',description,topicKey:'晨光首次使用体验',sourceIds:['research-latest','research-older'],...(existing?{existingId:existing.id}:{}),evidence:[{sourceId:'research-older',quote:mode==='forged'?'不存在的引用':'新用户第一次只需要完成一个目标，不需要先配置连接器。'}]}],retire:[]};
+  const result={ideas:[{title:'先简化首次使用',description,topicKey:'晨光首次使用体验',sourceIds:['research-latest','research-older'],...(existing?{existingId:existing.id}:{}),evidence:[{sourceId:'research-latest',quote:'公开客户评价：晨光产品界面简洁，适合非技术用户。'},{sourceId:'research-older',quote:mode==='forged'?'不存在的引用':'新用户第一次只需要完成一个目标，不需要先配置连接器。'}]}],retire:[]};
+  if(mode==='oversized-once'&&!JSON.stringify(input.messages).includes('修正输出'))result.ideas=Array.from({length:13},()=>result.ideas[0]);
   chunk({role:'assistant',content:JSON.stringify(result)});chunk({},'stop');
  }
  res.end('data: [DONE]\n\n');
@@ -40,10 +41,11 @@ if(model)await new Promise(r=>model.listen(46741,'127.0.0.1',r));
 const {app}=await import('../server/src/index.ts'),B=await import('../server/src/ideas-background.ts'),C=await import('../server/src/ideas-chat.ts');
 const server=serve({fetch:app.fetch,port,hostname:'127.0.0.1'});
 const check=(name,pass)=>{checks.push({name,pass:!!pass});if(!pass)throw Error(name)};
-async function refresh(){const r=await fetch(`http://127.0.0.1:${port}/api/ideas/refresh`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({prompt:'请调查晨光的相关资料，再给出你自己的判断和具体建议，多个独立要点请编号；无需研究无关项目。'}),signal:AbortSignal.timeout(180000)});const data=await r.json();const run=S.get('runs',data.run?.id||B.ideasBackgroundStatus().runId);runs.push({http:r.status,model:run?.model,tools:run?.tools?.filter(t=>t.name==='search_idea_sources'),error:data.error});return {http:r.status,data,run}}
+async function refresh(){const r=await fetch(`http://127.0.0.1:${port}/api/ideas/refresh`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({prompt:'请调查晨光的相关资料，再给出你自己的判断和具体建议，多个独立要点请编号；无需研究无关项目。请同时引用「晨光产品反馈」和「晨光体验观察」两份资料的原文证据。'}),signal:AbortSignal.timeout(180000)});const data=await r.json();const run=S.get('runs',data.run?.id||B.ideasBackgroundStatus().runId);runs.push({http:r.status,model:run?.model,tools:run?.tools?.filter(t=>t.name==='search_idea_sources'),error:data.error});return {http:r.status,data,run}}
 try{
  check('related research source starts outside latest batch',!B.sources().slice(0,24).some(s=>s.id==='research-older'));
  const first=await refresh();check('production generation succeeds',first.http===200);
+ if(!real){check('first step requires bounded research',payloadPolicies[0].choice?.function?.name==='search_idea_sources'&&!payloadPolicies[0].json);check('research requirement releases after real tool call',!payloadPolicies[1].choice||payloadPolicies[1].choice==='auto');}
  check('model actually searches related sources',first.run.tools.some(t=>t.name==='search_idea_sources'&&t.status==='succeeded'));
  check('research is the only available tool',JSON.stringify(first.run.availableTools)==='["search_idea_sources"]');
  check('revoked sources never returned',first.run.tools.filter(t=>t.name==='search_idea_sources').every(t=>!JSON.stringify(t.output).includes('research-private')));
@@ -60,6 +62,7 @@ try{
  S.put('messages',{...msg,content:'旧版提醒',ideaAnalysis:{...msg.ideaAnalysis,presentationVersion:2}});C.syncIdeasChat();const migrated=S.get('messages',msg.id);check('migration preserves ID and time',migrated.createdAt===msg.createdAt&&migrated.content.includes('\n1. '));
  C.syncIdeasChat();check('resync does not duplicate reminder',S.list('messages').filter(m=>m.ideaAnalysis?.currentIdeaId==='projection-check').length===1);
  if(!real){
+  mode='oversized-once';const repaired=await refresh();check('oversized output receives one bounded repair',repaired.http===200&&repaired.run.events.filter(e=>e.type==='structured_output_repair').length===1);check('repair preserves original research receipts',repaired.run.tools.filter(t=>t.name==='search_idea_sources'&&t.status==='succeeded').length===1);
   mode='limit';const bounded=await refresh();check('fifth search is refused',bounded.run.tools.some(t=>t.name==='search_idea_sources'&&t.output?.code==='research_limit'));
   mode='no-research';check('unresearched suggestion is rejected',(await refresh()).data.error==='idea_research_required');
   mode='forged';check('invented citation rejected',(await refresh()).data.error==='invalid_evidence');

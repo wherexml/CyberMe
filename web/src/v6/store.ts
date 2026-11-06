@@ -11,7 +11,7 @@ export class ApiError extends Error{constructor(public status:number,public data
 export async function api<T=any>(method:string,path:string,body?:unknown,signal?:AbortSignal):Promise<T>{
  if(!path.startsWith('/api/')&&!path.startsWith('/files/'))throw new Error('Disallowed endpoint');
  const form=body instanceof FormData;
- const res=await fetch(path,{method,signal,credentials:'same-origin',headers:form||body===undefined?undefined:{'Content-Type':'application/json'},body:body===undefined?undefined:form?body as FormData:JSON.stringify(body)});
+ const res=await fetch(path,{method,signal,cache:'no-store',credentials:'same-origin',headers:form||body===undefined?undefined:{'Content-Type':'application/json'},body:body===undefined?undefined:form?body as FormData:JSON.stringify(body)});
  const type=res.headers.get('content-type')||'';const data=type.includes('json')?await res.json():await res.text();
  if(!res.ok)throw new ApiError(res.status,data);return data as T;
 }
@@ -26,15 +26,17 @@ export interface ChatRecord{requestId:string;conversationId:string;message:strin
 // (sent as contextIds, never shown as a chip); `auto` is the unedited automatic option fragment a new pick may replace.
 export interface DraftPick{k:'brief'|'work'|'idea'|'ctx';id:string;i:number;label:string;optionId?:string;revision?:number;quote?:string|null}
 export interface DraftState{text:string;quote:string|null;refs:string[];pick?:DraftPick|null;auto?:string|null}
-export interface UIState{v:1;theme:ThemeKey;panelW:number|null;panel:boolean;tab:'today'|'tasks'|'memory'|'settings';briefTab:'dec'|'ins'|null;buddy:string;workOpen:string|null;workOpenSet?:boolean;brief:Record<string,BriefMark>;journal:JournalEntry[];gal:Record<string,boolean>;drafts:Record<string,DraftState>;requests:ChatRecord[];conversationId:string|null;cfg:{enterSend:boolean;progress:boolean};memDraft:MemDraft|null;proposals:Proposal[]}
+export interface UIState{v:1;theme:ThemeKey;panelW:number|null;panelRatio:number|null;panel:boolean;tab:'today'|'tasks'|'memory'|'settings';briefTab:'dec'|'ins'|null;buddy:string;workOpen:string|null;workOpenSet?:boolean;brief:Record<string,BriefMark>;journal:JournalEntry[];gal:Record<string,boolean>;drafts:Record<string,DraftState>;requests:ChatRecord[];conversationId:string|null;cfg:{enterSend:boolean;progress:boolean};memDraft:MemDraft|null;proposals:Proposal[]}
 /** V6 email proposal: UI state around real Inbox draft, approval/send and follow-up task APIs. Statuses only come from API results. */
 export interface Proposal{id:string;conversationId:string;itemIds:string[];picked:string[];tone:'brief'|'warm';createdAt:string;attempted?:string;created?:string;drafts:Record<string,{requestId:string;status:string;error?:string;tone?:'brief'|'warm'}>;sends:Record<string,{key:string;status:string;error?:string}>;sentAt?:string;task?:{taskId:string;title:string;sourceIds:string[];status:string;error?:string};follow?:{taskId:string;title:string;sourceIds:string[];due:string;status:string;error?:string}}
 /** Unsaved or conflicting memory edit; kept across card, tab and app restarts until saved or deliberately discarded. */
 export interface MemDraft{kind:'soul'|'memory';idx:number;text:string;base:string;status:''|'conflict'|'error'}
 const KEY='cyberme-v6-ui';
-const DEFAULT:UIState={v:1,theme:'quiet',panelW:null,panel:true,tab:'today',briefTab:null,buddy:'classic',workOpen:null,brief:{},journal:[],gal:{},drafts:{},requests:[],conversationId:null,cfg:{enterSend:true,progress:true},memDraft:null,proposals:[]};
+const DEFAULT:UIState={v:1,theme:'quiet',panelW:null,panelRatio:null,panel:true,tab:'today',briefTab:null,buddy:'classic',workOpen:null,brief:{},journal:[],gal:{},drafts:{},requests:[],conversationId:null,cfg:{enterSend:true,progress:true},memDraft:null,proposals:[]};
 function sanitize(raw:any):UIState{
  const s={...DEFAULT,...(raw&&typeof raw==='object'?raw:{})} as UIState;
+ s.panelRatio=typeof s.panelRatio==='number'&&Number.isFinite(s.panelRatio)?Math.max(1/3,Math.min(2/3,s.panelRatio)):null;
+ s.panelW=typeof s.panelW==='number'&&Number.isFinite(s.panelW)&&s.panelW>0?s.panelW:null;
  if(!isTheme(s.theme))s.theme='quiet';if(!['today','tasks','memory','settings'].includes(s.tab))s.tab='today';
  s.requests=Array.isArray(s.requests)?s.requests.filter(r=>r&&typeof r.requestId==='string'&&typeof r.message==='string').slice(-200):[];
  s.journal=Array.isArray(s.journal)?s.journal.slice(0,200):[];s.cfg={...DEFAULT.cfg,...(s.cfg||{})};
@@ -80,12 +82,12 @@ export async function durable(){if(persistTimer!==undefined){clearTimeout(persis
 export interface Workspace extends Bootstrap{models?:any;primaryConversationId?:string;work?:{panels:any[];works:any[]};automaticMemories?:any[];ideasBackground?:any}
 export async function loadWorkspace():Promise<Workspace>{
  const b=await api<Workspace>('GET','/api/bootstrap');
- const [models,primary]=await Promise.allSettled([api('GET','/api/settings/models'),api('GET','/api/conversations/primary')]);
- b.models=models.status==='fulfilled'?models.value:{unavailable:true};
- b.primaryConversationId=primary.status==='fulfilled'?primary.value.conversationId:undefined;
+ // Bootstrap already carries the canonical main conversation. Auxiliary reads
+ // must not hold the first usable workspace behind another network round trip.
+ b.primaryConversationId=b.sources?.primaryConversationId;
  return b;
 }
-export async function loadWork(conversationId:string){return api<{panels:any[];works:any[]}>('GET','/api/chat/work/conversations/'+enc(conversationId))}
+export async function loadWork(conversationId:string){return api<{panels:any[];works:any[]}>('GET','/api/chat/work/conversations/'+enc(conversationId),undefined,AbortSignal.timeout(15000))}
 
 // ---------- Conversation messages ----------
 export async function loadMessages(conversationId:string,before?:string){
@@ -104,11 +106,11 @@ function settle(id:string,value:any){
  return status!=='running';
 }
 async function check(id:string,submitting=false){
- try{const value=await api('GET','/api/chat/requests/'+enc(id));settle(id,value);return value}
+ try{const value=await api('GET','/api/chat/requests/'+enc(id),undefined,AbortSignal.timeout(15000));settle(id,value);return value}
  catch(e:any){const r=findRecord(id);if(submitting&&e.status===404&&r?.status==='prepared')return {status:'prepared'};if(r&&!['succeeded','partial','cancelled','failed'].includes(r.status))updateRecord(id,{status:'unknown',missing:e.status===404});throw e}
 }
 export async function recover(id:string){
- if(polls.has(id))return;polls.add(id);
+ if(polls.has(id)||posts.has(id))return;polls.add(id);
  try{for(let i=0;i<120;i++){const v=await check(id);if(v.status!=='running')break;await new Promise(r=>setTimeout(r,1500))}if(findRecord(id)?.status==='running')updateRecord(id,{status:'unknown'})}catch{}finally{polls.delete(id)}
 }
 async function execute(id:string){
@@ -119,7 +121,7 @@ async function execute(id:string){
   updateRecord(id,{status:'prepared',failureCode:undefined,error:undefined});
   const body={requestId:r.requestId,message:r.message,conversationId:r.conversationId,mode:'chat',contextIds:r.contextIds,attachmentIds:r.attachmentIds,preservePrimary:true,interruptCurrent:true};
   let busy=false;const poll=setInterval(async()=>{if(busy)return;busy=true;try{await check(id,true)}catch{}finally{busy=false}},1500);
-  try{const result=await api('POST','/api/chat',body);updateRecord(id,{status:'succeeded',runId:result.run?.id,conversationId:result.conversationId||r.conversationId})}
+  try{const result=await api('POST','/api/chat',body,AbortSignal.timeout(180000));settle(id,{status:'succeeded',runId:result.run?.id,conversationId:result.conversationId||r.conversationId})}
   catch{await check(id).catch(()=>{})}finally{clearInterval(poll)}
  }catch{updateRecord(id,{status:'unknown'})}
  finally{posts.delete(id);if(findRecord(id)?.status==='running')void recover(id)}

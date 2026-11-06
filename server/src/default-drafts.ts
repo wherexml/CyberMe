@@ -6,7 +6,7 @@ import {generateInboxDraft} from './drafts';
 // One durable preparation per empty pending item. Failures/unknown outcomes
 // require explicit regeneration; no automatic send and no restart replay.
 function eligible(item:any) {
- return copilotGate(item).state==='ready' && needsInboxAttention(item) && !hasNoReplyDecision(item) && dispositionOf(item).actionType==='reply' && item.status==='pending' && !String(item.draft||'').trim() && !item.editedByUser
+ return copilotGate(item).state==='ready' && needsInboxAttention(item) && !hasNoReplyDecision(item) && dispositionOf(item).actionType==='reply' && item.status==='pending' && (!String(item.draft||'').trim()||item.draftStale===true&&!item.manualDraft) && !item.editedByUser
   && !item.draftCandidate && !item.draftError
   && !['queued','pending','running','interrupted','review'].includes(item.sourceProcessing?.status);
 }
@@ -24,7 +24,7 @@ export async function prepareDefaultDrafts() {
     put('inbox',{...item,draftPreparation:{...item.draftPreparation,status:'skipped'}});
     continue;
    }
-   if(eligible(item)&&!item.draftPreparation&&!activeRequest(item.id))
+   if(eligible(item)&&(!item.draftPreparation||item.draftStale&&item.draftPreparation.status==='succeeded')&&!activeRequest(item.id))
     put('inbox',{...item,draftPreparation:{requestId:uid('default-draft'),status:'queued'}});
   }
   const item=list('inbox').find(row=>eligible(row)&&row.draftPreparation?.status==='queued'&&!activeRequest(row.id));

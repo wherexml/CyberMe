@@ -9,6 +9,14 @@ export function chatRequestStatus(row:{state:string},saved:any,run:any){
  if(status==='failed'&&interrupted&&Array.isArray(saved.completedWrites)&&saved.completedWrites.length===0)return 'cancelled';
  return status;
 }
+// Only public categories cross the boundary; provider diagnostics can contain private paths and URLs.
+function failureCode(run:any){
+ const error=String(run?.error||'');
+ if(/GoUsageLimitError|usage limit exceeded|insufficient_quota/i.test(error))return 'model_quota_exceeded';
+ if(/Cannot find (?:module|package)|ERR_MODULE_NOT_FOUND/.test(error))return 'model_runtime_missing';
+ if(/AI 响应超时|llm_timeout/.test(error))return 'model_timeout';
+ return 'agent_failed';
+}
 export function mountChatStatus(app:Hono){
  // Discovery is independent of local outgoing state and loaded history pages.
  // Return only bounded intent metadata, never the original prompt or tool payloads.
@@ -52,6 +60,6 @@ export function mountChatStatus(app:Hono){
   return c.json(publicValue({requestId:id,status,conversationId:saved.conversationId,runId:saved.runId,
    userMessage:saved.userMessage,...(status==='succeeded'?{result:saved.result}:{}),
    ...(status==='partial'?{completedWrites:saved.completedWrites}:{}),
-   ...(status==='failed'?{error:'agent_failed',failureCode:/GoUsageLimitError|usage limit exceeded|insufficient_quota/i.test(String(run?.error||''))?'model_quota_exceeded':'agent_failed'}:{}),runStatus:run?.status}));
+   ...(status==='failed'?{error:'agent_failed',failureCode:failureCode(run)}:{}),runStatus:run?.status}));
  });
 }

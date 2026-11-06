@@ -114,15 +114,15 @@ export function assertPublicInput(value:any){
  if(!value||typeof value!=='object')return;
  for(const [key,child]of Object.entries(value)){if(/api.?key|access.?token|refresh.?token|app.?secret|authorization|password|credential|headers|diskPath|^__proto__$|^constructor$|^prototype$/i.test(key))throw new ApiError(400,'private_field','Credentials and server fields cannot be passed through Agent tools');assertPublicInput(child);}
 }
-function directAuthorization(prompt:string){
- return prompt.replace(/<quoted_context>[\s\S]*?<\/quoted_context>/gi,'').replace(/```[\s\S]*?```|“[^”]*”|「[^」]*」|"[^"\n]*"|^\s*>.*$/gm,'').replace(/^(?:\s*请)?\s*(?:翻译|解释|总结|分析|阅读|translate|explain|summari[sz]e|review)[^：:\n]*[：:][\s\S]*$/i,'').replace(/(?:不要|禁止|切勿|勿|别|暂不|不能|不得|不许|不允许|不需要|无需|不是|不(?=执行|创建|删除|修改|发送|运行|调用|批准|恢复|生成|同步)|do\s+not|don['’]t|never)\s*[^，,。.;；\n！？!?]*/gi,'');
+export function directAuthorization(prompt:string){
+ return prompt.replace(/<quoted_context>[\s\S]*?<\/quoted_context>/gi,'').replace(/```[\s\S]*?```|“[^”]*”|「[^」]*」|"[^"\n]*"|^\s*>.*$/gm,'').replace(/^(?:\s*请)?\s*(?:翻译|解释|总结|分析|阅读|translate|explain|summari[sz]e|review)[^：:\n]*[：:][\s\S]*$/i,'').replace(/(?:不要|禁止|切勿|勿|别|暂不|不能|不得|不许|不允许|不需要|无需|不是|不(?=起草|草拟|保存|执行|创建|删除|修改|发送|运行|调用|批准|恢复|生成|同步)|do\s+not|don['’]t|never)\s*[^，,。.;；\n！？!?]*/gi,'');
 }
-export function authorizeAgentWrite(prompt:string,evidence:unknown,external=false){
+export function authorizeAgentWrite(prompt:string,evidence:unknown,external=false,draftOnly=false){
  if(typeof evidence!=='string'||!evidence.trim()||!prompt.includes(evidence))throw new ApiError(403,'user_evidence_required','evidence must quote the current user request');
  const direct=directAuthorization(prompt);
  if(/^(?:\s*请)?\s*(?:翻译|解释|分析|阅读|总结|translate|explain|analy[sz]e|summari[sz]e|review)\s*/i.test(direct)&&/(?:不要|禁止|勿|do not|don't)\s*(?:执行|操作|修改|创建|发送|execute|perform|modify|send)/i.test(direct))throw new ApiError(403,'quoted_instruction','Quoted material is not authorization');
  const verbs=external?/(发送|发给|发到|批准|撤回|创建.*日程|安排|删除.*日程|调用|执行|重试|回读|核对|send|approve|recall|schedule|delete|call|execute|retry|reconcile)/i:/(创建|建立|新增|添加|保存|记住|记录|整理|思考|建议|安排|更新|修改|改为|改成|设为|设置|完成|关闭|关掉|收掉|close|忽略|重新打开|恢复|删除|移除|归档|取消|执行|运行|重试|生成|同步|拉取|导入|连接|断开|绑定|启用|停用|暂停|开启|关闭|切换|检测|测试|检查|判断|处理|关注|复制|快照|create|add|save|remember|record|organize|think|suggest|update|edit|change|set|complete|done|dismiss|reopen|restore|delete|remove|archive|cancel|execute|run|retry|generate|sync|import|connect|disconnect|bind|enable|disable|pause|switch|test|check|assess|process|follow|snapshot)/i;
- if(!verbs.test(direct))throw new ApiError(403,'operation_not_requested','Current user request does not authorize this operation');
+ if(!verbs.test(direct)&&!(draftOnly&&/(起草|草拟|保存.{0,12}草稿|\bdraft\b|\bsave\b.{0,20}\bdraft\b)/i.test(direct)))throw new ApiError(403,'operation_not_requested','Current user request does not authorize this operation');
 }
 export async function executeApplicationAction(runId:string,prompt:string,params:any,readOnly=false){
  const action=applicationActions.find(x=>x.name===params.action);if(!action)throw new ApiError(400,'unknown_action','Unknown application action');
@@ -130,14 +130,17 @@ export async function executeApplicationAction(runId:string,prompt:string,params
  const write=actionWrites(action);if(write){
  const category=params.resource==='tasks'||params.resource==='projects'?'tasks':params.resource==='connections'||/^(connection_|feishu_|wechat_|google_)/.test(action.name)?'connections':/^calendar_/.test(action.name)?'calendar':/^file_/.test(action.name)?'files':params.resource==='inbox'||/^inbox_/.test(action.name)?'reply':undefined;
  if(category&&settings().autonomy.permissions?.[category]==='read')throw new ApiError(403,'autonomy_read_only','该操作当前为仅查看');
-if(readOnly)throw new ApiError(403,'read_only','Read-only runs cannot write');authorizeAgentWrite(prompt,params.evidence,action.external);
+// Draft intent grants only a narrow draft payload, never generic entity changes.
+ const draftOnly=params.resource==='inbox'&&typeof input.draft==='string'&&Object.keys(input).every(k=>(action.name==='entity_update'?['draft','baseUpdatedAt']:action.name==='entity_create'?['draft','title','body','sender','channel']:[]).includes(k));
+ const draftIntent=draftOnly&&/(起草|草拟|保存.{0,12}草稿|\bdraft\b|\bsave\b.{0,20}\bdraft\b)/i.test(directAuthorization(prompt));
+if(readOnly)throw new ApiError(403,'read_only','Read-only runs cannot write');authorizeAgentWrite(prompt,params.evidence,action.external,draftOnly);
   const direct=directAuthorization(prompt);
   const specific:Record<string,RegExp>={inbox_send:/(发送|发给|发到|send|approve)/i,inbox_undo:/(撤回|recall|undo)/i,calendar_create:/(日程|日历|安排|calendar|schedule)/i,calendar_delete:/(删除|移除|delete|remove)/i,connection_mcp_call:/(调用|执行.*工具|call|execute.*tool)/i,dispatch_tick:/(执行|运行|调度|execute|run|tick)/i,dispatch_retry:/(重试|retry)/i,dispatch_reconcile:/(回读|核对|核验|检查|reconcile|check)/i,notifications_tick:/(发送|通知|运行|调度|send|notify|run|tick)/i,notifications_retry:/(重试|retry)/i,notifications_reconcile:/(回读|核对|核验|检查|reconcile|check)/i};
   if(specific[action.name]&&!specific[action.name].test(direct))throw new ApiError(403,'operation_not_requested','Current request does not authorize '+action.name);
   if(action.name==='inbox_send'&&/(不要|禁止|勿|别|暂不|不|do not|don't|never)\s*(发送|外发|send)/i.test(prompt.replace(/```[\s\S]*?```|“[^”]*”|「[^」]*」|"[^"\n]*"/g,'')))throw new ApiError(403,'operation_not_requested','Current request forbids sending');
   if(action.name==='file_generate'&&!/(文件|报告|图|表格|pdf|word|docx|xlsx|markdown|diagram|chart|timeline|导出|export)/i.test(direct))throw new ApiError(403,'operation_not_requested','Current request does not request a file');
   const entityVerbs:Record<string,RegExp>={entity_create:/(创建|建立|新增|添加|生成|保存|记录|记住|整理|安排|create|add|generate|save|record|remember|organize|schedule)/i,entity_update:/(更新|修改|改为|改成|设为|设置|完成|关闭|关掉|收掉|忽略|重新打开|恢复|取消|启用|停用|暂停|开启|切换|update|edit|change|set|complete|close|done|dismiss|reopen|restore|cancel|enable|disable|pause|switch)/i,entity_delete:/(删除|移除|delete|remove)/i,entity_restore:/(恢复|还原|restore)/i};
-  if(entityVerbs[action.name]&&!entityVerbs[action.name].test(direct))throw new ApiError(403,'operation_not_requested','Current request does not authorize '+action.name);
+  if(entityVerbs[action.name]&&!entityVerbs[action.name].test(direct)&&!draftIntent)throw new ApiError(403,'operation_not_requested','Current request does not authorize '+action.name);
  }
  let path=action.path;const resource=params.resource;
  if(action.entity){if(!resources.includes(resource))throw new ApiError(400,'invalid_resource','Unsupported resource');path=path.replace(':resource',resource);}

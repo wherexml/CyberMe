@@ -24,9 +24,9 @@ const zh:typeof en={
  placeholder:'和 CyberMe 聊天', yesterday:'昨天', todayL:'今天',
  greeting:(n:string)=>n?`${zhDayPart()}好，${n}`:`${zhDayPart()}好`, greetSub:'有什么想聊的？也可以用 + 引用一条洞察。',
  evidence:'证据', discuss:'讨论', viewTask:'查看任务', insightRef:'洞察',
- st:{decide:'待决定', changed:'来源已变化', thin:'证据不足', created:'已创建任务', resolved:'已解决', watching:'观察中', reply:'待回复', unknown:'结果未确认', partial:'部分完成'},
+ st:{decide:'待决策', changed:'来源已变化', thin:'证据不足', created:'已创建任务', resolved:'已解决', watching:'观察中', reply:'待回复', unknown:'结果未确认', partial:'部分完成'},
  ts:{queued:'排队中', running:'进行中', confirm:'等待你确认', sending:'发送中', failed:'失败', done:'已完成', scheduled:'已安排', unknown:'结果未确认', partial:'部分完成', cancelled:'已停止', paused:'已暂停', interrupted:'已中断'},
- insEmpty:'暂无待决定的事项。', taskEmpty:'还没有任务。', memEmpty:'还没有记住任何内容。',
+ insEmpty:'暂无待决策的事项。', taskEmpty:'还没有任务。', memEmpty:'还没有记住任何内容。',
  recheck:'重新核对', checking:'核对中…', dismiss:'忽略', watch:'继续观察', unwatch:'停止观察',
  evidenceH:'证据', gapH:'未核实', actionH:'建议行动', attachH:'引用一条洞察',
  connect:'连接', connecting:'连接中…', notConnected:'未连接', syncedNow:'刚刚同步',
@@ -49,6 +49,6 @@ const xen={settings:'Settings', yourCall:'Your call', capIdle:'Your personal AI 
 const xzh:typeof xen={settings:'设置', yourCall:'你的判断', capIdle:'你的个人 AI 工作台', capThink:'思考中…', capWork:(n:number)=>`正在处理 ${n} 个任务`, capWait:'等你确认', hi:'你好，我是 CyberMe',
  notNow:'暂不处理', snoozed:'已推迟到周一', bringBack:'恢复', silent:(d:number)=>`${d} 天未联系`, emailed:'今天已发邮件', todayL:'今天', renewal:'续约日',
  recheckSrc:'重新核对来源', sigOf:(n:number,m:number)=>`已有 ${n} 条，需要 ${m} 条信号`, threshold:'调整阈值',
- changeAvatar:'更换头像', chatIt:'聊聊这个', bestFit:'最合适', wNeeds:'等你确认', wRun:'进行中', wDone:'已完成', wHandled:'已处理', wFailed:'失败', wUnknown:'未确认', wFileFailed:'文件校验失败', wInterrupted:'已中断', wResume:'继续', wChosen:'已选择', wClosed:'已关闭', chatAbout:(t:string)=>`聊聊这个：${t}`, memNew:'新建记忆', subDec:'决定', subIns:'灵感', insHead:'我注意到的', recommended:'推荐', decideLater:'稍后决定', talkIt:'展开聊聊', undo:'撤销', whyQ:'为什么选这个？这能帮我了解你的决策方式。', movedTomorrow:'已移到明天的简报', allClear:'今天的决定都做完了，剩下的交给我。', patternL:'我注意到', savedWhy:(r:string)=>`已记入日志：${r}`, briefNum:(i:number,n:number)=>`第 ${i} 个，共 ${n} 个`, todayJ:'今天', discussQ:(q:string)=>`帮我想想：${q}`, replyWithTip:'在对话中让 CyberMe 帮你修改', clickEdit:'点击编辑', mdHint:'Markdown · Esc 关闭', done:'完成', quoteReply:'引用', addConn:'添加连接', pickSent:'已交给 CyberMe，任务回报后才算完成。', pickPending:'等待结果', pickFailed:'未执行', pickUnknown:'结果未确认',
- noPattern:'做过几次决定后，这里会出现你的决策规律。', galleryEmpty:'还没有灵感。', refresh:'再找找', refreshing:'查找中…'};
+ changeAvatar:'更换头像', chatIt:'聊聊这个', bestFit:'最合适', wNeeds:'等你确认', wRun:'进行中', wDone:'已完成', wHandled:'已处理', wFailed:'失败', wUnknown:'未确认', wFileFailed:'文件校验失败', wInterrupted:'已中断', wResume:'继续', wChosen:'已选择', wClosed:'已关闭', chatAbout:(t:string)=>`聊聊这个：${t}`, memNew:'新建记忆', subDec:'决策', subIns:'灵感', insHead:'我注意到的', recommended:'推荐', decideLater:'稍后决策', talkIt:'展开聊聊', undo:'撤销', whyQ:'为什么选这个？这能帮我了解你的决策方式。', movedTomorrow:'已移到明天的简报', allClear:'今天的决策都做完了，剩下的交给我。', patternL:'我注意到', savedWhy:(r:string)=>`已记入日志：${r}`, briefNum:(i:number,n:number)=>`第 ${i} 个，共 ${n} 个`, todayJ:'今天', discussQ:(q:string)=>`帮我想想：${q}`, replyWithTip:'在对话中让 CyberMe 帮你修改', clickEdit:'点击编辑', mdHint:'Markdown · Esc 关闭', done:'完成', quoteReply:'引用', addConn:'添加连接', pickSent:'已交给 CyberMe，任务回报后才算完成。', pickPending:'等待结果', pickFailed:'未执行', pickUnknown:'结果未确认',
+ noPattern:'做过几次决策后，这里会出现你的决策规律。', galleryEmpty:'还没有灵感。', refresh:'再找找', refreshing:'查找中…'};
 export const X={en:xen,zh:xzh};

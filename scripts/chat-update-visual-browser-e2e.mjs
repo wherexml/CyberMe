@@ -1,0 +1,10 @@
+const task=await taskSpace('CyberMe 连续发送与自动更新'),page=task.page('p1');
+const fs=await import('node:fs/promises'),out=process.cwd()+'/output/chat-update-20261105';
+await page.evaluate(async()=>{const s=await window.mygo.call('Bridge.ReadState'),ui=JSON.parse(s.drafts['html:cyberme-v6-ui']);ui.theme='night';s.drafts['html:cyberme-v6-ui']=JSON.stringify(ui);await window.mygo.call('Bridge.SaveState',s)});
+await page.cdp('Emulation.setDeviceMetricsOverride',{width:640,height:700,deviceScaleFactor:1,mobile:false});await page.reload();
+await page.fetch('/__fixture/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({up:{status:'ready',ready:true,current:{version:'0.1.3'},available:{version:'0.1.7',build:'visual'}}})});
+await page.waitForSelector('[role="dialog"]');
+const visible=await page.evaluate(()=>{const d=document.querySelector('[role="dialog"]'),r=d.getBoundingClientRect();return {withinWindow:r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,night:document.querySelector('#cyberme-v6-root').dataset.theme==='night'}});
+await page.screenshot({path:out+'/update-narrow-night.png'});
+const report=JSON.parse(await fs.readFile(out+'/browser-result.json','utf8'));Object.assign(report.checks,{narrowNoticeFits:visible.withinWindow,nightTheme:visible.night});await fs.writeFile(out+'/browser-result.json',JSON.stringify(report,null,2));console.log(visible);if(Object.values(report.checks).some(v=>!v))throw Error('browser check failed');
+console.log(await page.snapshot());await task.finish({keep:[]});

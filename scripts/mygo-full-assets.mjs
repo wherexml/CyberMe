@@ -3,6 +3,11 @@ import {resolve} from 'node:path';
 import ts from 'typescript';
 // package.json is the single product version source for About and Info.plist.
 export async function appVersion(root){const {version}=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));if(!/^\d+\.\d+\.\d+$/.test(version||''))throw Error('Invalid package.json version');return version}
+export async function retireClassicEntry(assets){
+ // Keep old bookmarks valid without booting the retired application or its API waits.
+ await writeFile(resolve(assets,'desktop.html'),'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>CyberMe</title><meta http-equiv="refresh" content="0;url=cyberme.html"><script>location.replace("cyberme.html")</script></head><body><a href="cyberme.html">CyberMe</a></body></html>');
+}
+
 export async function fullAssets(root,assets){
  const source=resolve(root,'docs/design');
  await cp(resolve(source,'assets/idea-icons'),resolve(assets,'assets/idea-icons'),{recursive:true});

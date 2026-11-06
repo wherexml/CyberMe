@@ -1,6 +1,7 @@
 // Build-only public runtime packaging. Explicit inputs exclude all user data and credentials.
 import {cp,mkdir,rm,writeFile,readdir,lstat,readlink,realpath} from 'node:fs/promises';
 import {resolve,join,relative,isAbsolute,dirname} from 'node:path';
+import {spawnSync} from 'node:child_process';
 const root=resolve(import.meta.dirname,'..'),app=resolve(process.argv[2]||'');
 if(app!==join(root,'.local/apps/OpsTwins Standalone.app') && !(app===join(root,'.local/apps/.build-transaction/staged.app') && process.env.OPSTWIN_BUILD_OUTPUT===app))throw Error('Unexpected build destination');
 const dest=join(app,'Contents/Resources/runtime');await rm(dest,{recursive:true,force:true});await mkdir(dest,{recursive:true});
@@ -14,5 +15,10 @@ await writeFile(join(dest,'package.json'),JSON.stringify({name:'opstwins-runtime
 // Reject any symlink that escapes the package, including absolute links into the workspace.
 async function check(dir){for(const name of await readdir(dir)){const path=join(dir,name),s=await lstat(path);if(s.isSymbolicLink()){const target=await readlink(path);if(isAbsolute(target)||relative(dest,resolve(dirname(path),target)).startsWith('..'))throw Error('Nonportable runtime symlink: '+relative(dest,path));}else if(s.isDirectory())await check(path)}}
 await check(dest);
-await writeFile(join(dest,'runtime-manifest.json'),JSON.stringify({schema:1,node:process.version,sourceCommit:(await import('node:child_process')).execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),dataIncluded:false},null,2));
+// The API starts before lazily loading providers. A healthy server/build cannot
+// prove that copied provider packages contain all runtime files.
+const runtimeImports=['@anthropic-ai/sdk','@earendil-works/pi-ai','@earendil-works/pi-coding-agent'];
+const probe=spawnSync(join(dest,'bin/node'),['--input-type=module','-e',`for(const name of ${JSON.stringify(runtimeImports)})await import(name)`],{cwd:dest,env:{HOME:process.env.HOME,PATH:'/usr/bin:/bin'},encoding:'utf8',timeout:30000});
+if(probe.status!==0)throw Error('Packaged model runtime import failed: '+String(probe.stderr||probe.error||'timeout').slice(0,2000));
+await writeFile(join(dest,'runtime-manifest.json'),JSON.stringify({schema:1,node:process.version,sourceCommit:(await import('node:child_process')).execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),dataIncluded:false,runtimeImportsVerified:runtimeImports},null,2));
 console.log('Packaged immutable runtime; no workspace data or private configuration');

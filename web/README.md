@@ -35,12 +35,12 @@ MyGO完整身份/记忆编辑器、连接查看和采集尺寸统一遵循 [sett
 
 ## V6 入口与模块分工
 
-`cyberme.html` / `src/v6/` 为当前桌面候选入口，使用 `mygo.vite.config.ts` 构建到 `.local/mygo-web/`；普通 `vite.config.ts` 仍用于原 Web 页面。开发服务器 46300 只提供前端，当前配置没有 API 代理；完整交互须另接同源服务。
+`cyberme.html` / `src/v6/` 为当前桌面产品入口，使用 `mygo.vite.config.ts` 构建到 `.local/mygo-web/`；普通 `vite.config.ts` 仍用于原 Web 页面。开发服务器 46300 只提供前端，当前配置没有 API 代理；完整交互须另接同源服务。
 
 - `App.tsx`、`store.ts`：会话、请求回执、界面偏好、原生状态桥与迟到响应归属。
 - `Brief.tsx`、`Tasks.tsx`、`Proposal.tsx`：简报、工作状态、草稿审阅与逐项回执；选择文案不代表执行完成。
-- `Memory.tsx`、`Settings.tsx`：版本化文档编辑与已有能力适配；未接入能力保持不可用。
-- `derive.ts`、`visuals.tsx`：依据已有记录绘图；共享校验位于 `shared/v6-visuals.ts`。
-- `src/desktop/full/v6-return.js`：经典版返回入口；当前只切换大页，不保证定位具体事项。
+- `Memory.tsx`、`MemoryLibrary.tsx`、`Settings.tsx`：个人资料夹、人物投影和版本化文档编辑，详见 [记忆资料库](../docs/public/memory-library.md)。
+- `insight-visuals.ts`、`InsightVisual.tsx`：读取并复核已生成的视觉描述，证据或修订变化时清除过期图形，详见 [洞察视觉](../docs/public/insight-visuals.md)。
+- 正式 MyGO 包的旧 `desktop.html` 入口会返回 V6。仅历史 QA 保留旧应用入口，详见 [V6 导航](../docs/public/v6-only-navigation.md)。
 
 详细规范：[V6 界面](../docs/public/cyberme-v6.md)、[数据契约](../docs/public/v6-data-contract.md)。Mock、浏览器隔离数据、真实模型与安装版分别验收。

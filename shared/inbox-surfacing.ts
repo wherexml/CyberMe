@@ -12,6 +12,52 @@ export function inboxTimestamp(value:unknown):number|undefined {
  const n=numeric?Number(value)*(Number(value)<1e11?1000:1):Date.parse(String(value));
  return Number.isFinite(n)&&n>0&&Number.isFinite(new Date(n).getTime())?n:undefined;
 }
+// Small deterministic hash: this file also runs in the browser, and the value is only compared for equality.
+export function textHash(text:string){let a=0xdeadbeef,b=0x41c6ce57;for(let i=0;i<text.length;i++){const c=text.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677);}a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);return (b>>>0).toString(36)+(a>>>0).toString(36);}
+const refId=(x:any)=>typeof x==='string'?x:x?.id||x?.fileKey||x?.key||x?.openId||x?.name||x?.filename||'';
+/** What a message says, not how it was synced: avatars, display names, direction and sync timestamps are excluded. */
+export function messageRevision(m:any){
+ const list=(v:any)=>Array.isArray(v)?v.map(refId).sort():[];
+ return textHash(JSON.stringify([m?.text||m?.content||m?.body||'',m?.replyToId||'',m?.rootId||'',m?.threadId||'',list(m?.mentions),!!m?.mentionsSelf,list(m?.attachments),!!m?.deleted,!!m?.recalled]));
+}
+/** Has the user not seen this exact message, in this exact revision, as of their dismissal? */
+export function dismissalUnseen(item:any,id:unknown){
+ const dismissal=item?.attentionDismissal;if(!dismissal||typeof id!=='string')return false;
+ const seen=dismissal.knownMessages?.[id];
+ if(seen===undefined)return id!==dismissal.requestMessageId;
+ const current=(Array.isArray(item.messages)?item.messages:[]).find((m:any)=>m.id===id);
+ return !!current&&messageRevision(current)!==seen;
+}
+/** First close time that parses: an unparseable closedAt must not hide a usable sentAt or receipt time. */
+export function closureStamp(item:any):number|undefined{for(const value of [item?.closedAt,item?.sentAt,item?.receipt?.at]){const stamp=inboxTimestamp(value);if(stamp!==undefined)return stamp}return undefined}
+/** The exact open request this closed record still holds, unless it was already cleared or forwarded at this revision. */
+function openRequestOnClosed(item:any,t:any){
+ if(t?.status!=='succeeded'||t.resolution!=='open'||!t.requestMessageId)return;
+ const request=(Array.isArray(item?.messages)?item.messages:[]).find((m:any)=>m.id===t.requestMessageId);
+ if(!request)return; // A judgment naming a message we no longer hold cannot be shown or forwarded.
+ const ack=item.attentionAck;if(ack&&ack.requestMessageId===t.requestMessageId&&ack.requestRevision===messageRevision(request))return;
+ return request;
+}
+/** One answer for display and forwarding: is the exact open request proven newer than this record's closure? */
+export function requestAfterClosure(item:any,t:any):boolean{
+ const request=openRequestOnClosed(item,t);if(!request)return false;
+ if(item.status==='dismissed'&&item.attentionDismissal)return dismissalUnseen(item,t.requestMessageId);
+ const closed=closureStamp(item),at=inboxTimestamp(request.sentAt);
+ return closed!==undefined&&at!==undefined&&at>closed;
+}
+/** A missing close time proves nothing. Such a record is not reopened or called new; it only needs verifying. */
+export function closureTimeUnknown(item:any,t:any):boolean{
+ if(!['sent','delivered','done','dismissed','cancelled'].includes(item?.status)||(item.status==='dismissed'&&item.attentionDismissal))return false;
+ const request=openRequestOnClosed(item,t);if(!request||closureStamp(item)!==undefined)return false;
+ return !(t.requestMessageId===item.forwardedRequestId&&(!item.forwardedRequestRevision||messageRevision(request)===item.forwardedRequestRevision));
+}
+/** A round needs a dated request unless a bound dismissal proved it unseen, and an expired request opens nothing. */
+export function canForwardRequest(item:any,t:any,now=Date.now()):boolean{
+ if(!requestAfterClosure(item,t))return false;
+ const request=item.messages.find((m:any)=>m.id===t.requestMessageId),at=inboxTimestamp(request.sentAt);
+ if(at!==undefined&&now>=at+INBOX_WINDOW_MS)return false;
+ return at!==undefined||(item.status==='dismissed'&&!!item.attentionDismissal);
+}
 export function hasNoReplyDecision(item: InboxItem) {return item.triage?.status==='succeeded'&&item.triage.route==='no_reply'&&!item.attentionOverride;}
 export function inboxDisposition(item:InboxItem,at=Date.now()):InboxDisposition {
  if(item.sourceAttentionExcluded&&!['sending','send_unknown'].includes(item.status)&&item.draftPreparation?.status!=='unknown')return {policyVersion:INBOX_PENDING_POLICY,placement:'quiet',primaryReason:item.sourceAttentionReason||'group_mentions_only',reasons:[item.sourceAttentionReason||'group_mentions_only'],recoveryReasons:[],evaluatedAt:new Date(at).toISOString(),canRestore:false};
@@ -32,10 +78,19 @@ export function inboxDisposition(item:InboxItem,at=Date.now()):InboxDisposition 
  if(item.draftError||item.draftPreparation?.status==='failed')recoveryReasons.push('draft_failed');
  const reasons:string[]=[];
  const resolved=item.status!=='recalled'&&ok&&t.resolution==='replied'&&!!t.replyMessageId&&messages.some((m:any)=>m.id===t.replyMessageId&&(m.isMine===true||(m.isMine!==false&&m.direction==='outgoing'))&&!m.deleted&&!m.recalled&&inboxTimestamp(m.sentAt)!> (stamp??Infinity));
- const closedStamp=inboxTimestamp(item.closedAt||item.sentAt||item.receipt?.at);
- const newOpen=ok&&t.resolution==='open'&&!!t.requestMessageId&&t.requestMessageId!==item.forwardedRequestId&&(closedStamp===undefined||(stamp!==undefined&&stamp>closedStamp));
- const changedClosed=!ok&&messages.some((m:any)=>m.isMine!==true&&m.direction!=='outgoing'&&(closedStamp===undefined||inboxTimestamp(m.sentAt)!>closedStamp));
- const closureUnverified=['sent','delivered','done','dismissed','cancelled'].includes(item.status)&&(newOpen||changedClosed);
+ const closedStamp=closureStamp(item);
+ // A dismissal is bound to message identity; records without a binding keep the original time comparison.
+ const dismissal=item.status==='dismissed'?(item as any).attentionDismissal:undefined;
+ const unseen=(id:unknown)=>dismissalUnseen(item,id);
+ const unseenIncoming=messages.some((m:any)=>m.isMine!==true&&m.direction!=='outgoing'&&!m.deleted&&!m.recalled&&unseen(m.id));
+ // A later edit of an already forwarded request is new evidence again until reevaluation forwards that revision.
+ const forwardedRevision=(item as any).forwardedRequestRevision;
+ const forwarded=ok&&!!t.requestMessageId&&t.requestMessageId===item.forwardedRequestId&&(!forwardedRevision||!request||messageRevision(request)===forwardedRevision);
+ const newOpen=ok&&!forwarded&&requestAfterClosure(item,t);
+ const changedClosed=!ok&&(dismissal?unseenIncoming:messages.some((m:any)=>m.isMine!==true&&m.direction!=='outgoing'&&(closedStamp===undefined||inboxTimestamp(m.sentAt)!>closedStamp)));
+ // New evidence with a strong request signal but no identifiable origin must not stay suppressed forever.
+ const unidentified=!!dismissal&&ok&&!t.requestMessageId&&unseenIncoming&&t.resolution==='unknown'&&(t.needsReply??0)>=.75;
+ const closureUnverified=['sent','delivered','done','dismissed','cancelled'].includes(item.status)&&(newOpen||changedClosed||unidentified||closureTimeUnknown(item,t));
  if(closureUnverified)recoveryReasons.push('context_unknown');
  if((['sent','delivered'].includes(item.status)&&!closureUnverified)||resolved)reasons.push('replied');
  if(['done','cancelled','archived'].includes(item.status)&&!closureUnverified)reasons.push('completed');

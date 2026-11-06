@@ -1,5 +1,5 @@
 import {existsSync, mkdirSync, readFileSync, realpathSync, statSync} from 'node:fs';
-import {join, relative} from 'node:path';
+import {join, resolve} from 'node:path';
 import {DATA, ROOT, db, get, put, list, hash, now, meta, setMeta} from './store';
 import {ApiError, connectionPermission, feishuConnection, lark, requireSelf, command} from './integrations';
 import {selectedChatScope, unresolvedScopes, matchesConnectionFilter} from './connection-scope';
@@ -30,7 +30,7 @@ export function saveSyncSettings(input:any){
 export function rows(e:any):any[]{const d=e?.data??e;return Array.isArray(d)?d:d?.items||d?.messages||d?.chats||d?.data?.items||[];}
 function pagination(e:any){const d=e?.data??e;return {more:!!(d?.has_more??d?.hasMore??e?.meta?.pagination?.has_more??(e?.meta?.pagination?.complete===false)),token:d?.page_token||d?.pageToken||e?.meta?.pagination?.next_token};}
 const check=()=>connectionPermission('read');
-function safeError(e:any){if(e instanceof ApiError&&Number(e.detail?.code)===3380003)return {code:'source_deleted',message:'飞书源文档已被删除，已保留本次同步的其他结果',upstreamCode:3380003};if(e instanceof ApiError&&['meeting_source_lookup_truncated','meeting_source_not_found','meeting_source_ambiguous','meeting_source_invalid'].includes(e.code))return {code:e.code,message:e.message};return {code:e instanceof ApiError?e.code:'sync_read_failed',message:e instanceof ApiError&&e.status===403?'连接权限或范围已变更':'读取失败，请检查授权、资源权限或连接后重试'};}
+function safeError(e:any){if(e instanceof ApiError&&e.code==='attachment_resource_deleted')return {code:e.code,message:'飞书附件资源已删除',upstreamCode:14005};if(e instanceof ApiError&&Number(e.detail?.code)===3380003)return {code:'source_deleted',message:'飞书源文档已被删除，已保留本次同步的其他结果',upstreamCode:3380003};if(e instanceof ApiError&&['meeting_source_lookup_truncated','meeting_source_not_found','meeting_source_ambiguous','meeting_source_invalid'].includes(e.code))return {code:e.code,message:e.message};return {code:e instanceof ApiError?e.code:'sync_read_failed',message:e instanceof ApiError&&e.status===403?'连接权限或范围已变更':'读取失败，请检查授权、资源权限或连接后重试'};}
 function record(kind:string,id:string,payload:any){check();const key=kind+':'+id;const old=get('feishu_records',key),digest=hash(payload);if(old?.digest===digest)return false;put('feishu_records',{id:key,kind,sourceId:id,payload,digest,bytes:Buffer.byteLength(JSON.stringify(payload)),syncedAt:now()});return true;}
 export function syncStorage(){
  const counts:Record<string,number>={chats:0,messages:0,minutes:0,mail:0,attachments:0};let dataBytes=0,attachmentBytes=0;
@@ -99,7 +99,7 @@ export async function collectFeishu(scope:SyncScope='chats',progress:(patch:any)
   return merged;
  }
  async function attachment(m:any){
-  if(!config.includeAttachments)return [];
+  if(!config.includeAttachments||m.deleted||m.is_deleted||m.recalled||m.is_recalled)return [];
   const content=m.body?.content??m.content??'',refs=new Map<string,{key:string;name:string;type:string}>();
   function ref(key:any,name:any,image=false){if(typeof key==='string'&&/^(img|file)_[A-Za-z0-9_-]+$/.test(key))refs.set(key,{key,name:String(name||key),type:image?'image':'file'});}
   function jsonRefs(value:any){if(!value||typeof value!=='object')return;if(value.file_key)ref(value.file_key,value.file_name);if(value.image_key)ref(value.image_key,'',true);for(const v of Object.values(value))if(typeof v==='object')jsonRefs(v);}
@@ -113,13 +113,20 @@ export async function collectFeishu(scope:SyncScope='chats',progress:(patch:any)
   for(const resource of refs.values()){
    const {key,type}=resource,id=hash({message:m.message_id||m.id,key}),old=get('feishu_assets',id);
    if(old&&existsSync(old.diskPath)){assets.push({id,name:old.name,sizeBytes:old.sizeBytes,url:'/api/feishu/sync/assets/'+id});continue;}
-   const name=resource.name.replace(/[\\/\x00-\x1f]/g,'_').slice(0,180),dir=join(DATA,'feishu-attachments',id);mkdirSync(dir,{recursive:true,mode:0o700});const path=join(dir,name);
+   const name=resource.name.replace(/[\\/\x00-\x1f]/g,'_').replace(/^\.+$/,'resource').slice(0,180)||'resource',dir=join(DATA,'feishu-attachments',id);mkdirSync(dir,{recursive:true,mode:0o700});const path=join(dir,name);
+   const unavailable=get('feishu_asset_failures',id);
+   if(unavailable?.code==='attachment_resource_deleted'&&Date.now()-Date.parse(unavailable.checkedAt)<86400000){fail('attachment',new ApiError(410,unavailable.code,'飞书附件资源已删除'),String(m.message_id||m.id));continue;}
    try{
-    const downloaded=await call(['im','+messages-resources-download','--message-id',String(m.message_id||m.id),'--file-key',key,'--type',type,'--output',relative(ROOT,path)],90000);check();
-    const saved=downloaded.data?.saved_path,actual=saved?(saved.startsWith('/')?saved:join(ROOT,saved)):path,verified=realpathSync(actual);
+    check();const downloaded=await lark(['im','+messages-resources-download','--message-id',String(m.message_id||m.id),'--file-key',key,'--type',type,'--output',name,'--as','user','--format','json'],90000,dir);check();
+    const saved=downloaded.data?.saved_path,actual=saved?resolve(dir,saved):path,verified=realpathSync(actual);
     if(!verified.startsWith(realpathSync(dir)+'/'))throw new Error('Unsafe download');const sizeBytes=statSync(verified).size;if(!sizeBytes)throw new Error('Empty download');
     const mime=type==='image'?'image/jpeg':'application/octet-stream';put('feishu_assets',{id,name,sizeBytes,mime,diskPath:verified});result.counts.attachments++;assets.push({id,name,sizeBytes,url:'/api/feishu/sync/assets/'+id});
-   }catch(e){fail('attachment',e,String(m.message_id||m.id));}
+   }catch(e){
+    // CLI wraps the upstream JSON in a transport error; keep only the semantic code.
+    const upstream=e instanceof ApiError?Number(e.message.match(/"code"\s*:\s*(\d+)/)?.[1])||Number(e.detail?.code):0;
+    if(upstream===14005){put('feishu_asset_failures',{id,code:'attachment_resource_deleted',checkedAt:now()});fail('attachment',new ApiError(410,'attachment_resource_deleted','飞书附件资源已删除'),String(m.message_id||m.id));}
+    else fail('attachment',e,String(m.message_id||m.id));
+   }
   }
   return assets;
  }

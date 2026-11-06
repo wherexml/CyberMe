@@ -19,13 +19,18 @@ export function startWechatSync(trigger='manual'){
 }
 async function collect(id:string,config:ReturnType<typeof wechatSyncSettings>){
  const connectionVersion=wechatConnectionLease(),deadline=Date.now()+60000,counts={chats:0,messages:0,changed:0,unchanged:0},failures:{sourceHash?:string;code:string}[]=[],seen=new Set<string>(),cursorSet=new Set<string>();
+ const saved=meta<any>('wechatSyncContinuation',null),resume=saved?.connectionVersion===connectionVersion&&saved?.settingsVersion===config.version&&saved?.sourceHash===get('connections','wechat-sync-local')?.evidence?.sourceHash?saved:null;
  let limited=false,windowLimited=false,sourceHash='',cursor:string|undefined,scanned=0,changedRead=0;
+ let head=!!resume?.cursor,scanComplete=false,continuationPending=false;
+ cursor=head?undefined:resume?.cursor;
+ if(resume)for(const token of resume.visited||[])cursorSet.add(token);
+
  const guard=()=>{if(wechatConnectionLease()!==connectionVersion||wechatSyncSettings().version!==config.version)throw new ApiError(409,'wechat_sync_changed','连接或同步设置已变化，旧同步已停止');};
  const checkpoint=meta<Record<string,string>>('wechatSyncCheckpoints',{}),updates:Record<string,string>={};
  const progress=()=>put('wechat_sync_runs',{...get('wechat_sync_runs',id),counts:{...counts},scanned,failureCount:failures.length,windowLimited});
  try{
-  do{
-   guard();if(Date.now()>deadline||scanned>=1000){limited=true;break;}
+  pages: do{
+   guard();if(Date.now()>deadline||scanned>=1000){limited=true;continuationPending=true;break;}
    const page=await wechatChats(cursor,100);guard();if(page.hasWarnings)limited=true;if(page.sourceHash!==get('connections','wechat-sync-local')?.evidence?.sourceHash)throw new ApiError(409,'wechat_source_changed','微信账号已变化，请重新连接');if(!sourceHash)sourceHash=page.sourceHash;else if(sourceHash!==page.sourceHash)throw new ApiError(409,'wechat_source_changed','微信来源已变化，请重新同步');
    for(const chat of page.items){
     guard();if(seen.has(chat.id))continue;seen.add(chat.id);scanned++;
@@ -39,7 +44,8 @@ async function collect(id:string,config:ReturnType<typeof wechatSyncSettings>){
     if(Number(chat.lastAt)<Date.now()/1000-(group?86400:config.lookbackDays*86400))continue;
     const key=hash([sourceHash,chat.id]),fingerprint=hash({source:chat.syncFingerprint,policy:config.groupPolicy,categoryPolicy:config.categoryPolicy,category:chat.category});
     if(checkpoint[key]===fingerprint){counts.unchanged++;continue;}
-    if(changedRead>=config.chatLimit||Date.now()>deadline){limited=true;continue;}
+    if(head&&(changedRead>=20||Date.now()>=deadline-45000)){limited=true;continue;}
+    if(changedRead>=config.chatLimit||Date.now()>deadline){limited=true;continuationPending=true;break pages;}
     changedRead++;
     try{
      const page=await wechatMessages(chat.id,undefined,config.messagesPerChat);guard();if(page.sourceHash!==sourceHash)throw new ApiError(409,'wechat_source_changed','微信来源已变化');
@@ -70,13 +76,14 @@ async function collect(id:string,config:ReturnType<typeof wechatSyncSettings>){
     }catch(error){if(error instanceof ApiError&&['wechat_sync_changed','wechat_not_connected','wechat_source_changed','connection_changed','wechat_runtime_selection_invalid'].includes(error.code))throw error;failures.push({sourceHash:key,code:error instanceof ApiError?error.code:'wechat_read_failed'});}
     progress();
    }
-   if(!page.hasMore)break;
+   if(head){head=false;cursor=resume.cursor;continue;}
+   if(!page.hasMore){scanComplete=true;cursor=undefined;break;}
    if(!page.nextCursor||cursorSet.has(page.nextCursor)){failures.push({code:'wechat_cursor_repeated'});limited=true;break;}
    cursorSet.add(page.nextCursor);cursor=page.nextCursor;
   }while(true);
-  guard();setMeta('wechatSyncCheckpoints',{...checkpoint,...updates});
-  put('wechat_sync_runs',{...get('wechat_sync_runs',id),status:failures.length||limited?'partial':'succeeded',completedAt:now(),counts,scanned,limited,windowLimited,failureCount:failures.length,failures,coverage:'recent-7-days-bounded-pages'});
- }catch(error){put('wechat_sync_runs',{...get('wechat_sync_runs',id),status:'failed',completedAt:now(),counts,scanned,failureCount:failures.length,errorCode:error instanceof ApiError?error.code:'wechat_sync_failed',error:'微信同步未完成，已有资料和草稿保留'});}
+  guard();setMeta('wechatSyncContinuation',continuationPending?{cursor:head?resume.cursor:cursor,sourceHash,connectionVersion,settingsVersion:config.version,visited:[...cursorSet].filter(t=>t!==cursor).slice(-100),savedAt:now()}:null);setMeta('wechatSyncCheckpoints',{...checkpoint,...updates});
+  put('wechat_sync_runs',{...get('wechat_sync_runs',id),status:failures.length||limited?'partial':'succeeded',completedAt:now(),counts,scanned,limited,windowLimited,scanComplete,continuationPending,resumed:!!resume,failureCount:failures.length,failures,coverage:'recent-7-days-bounded-pages'});
+ }catch(error){try{guard();setMeta('wechatSyncContinuation',null);}catch{}put('wechat_sync_runs',{...get('wechat_sync_runs',id),status:'failed',completedAt:now(),counts,scanned,failureCount:failures.length,errorCode:error instanceof ApiError?error.code:'wechat_sync_failed',error:'微信同步未完成，已有资料和草稿保留'});}
  finally{running=false;setMeta('wechatSyncNextAt',wechatSyncSettings().enabled?new Date(Date.now()+300000).toISOString():null);}
 }
 export function startWechatScheduler(){

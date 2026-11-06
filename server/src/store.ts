@@ -1,11 +1,15 @@
+import {normalizeNoActionJudgment} from '../../shared/inbox-judgment';
+import {withIdeaCategory} from './idea-category-value';
 import {stampCopilot,isFeishuCopilot,COPILOT_VERSION} from './inbox-copilot';
 import {entityChanged} from './entity-events';
 import {communicationMessages} from './communication-context';
+import {analysisOwner} from './analysis-context';
 import {wechatGroupAttentionExcluded} from './wechat-attention';
 import {storedWechatCategory} from './wechat-categories';
 import {connectionCredentialValues} from './connection-credentials-policy';
 import { presentInbox } from './message-presentation';
 import {inboxDisposition} from '../../shared/inbox-surfacing';
+import {inboxAttention} from '../../shared/inbox-attention';
 import { normalizeInboxAttachments } from '../../shared/attachments';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync } from 'node:fs';
@@ -23,6 +27,7 @@ chmodSync(join(DATA, 'opstwin-advance.db'), 0o600);
 db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS entities (type TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,local_edited INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(type,id));
 CREATE INDEX IF NOT EXISTS entity_type_deleted ON entities(type,deleted);
+CREATE INDEX IF NOT EXISTS inbox_parent_source ON entities(json_extract(data,'$.sourceParentInboxId')) WHERE type='inbox' AND deleted=0;
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings_history (id TEXT PRIMARY KEY,data TEXT NOT NULL,created_at TEXT NOT NULL,reason TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS source_snapshots (type TEXT NOT NULL,id TEXT NOT NULL,data TEXT NOT NULL,hash TEXT NOT NULL,imported_at TEXT NOT NULL,PRIMARY KEY(type,id));
@@ -43,12 +48,19 @@ export function meta<T>(key:string, fallback:T):T {const r=db.prepare('SELECT va
 export function setMeta(key:string,value:unknown) {db.prepare('INSERT INTO meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,JSON.stringify(value));}
 export function revision() {return meta('revision',0);}
 export function bump() {const next=revision()+1;setMeta('revision',next);return next;}
-export function list<T=any>(type:string, deleted=false):T[] {const evaluatedAt=Date.now();return (db.prepare('SELECT data FROM entities WHERE type=? AND deleted=? ORDER BY rowid DESC').all(type,deleted?1:0) as any[]).map(x=>{const value=JSON.parse(x.data);return type==='inbox'?withInboxTriage(normalizeInboxAttachments(value),evaluatedAt):value;}).filter(value=>type!=='artifacts'||!value.archivedAt);}
-export function get<T=any>(type:string,id:string,includeDeleted=false):T|undefined {const r=db.prepare(`SELECT data FROM entities WHERE type=? AND id=? ${includeDeleted?'':'AND deleted=0'}`).get(type,id) as any;if(!r)return undefined;const value=JSON.parse(r.data);return type==='inbox'?withInboxTriage(normalizeInboxAttachments(value)):value;}
-export function put<T extends Record<string,any>>(type:string,value:T,local=true):T & {id:string;createdAt:string;updatedAt:string} {if(type==='inbox'){const prior=value.id?db.prepare("SELECT data FROM entities WHERE type='inbox' AND id=?").get(value.id) as any:undefined;value=stampCopilot(value,prior?JSON.parse(prior.data):undefined);value=normalizeInboxAttachments(value);const {triage,surfacing,disposition,sourceUnavailable,sourceAttentionExcluded,sourceAttentionReason,sourceRule,dismissalFeedbackActive,...rest}=value;value=rest as T;}const data={...value,id:value.id||uid(type.slice(0,-1)),createdAt:value.createdAt||now(),updatedAt:now()};db.prepare('INSERT INTO entities(type,id,data,local_edited) VALUES(?,?,?,?) ON CONFLICT(type,id) DO UPDATE SET data=excluded.data,local_edited=MAX(entities.local_edited,excluded.local_edited)').run(type,data.id,JSON.stringify(data),local?1:0);bump();
+// These dependencies are immutable for one synchronous projection. Never cache
+// across calls: source/permission/settings changes must be visible immediately.
+function inboxReadContext(){
+ let tasks:any[]|undefined,feedback:any[]|undefined,identity:Settings['identity']|undefined;
+ return {tasks:()=>tasks??=list('tasks'),feedback:()=>feedback??=list('inbox_feedback'),identity:()=>identity??=settings().identity};
+}
+type InboxReadContext=ReturnType<typeof inboxReadContext>;
+export function list<T=any>(type:string, deleted=false):T[] {const evaluatedAt=Date.now(),context=type==='inbox'?inboxReadContext():undefined;return (db.prepare('SELECT data FROM entities WHERE type=? AND deleted=? ORDER BY rowid DESC').all(type,deleted?1:0) as any[]).map(x=>{const value=JSON.parse(x.data);return type==='inbox'?withInboxTriage(normalizeInboxAttachments(value),evaluatedAt,context):type==='ideas'?withIdeaCategory(value):value;}).filter(value=>type!=='artifacts'||!value.archivedAt);}
+export function get<T=any>(type:string,id:string,includeDeleted=false):T|undefined {const r=db.prepare(`SELECT data FROM entities WHERE type=? AND id=? ${includeDeleted?'':'AND deleted=0'}`).get(type,id) as any;if(!r)return undefined;const value=JSON.parse(r.data);return type==='inbox'?withInboxTriage(normalizeInboxAttachments(value)):type==='ideas'?withIdeaCategory(value):value;}
+export function put<T extends Record<string,any>>(type:string,value:T,local=true):T & {id:string;createdAt:string;updatedAt:string} {if(type==='inbox'){const prior=value.id?db.prepare("SELECT data FROM entities WHERE type='inbox' AND id=?").get(value.id) as any:undefined;value=stampCopilot(value,prior?JSON.parse(prior.data):undefined);value=normalizeInboxAttachments(value);const {triage,surfacing,disposition,attention,lastOpenRequest,sourceUnavailable,sourceAttentionExcluded,sourceAttentionReason,sourceRule,dismissalFeedbackActive,...rest}=value;value=rest as T;}const data={...value,id:value.id||uid(type.slice(0,-1)),createdAt:value.createdAt||now(),updatedAt:now()};db.prepare('INSERT INTO entities(type,id,data,local_edited) VALUES(?,?,?,?) ON CONFLICT(type,id) DO UPDATE SET data=excluded.data,local_edited=MAX(entities.local_edited,excluded.local_edited)').run(type,data.id,JSON.stringify(data),local?1:0);bump();
  // Source revisions flow to linked rounds without changing their drafts or receipts.
  if(type==='inbox'&&!data.sourceParentInboxId&&Array.isArray(data.messages)){
-  const rows=db.prepare("SELECT data FROM entities WHERE type='inbox' AND deleted=0").all() as any[];
+  const rows=db.prepare("SELECT data FROM entities WHERE type='inbox' AND deleted=0 AND json_extract(data,'$.sourceParentInboxId')=?").all(data.id) as any[];
   for(const row of rows){const child=JSON.parse(row.data);if(child.sourceParentInboxId!==data.id||JSON.stringify(child.messages)===JSON.stringify(data.messages))continue;
    put('inbox',{...child,messages:data.messages,body:data.body,sourceScope:data.sourceScope,sourceUpdatedAt:data.sourceUpdatedAt,sourceChangedAt:now(),approved:false,sensitiveApproved:false,attentionOverride:false});
   }
@@ -58,24 +70,24 @@ export function remove(type:string,id:string) {db.prepare('UPDATE entities SET d
 export function restore(type:string,id:string) {db.prepare('UPDATE entities SET deleted=0,local_edited=1 WHERE type=? AND id=?').run(type,id);bump();return get(type,id);}
 export function importEntity(type:string,id:string,value:Record<string,any>) {if(type==='inbox')value=normalizeInboxAttachments(value);const r=db.prepare('SELECT local_edited,deleted FROM entities WHERE type=? AND id=?').get(type,id) as any;const snapshot={...value,id,sourceSystem:'opstwin',sourceId:value.sourceId||id,importedAt:now()};db.prepare('INSERT INTO source_snapshots(type,id,data,hash,imported_at) VALUES(?,?,?,?,?) ON CONFLICT(type,id) DO UPDATE SET data=excluded.data,hash=excluded.hash,imported_at=excluded.imported_at').run(type,id,JSON.stringify(snapshot),hash(snapshot),now());if(r?.local_edited||r?.deleted)return false;put(type,snapshot,false);return true;}
 export function activity(title:string,kind:string,status='succeeded',detail?:string,entityId?:string,receipt?:any) {return put('activities',{id:uid('activity'),title,kind,status,detail,entityId,receipt});}
-export function beginRun(kind:string,title:string,extra:Record<string,any>={}) {return put('runs',{id:uid('run'),kind,title,status:'running',startedAt:now(),engine:'pi',tools:[],events:[],...extra});}
+export function beginRun(kind:string,title:string,extra:Record<string,any>={}) {return put('runs',{id:uid('run'),kind,title:publicValue(title),status:'running',startedAt:now(),engine:'pi',tools:[],events:[],...extra});}
 export function updateRun(id:string,patch:Record<string,any>) {const run=get('runs',id);if(!run)throw new Error('Run not found');return put('runs',{...run,...patch});}
 export function toolEvidence(runId:string,name:string,input:unknown,output:unknown,status='succeeded',metadata:Record<string,unknown>={}) {const run=get('runs',runId);if(!run)return;updateRun(runId,{tools:[...(run.tools||[]),{id:uid('tool'),name,input,output,status,at:now(),...metadata}]});}
 
 // Judgment lives independently so background analysis cannot invalidate draft edit leases.
-export const TRIAGE_POLICY_VERSION='inbox-triage-v9-conversation-evidence';
-export function inboxFeedback(item:any){
+export const TRIAGE_POLICY_VERSION='inbox-triage-v10-owner-identity';
+export function inboxFeedback(item:any,context?:InboxReadContext){
  const key=item.senderId||item.sender;
- return list('inbox_feedback').filter(f=>f.active&&f.itemId!==item.id&&f.channel===item.channel&&f.senderKey===key).slice(0,8).map(f=>({id:f.id,itemId:f.itemId,title:f.title,body:f.body,action:'dismiss',createdAt:f.createdAt}));
+ return (context?.feedback()??list('inbox_feedback')).filter(f=>f.active&&f.itemId!==item.id&&f.channel===item.channel&&f.senderKey===key).slice(0,8).map(f=>({id:f.id,itemId:f.itemId,title:f.title,body:f.body,action:'dismiss',createdAt:f.createdAt}));
 }
 export function recordInboxFeedback(old:any,saved:any){
  if(old.status===saved.status)return;
  if(saved.status==='dismissed')put('inbox_feedback',{id:saved.id,itemId:saved.id,active:true,channel:saved.channel,senderKey:saved.senderId||saved.sender,title:saved.title,body:String(saved.body||'').slice(0,1500)});
  if(old.status==='dismissed'&&saved.status!=='dismissed'){const feedback=get('inbox_feedback',saved.id);if(feedback)put('inbox_feedback',{...feedback,active:false});}
 }
-export function inboxTriageState(item:any){
- const owner=settings().identity;
- const linked=list('tasks').filter(task=>(item.context||[]).includes(task.id)||task.inboxId===item.id||task.sourceInboxId===item.id).map(task=>({id:task.id,title:task.title,status:task.status,dueDate:task.dueDate,notes:task.notes}));
+export function inboxTriageState(item:any,context?:InboxReadContext,transportFingerprint=true){
+ const owner=context?.identity()??settings().identity;
+ const linked=(context?.tasks()??list('tasks')).filter(task=>(item.context||[]).includes(task.id)||task.inboxId===item.id||task.sourceInboxId===item.id).map(task=>({id:task.id,title:task.title,status:task.status,dueDate:task.dueDate,notes:task.notes}));
  // Read only explicitly selected notes; never add the user's whole memory
  // corpus to judgment. Coverage remains explicit when provider bounds apply.
  const selectedIds=[...new Set([...(Array.isArray(item.context)?item.context:[]),...(Array.isArray(item.contextIds)?item.contextIds:[])].filter((id):id is string=>typeof id==='string'))];
@@ -87,13 +99,14 @@ export function inboxTriageState(item:any){
  });
  const noteCoverage={selectedReferenceIds:selectedIds,selectionTruncated:selectedIds.length>64,matchedNotes:notes.length,loadedNotes:linkedNotes.length,notesTruncated:notes.length>linkedNotes.length,contentTruncated:linkedNotes.some(note=>note.truncated),selectedNotesFingerprint:hash(notes.map(note=>({id:note.id,title:note.title,body:note.body,content:note.content,notes:note.notes,summary:note.summary,updatedAt:note.updatedAt})))};
  const conversation=communicationMessages(item.messages);
- const state={dismissalFeedback:inboxFeedback(item),owner:{name:owner.name,aliases:owner.name==='许茂林'?['Steve','许茂林']:[],role:owner.role,instructions:owner.instructions},message:{title:item.title,body:conversation.messages.length?undefined:item.body,sender:item.sender,senderId:item.senderId,isMine:item.isMine,direction:item.direction,isSelfTest:item.isSelfTest===true,recipientId:item.recipientId,channel:item.channel,origin:item.origin,sensitive:!!item.sensitive,sourceId:item.sourceId,receivedAt:item.receivedAt,eventAt:item.eventAt,sentAt:item.sentAt,chatMode:item.chatMode||item.sourceScope?.chatMode},recentMessages:conversation.messages,conversationCoverage:{...conversation.coverage,...(Array.isArray(item.messages)&&item.messages.some((m:any)=>m.contentTruncated)?{truncated:true}:{}),fingerprint:hash(item.messages||[]),sourceUpdatedAt:item.sourceUpdatedAt||null,liveVerified:false,...(item.sourceCoverage?{sourceCoverage:item.sourceCoverage}:{}),...(/^wechat$/i.test(item.channel)?{connectionVersion:get('connections','wechat-sync-local')?.updatedAt||null}:{})},linkedTasks:linked,linkedNotes,noteCoverage,sourceAttachments:item.sourceAttachments||[]};
+ const boundOwnerCommitment=!!item.requestRoundId&&(item.messages||[]).some((m:any)=>m.id===item.requestRoundId&&(m.isMine===true||(m.isMine!==false&&m.direction==='outgoing')));
+ const state={...(item.requestRoundId?{requestScope:{version:'bound-round-v1',requestMessageId:item.requestRoundId,kind:boundOwnerCommitment?'owner_commitment':'incoming_request',instruction:boundOwnerCommitment?'Assess fulfillment of this original owner commitment, not whether to reply to a later acknowledgement. Without evidence of fulfillment or withdrawal it remains action=decision, resolution=open; do not replace its message identity.':'Judge only this original request. Other messages are context or resolving replies; never replace this request with a newer one.'}}:{}),dismissalFeedback:inboxFeedback(item,context),owner:analysisOwner(owner),message:{title:item.title,body:conversation.messages.length?undefined:item.body,sender:item.sender,senderId:item.senderId,isMine:item.isMine,direction:item.direction,isSelfTest:item.isSelfTest===true,recipientId:item.recipientId,channel:item.channel,origin:item.origin,sensitive:!!item.sensitive,sourceId:item.sourceId,receivedAt:item.receivedAt,eventAt:item.eventAt,sentAt:item.sentAt,chatMode:item.chatMode||item.sourceScope?.chatMode},recentMessages:conversation.messages,conversationCoverage:{...conversation.coverage,...(Array.isArray(item.messages)&&item.messages.some((m:any)=>m.contentTruncated)?{truncated:true}:{}),fingerprint:transportFingerprint?hash(item.messages||[]):'',sourceUpdatedAt:item.sourceUpdatedAt||null,liveVerified:false,...(item.sourceCoverage?{sourceCoverage:item.sourceCoverage}:{}),...(/^wechat$/i.test(item.channel)?{connectionVersion:get('connections','wechat-sync-local')?.updatedAt||null}:{})},linkedTasks:linked,linkedNotes,noteCoverage,sourceAttachments:item.sourceAttachments||[]};
  return state;
 }
 // Transport refreshes are not new evidence. Preserve full message text (including
 // truncated tails), identity, recall and attachment changes in the semantic key.
-export function inboxTriageVersion(item:any){
- const state=inboxTriageState(item);
+export function inboxTriageVersion(item:any,context?:InboxReadContext){
+ const state=inboxTriageState(item,context,false);
  const {sourceUpdatedAt,connectionVersion,fingerprint,...coverage}=state.conversationCoverage;
  const messages=(item.messages||[]).map((m:any)=>({id:m.id,text:m.text||m.content||m.body||'',replyToId:m.replyToId,rootId:m.rootId,threadId:m.threadId,mentions:m.mentions,mentionsSelf:m.mentionsSelf,deleted:m.deleted,recalled:m.recalled,isMine:m.isMine,direction:m.direction,senderId:m.senderId,sender:m.senderName,sentAt:m.sentAt,createdAt:m.createdAt,attachments:m.attachments,contentTruncated:m.contentTruncated}));
  return hash({...(isFeishuCopilot(item)?{copilotVersion:COPILOT_VERSION}:{}),state:{...state,conversationCoverage:{...coverage,fingerprint:hash(messages)}},policyVersion:TRIAGE_POLICY_VERSION});
@@ -107,17 +120,23 @@ export function migrateInboxTriageVersions(){
   if(saved.sourceVersion===legacy&&legacy!==version)put('inbox_triages',{...saved,sourceVersion:version});
  }
 }
-function withInboxTriage(item:any,evaluatedAt=Date.now()){
+function withInboxTriage(item:any,evaluatedAt=Date.now(),context?:InboxReadContext){
  const row=db.prepare("SELECT data FROM entities WHERE type='inbox_triages' AND id=? AND deleted=0").get(item.id) as any;
- const saved=row?JSON.parse(row.data):undefined;
- const {triage,sourceRule,disposition,sourceUnavailable,...rest}=item;
+ const saved=row?normalizeNoActionJudgment(JSON.parse(row.data)):undefined;
+ // Legacy rounds may have drifted to a sibling's request. Carry only their original
+ // identity while the new scoped version is re-evaluated; never duplicate the sibling.
+ const priorRequestId=item.requestRoundId||saved?.requestMessageId;
+ const failedPriorId=item.requestRoundId||saved?.priorOpenRequest?.requestMessageId;
+ const {triage,sourceRule,disposition,attention,lastOpenRequest,sourceUnavailable,...rest}=item;
+ // Reuse only within this projection: identical source evidence must not be parsed/hashed repeatedly.
+ const sourceVersion=inboxTriageVersion(item,context);
  const rule=item.sourceId?get('inbox_source_rules',hash([item.channel,item.sourceId])):undefined;
- const result={...rest,...(rule?.active?{sourceRule:{id:rule.id,name:rule.name,active:true}}:{}),...(saved?.sourceVersion===inboxTriageVersion(item)&&saved.policyVersion===TRIAGE_POLICY_VERSION?{triage:saved}:{})};if(result.attentionOverride&&result.attentionOverrideVersion!==inboxTriageVersion(item))result.attentionOverride=false;const connection=item.sourceSystem==='virtual-im'?get('connections','virtual-im-local'):/^feishu$/i.test(item.channel)?get('connections','feishu-local'):/^wechat$/i.test(item.channel)?get('connections','wechat-sync-local'):undefined;
+ const result={...rest,...(rule?.active?{sourceRule:{id:rule.id,name:rule.name,active:true}}:{}),...(saved?.sourceVersion===sourceVersion&&saved.policyVersion===TRIAGE_POLICY_VERSION?{triage:saved}:{}),...(saved&&saved.sourceVersion!==sourceVersion&&saved.status==='succeeded'&&saved.resolution==='open'&&['reply','decision'].includes(saved.actionType)&&saved.requestMessageId?{lastOpenRequest:{requestMessageId:priorRequestId}}:saved?.priorOpenRequest?.requestMessageId&&saved.status!=='succeeded'?{lastOpenRequest:{requestMessageId:failedPriorId}}:{})};if(result.draft&&result.draftSourceVersion&&result.draftSourceVersion!==sourceVersion)result.draftStale=true;if(result.attentionOverride&&result.attentionOverrideVersion!==sourceVersion)result.attentionOverride=false;const connection=item.sourceSystem==='virtual-im'?get('connections','virtual-im-local'):/^feishu$/i.test(item.channel)?get('connections','feishu-local'):/^wechat$/i.test(item.channel)?get('connections','wechat-sync-local'):undefined;
  const wechatUnavailable=/^wechat$/i.test(item.channel)&&(!connection||!connection.permissions?.includes('read')||(item.sourceAccountHash&&item.sourceAccountHash!==connection.evidence?.sourceHash));
  if((connection&&connection.status!=='connected')||wechatUnavailable||(item.sourceSystem==='virtual-im'&&(!connection||connection.config?.instanceId!==item.virtualImInstanceId||!connection.permissions?.includes('read'))))result.sourceUnavailable=true;
  result.sourceAttentionExcluded=wechatGroupAttentionExcluded(item,evaluatedAt);
  if(item.sourceSystem==='wechat-sync'){result.wechatCategory=storedWechatCategory(item);result.sourceAttentionReason=result.wechatCategory==='other'?'wechat_other':result.wechatCategory?'group_mentions_only':'wechat_category_unknown';}
- const projected=inboxDisposition(result,evaluatedAt);return {...result,disposition:projected,dismissalFeedbackActive:get('inbox_feedback',item.id)?.active===true,surfacing:projected.placement==='quiet'?'quiet':projected.placement==='pending'?'attention':projected.placement};
+ const projected=inboxDisposition(result,evaluatedAt);return {...result,disposition:projected,attention:inboxAttention({...result,disposition:projected}),dismissalFeedbackActive:get('inbox_feedback',item.id)?.active===true,surfacing:projected.placement==='quiet'?'quiet':projected.placement==='pending'?'attention':projected.placement};
 }
 
 const defaultSettings:Settings={
@@ -162,5 +181,5 @@ for(const row of db.prepare('SELECT id,data FROM connection_private').all() as a
  if(short.size)redactLegacyConnectionDiagnostics(row.id,[...short].sort((a,b)=>b.length-a.length));
 }
 
-export function publicValue<T>(v:T):T {if(Array.isArray(v))return v.map(publicValue) as T;if(v&&typeof v==='object'){const out:Record<string,any>={};for(const [k,val]of Object.entries(v)){if(/^(apiKey|api_key|accessToken|access_token|refreshToken|refresh_token|appSecret|app_secret|authorization|password|secret|token|headers|diskPath)$/i.test(k))continue;out[k]=publicValue(val);}return out as T;}if(typeof v==='string'){let text=v.replace(/\bsk-[a-zA-Z0-9_-]{16,}\b/g,'[redacted]');for(const secret of privateStrings)if(text.includes(secret))text=text.split(secret).join('[redacted]');return text as T;}return v;}
+export function publicValue<T>(v:T):T {if(Array.isArray(v))return v.map(publicValue) as T;if(v&&typeof v==='object'){const out:Record<string,any>={};for(const [k,val]of Object.entries(v)){if(/^(apiKey|api_key|accessToken|access_token|refreshToken|refresh_token|appSecret|app_secret|authorization|password|secret|token|headers|diskPath)$/i.test(k))continue;out[k]=publicValue(val);}return out as T;}if(typeof v==='string'){let text:string=v;for(const secret of privateStrings)if(text.includes(secret))text=text.split(secret).join('[redacted]');text=text.replace(/\b(?:oc_sk_|sk-(?:ant-)?|gh[pousr]_|github_pat_|xox[baprs]-)[a-zA-Z0-9_-]{12,}\b/g,'[redacted]');return text as T;}return v;}
 export function bootstrap():Bootstrap {const summarize=(entity:any,limit:number)=>{const out={...entity};for(const key of ['body','content','summary','markdown'])if(typeof out[key]==='string')out[key]=out[key].slice(0,limit);delete out.transcript;delete out.messages;return out;};const sources:any={...meta<any>('sources',{}),primaryConversationId:meta('primaryConversationId',undefined)};for(const key of ['meetings','persons','briefs','chats','mails'])if(Array.isArray(sources[key]))sources[key]=sources[key].map((x:any)=>summarize(x,600));return publicValue({tasks:list('tasks'),projects:list('projects'),inbox:list('inbox').map(presentInbox).map(i=>({...i,messages:(i.messages||[]).slice(-12),body:String(i.body||'').slice(0,8000)})),ideas:list('ideas'),activities:list('activities').slice(0,300),conversations:list('conversations'),messages:list('messages').reverse(),artifacts:list('artifacts'),connections:list('connections'),automations:list('automations'),memories:list('memories').map(x=>summarize(x,1200)),settings:settings(),sources,revision:revision()});}

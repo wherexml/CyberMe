@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 2,
+  "frozen": {
+    "model": "Qwen3-Embedding-0.6B-8bit",
+    "dimension": 1024,
+    "threshold": 0.55,
+    "topK": 3,
+    "rrfK": 60,
+    "sqliteVec": "v0.1.6",
+    "seedOrders": ["forward", "reverse"],
+    "queryInstruction": "Instruct: Given a user question, retrieve personal memories that directly help answer it.\nQuery: "
+  },
+  "corpus": [
+    {"key": "chart", "kind": "automatic", "content": "我习惯用折线图展示营收走势。", "slot": "work:chart", "scope": "global", "indexed": true},
+    {"key": "brief", "kind": "automatic", "content": "我偏好汇报时先给结论，再补充依据。", "slot": "work:brief", "scope": "global", "indexed": true},
+    {"key": "async", "kind": "automatic", "content": "我习惯通过文字异步沟通，避免没有议题的会议。", "slot": "work:async", "scope": "global", "indexed": true},
+    {"key": "travel", "kind": "automatic", "content": "我出差通常选择靠过道的座位。", "slot": "work:travel", "scope": "global", "indexed": true},
+    {"key": "review", "kind": "automatic", "content": "我偏好先审阅设计方案，再开始开发。", "slot": "work:review", "scope": "global", "indexed": true},
+    {"key": "schedule", "kind": "automatic", "content": "我习惯在每周五下午汇总一周的工作进展。", "slot": "work:schedule", "scope": "global", "indexed": true},
+    {"key": "color", "kind": "automatic", "content": "我喜欢深色界面，阅读时更舒适。", "slot": "work:color", "scope": "global", "indexed": true},
+    {"key": "food", "kind": "automatic", "content": "我长期坚持素食，聚餐通常选择清淡的蔬菜。", "slot": "work:food", "scope": "global", "indexed": true},
+    {"key": "cape-db", "kind": "automatic", "content": "我长期维护海岬项目，服务端采用 PostgreSQL 数据库。", "slot": "work:cape-db", "scope": "cape", "indexed": true},
+    {"key": "dawn-db", "kind": "automatic", "content": "我长期维护晨舟项目，服务端采用 MongoDB 数据库。", "slot": "work:dawn-db", "scope": "dawn", "indexed": true},
+    {"key": "cape-owner", "kind": "automatic", "content": "我负责海岬项目，客户需求由林澈统一收集。", "slot": "work:cape-owner", "scope": "cape", "indexed": true},
+    {"key": "dawn-owner", "kind": "automatic", "content": "我负责晨舟项目，客户需求由周宁统一收集。", "slot": "work:dawn-owner", "scope": "dawn", "indexed": true},
+    {"key": "cape-budget", "kind": "automatic", "content": "我确认海岬项目本季度预算上限是八十万元。", "slot": "work:cape-budget", "scope": "cape", "indexed": true},
+    {"key": "cape-release", "kind": "automatic", "content": "我负责的海岬项目固定在周二晚上发布新版本。", "slot": "work:cape-release", "scope": "cape", "indexed": true},
+    {"key": "dawn-vendor", "kind": "automatic", "content": "我负责晨舟项目，短信供应商选用云雀通信。", "slot": "work:dawn-vendor", "scope": "dawn", "indexed": true},
+    {"key": "expense", "kind": "automatic", "content": "我提交报销时一律走财务共享平台。", "slot": "work:expense", "scope": "global", "indexed": false},
+    {"key": "cape-oncall", "kind": "automatic", "content": "我负责的海岬项目值班表由运维组每月更新。", "slot": "work:cape-oncall", "scope": "cape", "indexed": false},
+    {"key": "manual-note", "kind": "manual", "content": "手写备注：我的常用打印机放在三楼东侧茶水间旁边。", "scope": "global", "indexed": false},
+    {"key": "manual-cape", "kind": "manual", "content": "手写备注：海岬项目的测试环境每晚十一点自动重置。", "scope": "cape", "indexed": false},
+    {"key": "manual-unscoped", "kind": "manual", "content": "手写备注：我的备用门禁卡放在工位左侧抽屉。", "scope": null, "indexed": false},
+    {"key": "manual-indexed", "kind": "manual", "content": "手写备注：我写周报时固定使用三段式结构。", "scope": "global", "indexed": true}
+  ],
+  "cases": [
+    {"id": "pa-01", "group": "paraphrase", "q": "营业额的变化用哪种可视化形式？", "scope": "global", "expected": ["chart"]},
+    {"id": "pa-02", "group": "paraphrase", "q": "给老板做简报时应该先说重点还是先铺垫？", "scope": "global", "expected": ["brief"]},
+    {"id": "pa-03", "group": "paraphrase", "q": "搭飞机时我爱坐走廊边还是窗户边？", "scope": "global", "expected": ["travel"]},
+    {"id": "pa-04", "group": "paraphrase", "q": "不用实时碰头的交流方式，我倾向哪一种？", "scope": "global", "expected": ["async"]},
+    {"id": "pa-05", "group": "paraphrase", "q": "动手写程序之前我想先确认什么？", "scope": "global", "expected": ["review"]},
+    {"id": "pa-06", "group": "paraphrase", "q": "请根据我的饮食习惯安排聚餐。", "scope": "global", "expected": ["food"]},
+    {"id": "pa-07", "group": "paraphrase", "q": "我的界面配色偏亮还是偏暗？", "scope": "global", "expected": ["color"]},
+    {"id": "pa-08", "group": "paraphrase", "q": "一周工作的复盘我一般放在哪天？", "scope": "global", "expected": ["schedule"]},
+    {"id": "pa-09", "group": "paraphrase", "q": "这个项目后端的存储引擎选的哪个？", "scope": "cape", "expected": ["cape-db"]},
+    {"id": "pa-10", "group": "paraphrase", "q": "这个项目后端的存储引擎选的哪个？", "scope": "dawn", "expected": ["dawn-db"]},
+    {"id": "pa-11", "group": "paraphrase", "q": "谁负责汇集客户的诉求？", "scope": "cape", "expected": ["cape-owner"]},
+    {"id": "pa-12", "group": "paraphrase", "q": "谁负责汇集客户的诉求？", "scope": "dawn", "expected": ["dawn-owner"]},
+    {"id": "li-01", "group": "literal", "q": "我用什么图展示营收走势？", "scope": "global", "expected": ["chart"]},
+    {"id": "li-02", "group": "literal", "q": "什么时候汇总工作进展？", "scope": "global", "expected": ["schedule"]},
+    {"id": "li-03", "group": "literal", "q": "海岬项目服务端用什么数据库？", "scope": "cape", "expected": ["cape-db"]},
+    {"id": "li-04", "group": "literal", "q": "晨舟项目服务端用什么数据库？", "scope": "dawn", "expected": ["dawn-db"]},
+    {"id": "li-05", "group": "literal", "q": "当前项目的客户需求找谁收集？", "scope": "cape", "expected": ["cape-owner"]},
+    {"id": "li-06", "group": "literal", "q": "当前项目的客户需求找谁收集？", "scope": "dawn", "expected": ["dawn-owner"]},
+    {"id": "li-07", "group": "literal", "q": "海岬项目本季度预算上限是多少？", "scope": "cape", "expected": ["cape-budget"]},
+    {"id": "li-08", "group": "literal", "q": "晨舟项目短信供应商选的哪家？", "scope": "dawn", "expected": ["dawn-vendor"]},
+    {"id": "mv-01", "group": "missing-vector", "q": "报销走什么平台？", "scope": "global", "expected": ["expense"], "mustReturnArms": ["scopedLexical", "hybrid"]},
+    {"id": "mv-02", "group": "missing-vector", "q": "常用打印机放在哪里？", "scope": "global", "expected": ["manual-note"], "mustReturnArms": ["scopedLexical", "hybrid"]},
+    {"id": "mv-03", "group": "missing-vector", "q": "测试环境什么时候重置？", "scope": "cape", "expected": ["manual-cape"], "mustReturnArms": ["scopedLexical", "hybrid"]},
+    {"id": "mv-04", "group": "missing-vector", "q": "海岬项目值班表由谁更新？", "scope": "cape", "expected": ["cape-oncall"], "mustReturnArms": ["scopedLexical", "hybrid"]},
+    {"id": "mv-scope-guard-1", "group": "missing-vector-guard", "q": "测试环境什么时候重置？", "scope": "dawn", "expected": [], "forbidden": ["manual-cape"]},
+    {"id": "mv-scope-guard-2", "group": "missing-vector-guard", "q": "海岬项目值班表由谁更新？", "scope": "global", "expected": [], "forbidden": ["cape-oncall"]},
+    {"id": "mv-unscoped", "group": "missing-vector-guard", "q": "备用门禁卡放在哪里？", "scope": "global", "expected": [], "forbidden": ["manual-unscoped"]},
+    {"id": "ma-01", "group": "manual-indexed", "q": "周报用什么结构？", "scope": "global", "expected": ["manual-indexed"], "mustReturnArms": ["scopedLexical", "hybrid"]},
+    {"id": "ma-02", "group": "manual-indexed", "q": "每周总结的行文框架我一般怎么安排？", "scope": "global", "expected": ["manual-indexed"]},
+    {"id": "nn-01", "group": "near-negative", "q": "我用什么图展示库存周转？", "scope": "global", "expected": []},
+    {"id": "nn-02", "group": "near-negative", "q": "我出差通常住哪个连锁酒店？", "scope": "global", "expected": []},
+    {"id": "nn-03", "group": "near-negative", "q": "聚餐时我通常喝什么酒？", "scope": "global", "expected": []},
+    {"id": "nn-04", "group": "near-negative", "q": "汇报材料我习惯用什么字体？", "scope": "global", "expected": []},
+    {"id": "nn-05", "group": "near-negative", "q": "我周五下午通常去健身吗？", "scope": "global", "expected": []},
+    {"id": "nn-06", "group": "near-negative", "q": "深色界面的对比度我设成多少？", "scope": "global", "expected": []},
+    {"id": "nn-07", "group": "near-negative", "q": "海岬项目的消息队列用什么中间件？", "scope": "cape", "expected": []},
+    {"id": "nn-08", "group": "near-negative", "q": "当前项目的客户合同由谁审批？", "scope": "dawn", "expected": []},
+    {"id": "cp-01", "group": "cross-project-only", "q": "这个季度的经费封顶是多少？", "scope": "dawn", "expected": [], "forbidden": ["cape-budget"]},
+    {"id": "cp-02", "group": "cross-project-only", "q": "海岬项目每周几发布新版本？", "scope": "dawn", "expected": [], "forbidden": ["cape-release"]},
+    {"id": "cp-03", "group": "cross-project-only", "q": "短信供应商选了哪一家？", "scope": "cape", "expected": [], "forbidden": ["dawn-vendor"]},
+    {"id": "cp-04", "group": "cross-project-only", "q": "晨舟项目的客户需求由谁收集？", "scope": "cape", "expected": [], "forbidden": ["dawn-owner"]},
+    {"id": "cp-05", "group": "cross-project-only", "q": "海岬项目服务端用什么数据库？", "scope": "global", "expected": [], "forbidden": ["cape-db"]},
+    {"id": "cp-06", "group": "cross-project-only", "q": "短信服务由哪家厂商提供？", "scope": "global", "expected": [], "forbidden": ["dawn-vendor"]},
+    {"id": "tn-01", "group": "trivial-negative", "q": "十七乘以二十三等于多少？", "scope": "global", "expected": []},
+    {"id": "tn-02", "group": "trivial-negative", "q": "木星最大的卫星叫什么？", "scope": "global", "expected": []}
+  ],
+  "fallbackProbes": ["li-01", "li-03", "mv-01", "mv-02", "mv-03", "mv-04", "ma-01"],
+  "lifecycle": {
+    "corrections": [
+      {
+        "id": "correct-chart",
+        "scope": "global",
+        "slot": "work:chart",
+        "old": {"key": "chart"},
+        "next": {"key": "chart-corrected", "content": "我现在长期偏好柱状图呈现销售额变化。"},
+        "queries": [
+          {"variant": "paraphrase", "q": "营业额的变化用哪种可视化形式？", "scope": "global"},
+          {"variant": "literal-old", "q": "我用什么图展示营收走势？", "scope": "global"},
+          {"variant": "literal-new", "q": "销售额变化用什么图呈现？", "scope": "global"}
+        ]
+      },
+      {
+        "id": "correct-cape-cache",
+        "scope": "cape",
+        "slot": "work:lc-cape-cache",
+        "old": {"key": "lc-cape-cache-old", "content": "我负责的海岬项目缓存采用 Redis。"},
+        "next": {"key": "lc-cape-cache-new", "content": "我负责的海岬项目缓存现已改为 Memcached。"},
+        "queries": [
+          {"variant": "literal", "q": "海岬项目缓存用什么？", "scope": "cape"},
+          {"variant": "paraphrase", "q": "这个项目的高速数据暂存层选的哪种方案？", "scope": "cape"}
+        ]
+      }
+    ],
+    "incorrectSlot": {
+      "id": "wrong-slot-brief",
+      "scope": "global",
+      "old": {"key": "brief"},
+      "next": {"key": "brief-wrong-slot", "content": "我现在偏好汇报时先讲背景，最后才给结论。", "slot": "work:brief-update"},
+      "queries": [
+        {"variant": "literal", "q": "汇报时我先讲结论还是先讲背景？", "scope": "global"},
+        {"variant": "paraphrase", "q": "给老板做简报时应该先说重点还是先铺垫？", "scope": "global"}
+      ]
+    },
+    "forget": [
+      {
+        "id": "forget-sport",
+        "scope": "global",
+        "slot": "work:lc-sport",
+        "old": {"key": "lc-sport-old", "content": "我习惯每周三晚上去游泳。"},
+        "next": {"key": "lc-sport-new", "content": "我现在改为每周四晚上去游泳。"},
+        "queries": [
+          {"variant": "literal", "q": "我每周什么时候去游泳？", "scope": "global"},
+          {"variant": "paraphrase", "q": "我一般哪天下水锻炼？", "scope": "global"},
+          {"variant": "topic", "q": "我的运动安排是什么？", "scope": "global"}
+        ]
+      }
+    ],
+    "gates": [
+      {"id": "gate-source-changed", "action": "source-change", "expectKeyword": false, "expectDecision": "not_active_source", "memory": {"key": "gate-source", "kind": "automatic", "content": "我习惯把会议纪要存放在共享网盘。", "slot": "work:gate-source", "scope": "global"}, "queries": [{"q": "会议纪要存放在哪里？", "scope": "global"}]},
+      {"id": "gate-content-hash", "action": "content-hash", "expectKeyword": true, "expectDecision": "content_hash_mismatch", "memory": {"key": "gate-hash", "kind": "automatic", "content": "我习惯用看板管理团队的待办事项。", "slot": "work:gate-hash", "scope": "global"}, "queries": [{"q": "团队待办事项用什么管理？", "scope": "global"}]},
+      {"id": "gate-model-mismatch", "action": "model", "expectKeyword": true, "expectDecision": "model_mismatch", "memory": {"key": "gate-model", "kind": "automatic", "content": "我习惯在周一上午安排一对一谈话。", "slot": "work:gate-model", "scope": "global"}, "queries": [{"q": "一对一谈话安排在什么时候？", "scope": "global"}]},
+      {"id": "gate-index-meta-missing", "action": "meta-delete", "expectKeyword": true, "expectDecision": "no_index_meta", "memory": {"key": "gate-nometa", "kind": "automatic", "content": "我偏好用双显示器办公。", "slot": "work:gate-nometa", "scope": "global"}, "queries": [{"q": "我办公用几块显示器？", "scope": "global"}]},
+      {"id": "gate-vector-missing", "action": "vector-delete", "expectKeyword": true, "expectDecision": null, "memory": {"key": "gate-novec", "kind": "automatic", "content": "我偏好使用机械键盘打字。", "slot": "work:gate-novec", "scope": "global"}, "queries": [{"q": "我打字用什么键盘？", "scope": "global"}]},
+      {"id": "gate-manual-removed", "action": "manual-remove", "expectKeyword": false, "expectDecision": "not_active_source", "memory": {"key": "gate-manual", "kind": "manual", "content": "手写备注：我的备用充电器放在会议室柜子里。", "scope": "global"}, "queries": [{"q": "备用充电器放在哪里？", "scope": "global"}]}
+    ],
+    "collisions": [
+      {
+        "id": "collision-correct-cape-then-dawn",
+        "slot": "work:logging-store",
+        "steps": [
+          {"action": "remember", "key": "xp1-cape-1", "scope": "cape", "content": "我负责的海岬项目日志库选用 ClickHouse。", "expectActive": ["xp1-cape-1"]},
+          {"action": "remember", "key": "xp1-dawn-1", "scope": "dawn", "content": "我负责的晨舟项目日志库选用 Elasticsearch。", "expectActive": ["xp1-cape-1", "xp1-dawn-1"]},
+          {"action": "remember", "key": "xp1-cape-2", "scope": "cape", "content": "我负责的海岬项目日志库现已改用 Loki。", "expectActive": ["xp1-cape-2", "xp1-dawn-1"]}
+        ],
+        "queries": [
+          {"q": "海岬项目日志库用什么？", "scope": "cape", "expected": ["xp1-cape-2"]},
+          {"q": "晨舟项目日志库用什么？", "scope": "dawn", "expected": ["xp1-dawn-1"]}
+        ]
+      },
+      {
+        "id": "collision-correct-dawn-then-cape",
+        "slot": "work:monitoring",
+        "steps": [
+          {"action": "remember", "key": "xp2-dawn-1", "scope": "dawn", "content": "我负责的晨舟项目监控平台选用 Grafana。", "expectActive": ["xp2-dawn-1"]},
+          {"action": "remember", "key": "xp2-cape-1", "scope": "cape", "content": "我负责的海岬项目监控平台选用 Datadog。", "expectActive": ["xp2-dawn-1", "xp2-cape-1"]},
+          {"action": "remember", "key": "xp2-dawn-2", "scope": "dawn", "content": "我负责的晨舟项目监控平台现已改用 Prometheus。", "expectActive": ["xp2-dawn-2", "xp2-cape-1"]}
+        ],
+        "queries": [
+          {"q": "晨舟项目监控平台用什么？", "scope": "dawn", "expected": ["xp2-dawn-2"]},
+          {"q": "海岬项目监控平台用什么？", "scope": "cape", "expected": ["xp2-cape-1"]}
+        ]
+      },
+      {
+        "id": "collision-forget-dawn-keeps-cape",
+        "slot": "work:ci-system",
+        "steps": [
+          {"action": "remember", "key": "xp3-cape-1", "scope": "cape", "content": "我负责的海岬项目持续集成使用 Jenkins。", "expectActive": ["xp3-cape-1"]},
+          {"action": "remember", "key": "xp3-dawn-1", "scope": "dawn", "content": "我负责的晨舟项目持续集成使用 GitHub Actions。", "expectActive": ["xp3-cape-1", "xp3-dawn-1"]},
+          {"action": "forget", "target": "xp3-dawn-1", "expectStatus": 200, "expectTargetStatus": "forgotten", "expectActive": ["xp3-cape-1"]}
+        ],
+        "queries": [
+          {"q": "海岬项目持续集成使用什么？", "scope": "cape", "expected": ["xp3-cape-1"]},
+          {"q": "晨舟项目持续集成使用什么？", "scope": "dawn", "expected": []}
+        ]
+      },
+      {
+        "id": "collision-forget-cape-keeps-dawn",
+        "slot": "work:image-registry",
+        "steps": [
+          {"action": "remember", "key": "xp4-dawn-1", "scope": "dawn", "content": "我负责的晨舟项目镜像仓库使用 Harbor。", "expectActive": ["xp4-dawn-1"]},
+          {"action": "remember", "key": "xp4-cape-1", "scope": "cape", "content": "我负责的海岬项目镜像仓库使用 Nexus。", "expectActive": ["xp4-dawn-1", "xp4-cape-1"]},
+          {"action": "forget", "target": "xp4-cape-1", "expectStatus": 200, "expectTargetStatus": "forgotten", "expectActive": ["xp4-dawn-1"]}
+        ],
+        "queries": [
+          {"q": "晨舟项目镜像仓库使用什么？", "scope": "dawn", "expected": ["xp4-dawn-1"]},
+          {"q": "海岬项目镜像仓库使用什么？", "scope": "cape", "expected": []}
+        ]
+      },
+      {
+        "id": "collision-forget-older-project-row",
+        "slot": "work:ticket-system",
+        "steps": [
+          {"action": "remember", "key": "xp5-cape-1", "scope": "cape", "content": "我负责的海岬项目工单系统使用 Jira。", "expectActive": ["xp5-cape-1"]},
+          {"action": "remember", "key": "xp5-dawn-1", "scope": "dawn", "content": "我负责的晨舟项目工单系统使用 Linear。", "expectActive": ["xp5-cape-1", "xp5-dawn-1"]},
+          {"action": "forget", "target": "xp5-cape-1", "expectStatus": 200, "expectTargetStatus": "forgotten", "expectActive": ["xp5-dawn-1"]}
+        ],
+        "queries": [
+          {"q": "晨舟项目工单系统使用什么？", "scope": "dawn", "expected": ["xp5-dawn-1"]},
+          {"q": "海岬项目工单系统使用什么？", "scope": "cape", "expected": []}
+        ]
+      }
+    ],
+    "preferences": {
+      "slot": "communication:language",
+      "old": {"key": "pref-old", "content": "我以后默认使用中文沟通。"},
+      "next": {"key": "pref-new", "content": "我以后默认使用英文沟通。"}
+    }
+  }
+}

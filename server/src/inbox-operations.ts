@@ -15,7 +15,7 @@ export function inboxEventAt(item:any){
  const explicit=timestamp(item.eventAt);if(explicit)values.push(explicit);
  return values.length?new Date(Math.max(...values)).toISOString():undefined;
 }
-export function inboxSummary(item:any){return publicValue({id:item.id,title:item.title,sender:item.sender,status:item.status,channel:item.channel,body:String(item.body||'').slice(0,2200),draft:item.draft,sourceId:item.sourceId,eventAt:inboxEventAt(item),timeKnown:!!inboxEventAt(item),createdAt:item.createdAt,updatedAt:item.updatedAt,receivedAt:item.receivedAt,sourceUpdatedAt:item.sourceUpdatedAt,surfacing:item.surfacing,disposition:item.disposition,triage:item.triage,sensitive:!!item.sensitive});}
+export function inboxSummary(item:any){return publicValue({id:item.id,title:item.title,sender:item.sender,status:item.status,channel:item.channel,body:String(item.body||'').slice(0,2200),draft:item.draft,sourceId:item.sourceId,eventAt:inboxEventAt(item),timeKnown:!!inboxEventAt(item),createdAt:item.createdAt,updatedAt:item.updatedAt,receivedAt:item.receivedAt,sourceUpdatedAt:item.sourceUpdatedAt,surfacing:item.surfacing,disposition:item.disposition,attention:item.attention,triage:item.triage,sensitive:!!item.sensitive});}
 const queryFields=['placement','query','channel','status','ids','includeQuiet','includeDone','before','olderThanDays','offset','limit'];
 function validateQuery(input:any){
  if(input.placement!==undefined&&!['pending','quiet','history','verify','all'].includes(input.placement))throw new ApiError(400,'invalid_query','Invalid placement');

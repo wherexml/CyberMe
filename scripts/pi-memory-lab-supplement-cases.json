@@ -1,0 +1,71 @@
+{
+  "version": "supplement-1",
+  "writtenBeforeImplementation": true,
+  "reason": "M2 review exposed untested adapter recall after mutation. Preserve all 78 original results and expectations.",
+  "failureModes": [
+    "Zero-byte files retain active old qmd documents even after update/restart.",
+    "Per-turn retrieval reinjects stale text despite clean authoritative Markdown.",
+    "Correction empties daily files and inherits the same defect.",
+    "Direct memory_write bypasses adapter epoch guards.",
+    "Delete/rewrite workaround may fail; baseline hit required before evaluating exclusion.",
+    "Judge must treat successful count=0 as zero hits; a no-results message echoes the query and is not recalled content. First supplemental run misclassified SUP-04/05; preserve that artifact and rerun after fixing only the supplemental judge."
+  ],
+  "cases": [
+    {
+      "id": "SUP-01",
+      "group": "supplement",
+      "scope": "adapter",
+      "requirement": "Forgetting the last indexed entry then qmd update must remove it from search.",
+      "predicted": "FAIL",
+      "requiresQmd": true
+    },
+    {
+      "id": "SUP-02",
+      "group": "supplement",
+      "scope": "adapter",
+      "requirement": "After that forget/update, a new OS process must not search the old entry.",
+      "predicted": "FAIL",
+      "requiresQmd": true
+    },
+    {
+      "id": "SUP-03",
+      "group": "supplement",
+      "scope": "adapter",
+      "requirement": "After that forget/update, per-turn system injection must exclude the old entry.",
+      "predicted": "FAIL",
+      "requiresQmd": true
+    },
+    {
+      "id": "SUP-04",
+      "group": "supplement",
+      "scope": "adapter",
+      "requirement": "After writing unrelated nonempty replacement and updating, old entry must disappear and replacement remain searchable.",
+      "predicted": "PASS",
+      "requiresQmd": true
+    },
+    {
+      "id": "SUP-05",
+      "group": "supplement",
+      "scope": "adapter",
+      "requirement": "After a second forget, deleting the empty indexed file then updating must remove the ghost.",
+      "predicted": "PASS",
+      "requiresQmd": true
+    },
+    {
+      "id": "SUP-06",
+      "group": "supplement",
+      "scope": "adapter",
+      "requirement": "Correction across curated and daily files followed by update must find new preference and exclude old.",
+      "predicted": "FAIL",
+      "requiresQmd": true
+    },
+    {
+      "id": "SUP-07",
+      "group": "supplement",
+      "scope": "adapter",
+      "requirement": "Direct model memory_write must not resurrect a preference rejected as stale by the adapter ledger.",
+      "predicted": "FAIL",
+      "requiresQmd": true
+    }
+  ]
+}
