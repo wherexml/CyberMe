@@ -1,6 +1,7 @@
 import {ideaIconInstruction,resolveIdeaIcon} from '../../shared/idea-icons';
 import {startIdeasBackground,ideasBackgroundStatus,refreshIdeas} from './ideas-background';
 import {mountIdeasConsole} from './ideas-console';
+import {mountInsightVisuals,startInsightVisuals} from './insight-visuals';
 import {mountVirtualIm,startVirtualImScheduler} from './virtual-im';
 import {wechatSyncOverview,saveWechatSyncSettings,startWechatSync,startWechatScheduler} from './wechat-background-sync';
 import {startInboxChat} from './inbox-chat';
@@ -75,6 +76,7 @@ app.use('/api/*',async(c,next)=>{const origin=c.req.header('origin');if(origin&&
 app.onError((e,c)=>{const api=e instanceof ApiError?e:new ApiError(500,'internal_error',String(e));return c.json(publicValue({error:api.code,message:api.message,...(api.detail?{detail:api.detail}:{})}),api.status as any);});
 mountMemory(app);
 mountIdeasConsole(app);
+mountInsightVisuals(app);
 mountVirtualIm(app);
 app.get('/api/wechat/status',c=>c.json(wechatReadStatus()));
 app.get('/api/connections/google/status',c=>c.json(googleStatus()));
@@ -342,6 +344,8 @@ installChatWork(app);
 const stopMemory=startMemory(runAgent,process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_MEMORY_BACKGROUND==='1');
 const backgroundTimers: ReturnType<typeof setInterval>[] = [];
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_IDEAS_BACKGROUND==='1')backgroundTimers.push(startIdeasBackground());
+// Insight visuals backfill shares the ideas background gate and is OFF unless CYBERME_INSIGHT_VISUALS=1.
+if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_IDEAS_BACKGROUND==='1')backgroundTimers.push(startInsightVisuals());
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_VIRTUAL_IM_BACKGROUND==='1')backgroundTimers.push(startVirtualImScheduler());
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_INBOX_BACKGROUND==='1'||process.env.OPSTWIN_CONNECTION_BACKGROUND==='1'||process.env.OPSTWIN_INBOX_CHAT_BACKGROUND==='1')backgroundTimers.push(startInboxChat());
 if(process.env.OPSTWIN_NO_BACKGROUND!=='1'||process.env.OPSTWIN_IDEAS_BACKGROUND==='1'||process.env.OPSTWIN_IDEAS_CHAT_BACKGROUND==='1')backgroundTimers.push(startIdeasChat());
