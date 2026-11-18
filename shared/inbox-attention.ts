@@ -1,7 +1,7 @@
 // One shared answer to "should this take the user's attention now?". `disposition` stays the
 // full-Inbox diagnostic; a `verify` placement is a system fact here, not automatically a user task.
 import type {InboxItem} from './types';
-import {closureTimeUnknown,dispositionOf,messageRevision,inboxTimestamp} from './inbox-surfacing';
+import {closureTimeUnknown,dispositionOf,hasNoReplyDecision,messageRevision,inboxTimestamp} from './inbox-surfacing';
 
 export type AttentionState='actionable'|'execution'|'reevaluating'|'system_error'|'quiet';
 export type AttentionSurface='decision'|'insight'|'none';
@@ -14,6 +14,19 @@ const LOCKED=['sending','send_unknown','sent','delivered','recalled'];
 const MAX_KNOWN_MESSAGES=1000;
 
 const view=(state:AttentionState,surface:AttentionSurface,reason:string,canDismiss:boolean,canRecheck=false,extra:Partial<InboxAttention>={}):InboxAttention=>({state,surface,reason,canDismiss,canRecheck,...extra});
+/** Mirrors the server's bounded retry (inbox-triage.ts MAX_ATTEMPTS): a retry is scheduled only below the limit with a retry time. */
+const TRIAGE_MAX_ATTEMPTS=3;
+const retryScheduled=(t:any)=>t?.status==='failed'&&!!t.nextRetryAt&&(t.attempt||1)<TRIAGE_MAX_ATTEMPTS;
+export type JudgmentPhase='running'|'retry_scheduled'|'failed'|'pending';
+function judgmentPhase(t:any):JudgmentPhase{return t?.status==='running'?'running':t?.status==='failed'?(retryScheduled(t)?'retry_scheduled':'failed'):'pending'}
+/** A request whose current judgment has not succeeded: no new draft, no recommendation, no "reply" label anywhere. */
+export const judgmentUnsettled=(item?:InboxItem)=>item?.triage?.status!=='succeeded';
+/** Whether the current business judgment supports starting an automatic reply draft. */
+export function canOfferReplyDraft(item?:InboxItem): boolean {
+ if (!item || judgmentUnsettled(item) || hasNoReplyDecision(item)) return false;
+ const disposition = dispositionOf(item);
+ return disposition.placement === 'pending' && disposition.actionType === 'reply';
+}
 const hasMessage=(item:any,id?:string)=>!!id&&(Array.isArray(item.messages)?item.messages:[]).some((m:any)=>m.id===id&&!m.deleted&&!m.recalled);
 
 /** Positive evidence only: uncertainty alone never qualifies. */
@@ -72,7 +85,8 @@ export function inboxAttention(item:InboxItem):InboxAttention{
  if(!ok){
   // The prior judgment is gone, but the exact request it identified has not been answered by anything known.
   const prior=it.lastOpenRequest;
-  if(prior&&hasMessage(it,prior.requestMessageId))return view('actionable','decision','reevaluating_open',true,true); // Stays on its surface while a sibling's feedback re-judges it.
+  // Stays on its surface while re-judged; `detail` says truthfully whether it runs, waits for a retry, failed or waits to start.
+  if(prior&&hasMessage(it,prior.requestMessageId))return view('actionable','decision','reevaluating_open',true,true,{detail:judgmentPhase(t)});
   if(d.primaryReason==='source_unavailable'||it.sourceUnavailable)return view('system_error','none','source_unavailable',false);
   if(t?.status==='failed')return view('system_error','none','judgment_failed',false,true);
   return view('reevaluating','none',t?.status==='running'?'judgment_running':'judgment_unknown',false);
@@ -82,7 +96,8 @@ export function inboxAttention(item:InboxItem):InboxAttention{
  if(reasons.includes('processing_failed'))return positive?view('actionable','insight','processing_failed',true,true):view('system_error','none','processing_failed',false,true);
  if(reasons.includes('draft_failed'))return positive?view('actionable','insight','draft_failed',true):view('quiet','none','draft_failed',false);
  if(!positive)return view('quiet','none',t.route==='no_reply'||t.actionType==='none'?'no_action':'low_signal',false);
- if(d.primaryReason==='time_unknown')return view('actionable','insight','time_unknown',true,true);
+ // No selected request in a chat with messages: the missing time is a missing request, never a time fault or the latest message.
+ if(d.primaryReason==='time_unknown')return !t.requestMessageId&&Array.isArray(it.messages)&&it.messages.length?view('actionable','insight','request_unlocated',true,true):view('actionable','insight','time_unknown',true,true);
  if((t.missingContext??0)>=.5)return missingContextView(it,t,true);
  return view('actionable','insight','context_unknown',true,true);
 }

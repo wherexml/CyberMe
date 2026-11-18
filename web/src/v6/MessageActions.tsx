@@ -5,6 +5,7 @@ import type {Ctx} from './App';
 import {Hv} from './ui';
 import {attentionActionLabel,ideaProvenance,type AttentionActionType,type AttentionBinding} from '../../../shared/attention-actions';
 import {useEntityAction,tomorrowMorning} from './attention';
+import {canOfferReplyDraft} from '../../../shared/inbox-attention';
 import {fmtStamp} from './model';
 
 const chip:React.CSSProperties={minHeight:26,padding:'3px 10px',border:'1px dashed var(--lineStrong)',borderRadius:'var(--r-innerBtn)',background:'transparent',color:'var(--text)',font:'inherit',fontSize:12,cursor:'pointer',textAlign:'left'};
@@ -12,9 +13,12 @@ const plainBtn:React.CSSProperties={...chip,border:'none',color:'var(--text2)'};
 
 export function ActionRow({ctx,binding,types}:{ctx:Ctx;binding:AttentionBinding;types:AttentionActionType[]}){
  const {zh}=ctx,act=useEntityAction(ctx),[done,setDone]=useState<AttentionActionType|null>(null);
+ const item = binding.entityKind==='inbox' ? ctx.ws.inbox.find(x=>x.id===binding.entityId) : undefined;
+ const reviewDraft = !!item?.draft?.trim() && !(item as any).draftStale;
+ const visibleTypes = types.filter(t=>t!=='draft_reply'||binding.entityKind!=='inbox'||reviewDraft||canOfferReplyDraft(item));
  if(done)return <div data-action-result style={{fontSize:12,color:'var(--text2)'}}>{done==='draft_reply'?(zh?'草稿已生成，未发送。':'Draft ready. Nothing was sent.'):done==='create_task'?(zh?'已创建任务。':'Task created.'):''}</div>;
  return <div data-message-actions style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:6}}>
-  {types.map(type=><Hv key={type} data-action={type} disabled={act.busy} onClick={async()=>{const ok=await act.run(binding,type,type==='snooze'?{until:tomorrowMorning()}:undefined);if(ok&&(type==='draft_reply'||type==='create_task'))setDone(type)}} style={type==='dismiss'?plainBtn:chip} hover={{background:'var(--hover)'}}>{attentionActionLabel(type,zh)}</Hv>)}
+  {visibleTypes.map(type=><Hv key={type} data-action={type} disabled={act.busy} onClick={async()=>{if(type==='draft_reply'&&reviewDraft){ctx.openDetail({type:'dec',id:binding.entityId});return}const ok=await act.run(binding,type,type==='snooze'?{until:tomorrowMorning()}:undefined);if(ok&&(type==='draft_reply'||type==='create_task'))setDone(type)}} style={type==='dismiss'?plainBtn:chip} hover={{background:'var(--hover)'}}>{type==='draft_reply'&&reviewDraft?(zh?'查看草稿':'View draft'):attentionActionLabel(type,zh)}</Hv>)}
   {act.busy?<span style={{fontSize:12,color:'var(--text3)'}}>{zh?'处理中…':'Working…'}</span>:null}
   {act.error?<span role="alert" style={{fontSize:12,color:'var(--errText)'}}>{act.error}</span>:null}
  </div>;

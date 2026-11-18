@@ -2,7 +2,7 @@ import {categoryLabel} from '../../../shared/idea-category';
 // Maps canonical records to V6 card models. Status is projected truthfully: a chosen
 // option is only "sent to CyberMe", never "done", and unknown/partial stay visible.
 import type {InboxItem,Idea,Task,Automation} from '../../../shared/types';
-import {inboxAttention,ideaAttachedDecision,ideaSourcesClosed,snoozeActive,type InboxAttention} from '../../../shared/inbox-attention';
+import {inboxAttention,ideaAttachedDecision,ideaSourcesClosed,snoozeActive,canOfferReplyDraft,judgmentUnsettled,type InboxAttention} from '../../../shared/inbox-attention';
 import {inboxTimestamp} from '../../../shared/inbox-surfacing';
 import type {AttentionActionType} from '../../../shared/attention-actions';
 import {readVisual,readMeters,readSteps,type DecisionVisual,type DecisionMeters,type InsightVisual,type GalleryVisual,type WorkVisual,V6_GALLERY_KINDS,V6_WORK_KINDS,type V6Text,v6Text} from '../../../shared/v6-visuals';
@@ -33,7 +33,7 @@ const v6=(x:any)=>x&&x.v6&&typeof x.v6==='object'&&!Array.isArray(x.v6)?x.v6:{};
 const str=(v:unknown)=>typeof v==='string'&&v.length<=200?v:undefined;
 
 export interface DecisionOpt{label:string;effect?:string;next?:string;rec:boolean;action?:AttentionActionType}
-export interface DecisionModel{id:string;kind:'inbox';q:string;ctx:string;due:string;urgent:boolean;opts:DecisionOpt[];visual:DecisionVisual|null;meters:DecisionMeters|null;prec:string;why:string[];item:InboxItem;kicker:string;sourceAt:string;strip:TimeStrip|null;statusNote:string;ideas:{id:string;title:string}[]}
+export interface DecisionModel{id:string;kind:'inbox';q:string;ctx:string;due:string;urgent:boolean;opts:DecisionOpt[];visual:DecisionVisual|null;meters:DecisionMeters|null;prec:string;why:string[];item:InboxItem;kicker:string;sourceAt:string;strip:TimeStrip|null;statusNote:string;phase:string;ideas:{id:string;title:string}[]}
 export function decisions(ws:Workspace,ui:UIState,zh:boolean):DecisionModel[]{
  const out:DecisionModel[]=[];
  for(const item of ws.inbox||[]){
@@ -46,14 +46,16 @@ export function decisions(ws:Workspace,ui:UIState,zh:boolean):DecisionModel[]{
   const urgent=tri.priority==='high'||!!x.urgent;
   // Priority never invents a date; a due label exists only when the record has one.
   const dueText=x.due?v6Text(x.due,zh):(item as any).dueDate?fmtDay((item as any).dueDate,zh):'';const due=dueText?(zh?'截止 ':'Due ')+dueText:'';
-  const isDecision=tri.actionType==='decision',at=requestAt(item),kicker=[isDecision?(zh?'待决策':'Decision'):(zh?'待回复':'Reply'),item.channel&&item.channel!=='Internal'?item.channel:'',at?(zh?'来源 ':'From ')+fmtStamp(at,zh):''].filter(Boolean).join(' · ');
+  const unsettled=judgmentUnsettled(item),isDecision=tri.actionType==='decision',at=requestAt(item),kicker=[unsettled?'':isDecision?(zh?'待决策':'Decision'):(zh?'待回复':'Reply'),item.channel&&item.channel!=='Internal'?item.channel:'',at?(zh?'来源 ':'From ')+fmtStamp(at,zh):''].filter(Boolean).join(' · ');
   const attachedIdeas=(ws.ideas||[]).filter(i=>(i as any).status==='new'&&ideaAttachedDecision(i,[item])).map(i=>({id:i.id,title:i.title}));
-  const xo=Array.isArray(x.options)?x.options.filter((o:any)=>o&&typeof o==='object'&&!Array.isArray(o)):[];
+  const xo=!unsettled&&Array.isArray(x.options)?x.options.filter((o:any)=>o&&typeof o==='object'&&!Array.isArray(o)):[];
   const opts:DecisionOpt[]=xo.length?xo.map((o:any)=>({label:v6Text(o.label,zh),effect:o.effect?v6Text(o.effect,zh):undefined,next:o.next?v6Text(o.next,zh):undefined,rec:!!o.recommended}))
    :defaultOptions(item,zh);
+  // Until a judgment succeeds nothing is recommended, neither a reply nor a task as a substitute.
+  if(unsettled)for(const o of opts)o.rec=false;
   out.push({id:item.id,kind:'inbox',q:x.question?v6Text(x.question,zh):item.title,ctx:x.context?v6Text(x.context,zh):decisionContext(item),due,urgent,opts,
    visual:readVisual<DecisionVisual>(x.visual,['accts','quiet','gantt'])??deriveDecision(item),meters:readMeters(x.meters),
-   kicker,sourceAt:at||'',strip:timeStrip(item),statusNote:attn?.reason==='reevaluating_open'?attentionLabel(attn,zh):'',ideas:attachedIdeas,prec:x.precedent?v6Text(x.precedent,zh):'',why:Array.isArray(x.why)&&x.why.length?x.why.map((w:V6Text)=>v6Text(w,zh)):(zh?['最重要','最省事','风险最低']:['Matters most now','Least effort','Lowest risk']),item});
+   kicker,sourceAt:at||'',strip:timeStrip(item),statusNote:attn?.reason==='reevaluating_open'?attentionLabel(attn,zh):'',phase:attn?.reason==='reevaluating_open'?attn.detail||'':'',ideas:attachedIdeas,prec:x.precedent?v6Text(x.precedent,zh):'',why:Array.isArray(x.why)&&x.why.length?x.why.map((w:V6Text)=>v6Text(w,zh)):(zh?['最重要','最省事','风险最低']:['Matters most now','Least effort','Lowest risk']),item});
  }
  return out.sort((a,b)=>Number(b.urgent)-Number(a.urgent));
 }
@@ -69,11 +71,11 @@ function decisionContext(item:InboxItem):string{
  return messages.length?'':plain(item.summary||item.body,220);
 }
 function defaultOptions(item:InboxItem,zh:boolean):DecisionOpt[]{
- const tri:any=(item as any).triage||{};const reply=tri.actionType==='reply'||['quick_reply','deep_reply','review'].includes(tri.route);
+ const reply=canOfferReplyDraft(item);
  const draft=zh?'起草回复，等我确认':'Draft a reply for my review',task=zh?'转成任务稍后处理':'Turn it into a task for later';
  // "Nothing needed" is the direct Dismiss action on the card, not a sentence for the model.
  const d:DecisionOpt={label:draft,rec:reply,action:'draft_reply'},t:DecisionOpt={label:task,rec:!reply,action:'create_task'};
- return reply?[d,t]:[t,d];
+ return reply||judgmentUnsettled(item)?[d,t]:[t,d];
 }
 export function fmtDay(value:string,zh:boolean){const d=new Date(value);if(!Number.isFinite(d.getTime()))return '';return zh?`${d.getMonth()+1} 月 ${d.getDate()} 日`:d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
 export function relTime(value:string|undefined,zh:boolean){
@@ -91,11 +93,13 @@ export function insights(ws:Workspace,zh:boolean,T:any):InsightModel[]{
  const rank=(m:InsightModel)=>m.attention.state==='execution'?0:1;
  return out.sort((a,b)=>rank(a)-rank(b)||b.sourceAt.localeCompare(a.sourceAt));
 }
-const REASONS:Record<string,[string,string]>={sending:['Sending','发送中'],send_unknown:['Send result not confirmed','发送结果待核实'],send_failed:['Send failed','发送失败'],draft_unknown:['Draft result not confirmed','草稿结果待核实'],draft_failed:['Draft failed','草稿生成失败'],processing_failed:['Source processing failed','资料处理失败'],manual_draft:['Unsent draft','有未发送的草稿'],approval:['Approved, not sent','已批准，尚未发送'],sensitive:['Sensitive item needs you','敏感事项待你确认'],time_unknown:['Message time unverified','消息时间待核实'],source_unavailable:['Source connection unavailable','来源连接不可用'],reevaluating_open:['Source updated, re-evaluating','来源有更新，正在重新判断'],new_request:['New request','新请求'],closure_unverified:['Close time unverified','结束时间待核实'],context_unknown:['Not enough evidence','证据不足']};
+const REASONS:Record<string,[string,string]>={sending:['Sending','发送中'],send_unknown:['Send result not confirmed','发送结果待核实'],send_failed:['Send failed','发送失败'],draft_unknown:['Draft result not confirmed','草稿结果待核实'],draft_failed:['Draft failed','草稿生成失败'],processing_failed:['Source processing failed','资料处理失败'],manual_draft:['Unsent draft','有未发送的草稿'],approval:['Approved, not sent','已批准，尚未发送'],sensitive:['Sensitive item needs you','敏感事项待你确认'],time_unknown:['Message time unverified','消息时间待核实'],source_unavailable:['Source connection unavailable','来源连接不可用'],reevaluating_open:['Source updated, re-evaluating','来源有更新，正在重新判断'],request_unlocated:['Specific request not located','未定位到具体请求'],new_request:['New request','新请求'],closure_unverified:['Close time unverified','结束时间待核实'],context_unknown:['Not enough evidence','证据不足']};
+const PHASES:Record<string,[string,string]>={running:['Re-evaluating','正在重新判断'],retry_scheduled:['Review failed, retry scheduled','判断失败，等待自动重试'],failed:['Review failed','判断失败，待重新判断'],pending:['Waiting for review','等待判断']};
 const MISSING:Record<string,[string,string]>={missing_material:['Needed material or attachment content is missing','缺少所需资料或附件内容'],unclear:['Unclear who should answer or what is needed','不清楚该由谁回复或需要什么']};
 /** Honest, reason-specific status text. Never a generic "sources changed". */
 export function attentionLabel(a:InboxAttention,zh:boolean){
  const pick=(x?:[string,string])=>x?x[zh?1:0]:'';
+ if(a.reason==='reevaluating_open'&&a.detail&&PHASES[a.detail])return PHASES[a.detail][zh?1:0];
  if(a.reason==='missing_context')return pick(MISSING[a.detail||''])||(zh?'还缺少关键信息':'Key information is missing');
  return pick(REASONS[a.reason])||(zh?'待你确认':'Needs you');
 }
@@ -111,7 +115,7 @@ function insightSummary(item:InboxItem,zh:boolean,a:InboxAttention){
 /** The list projection of one record; the detail view binds the same title, summary, status and tone. */
 export function insightOf(item:InboxItem,zh:boolean,_T:any):InsightModel|null{
  let a:InboxAttention;try{a=inboxAttention(item)}catch{return null}if(a.surface!=='insight')return null;
- const x=v6(item),thin=a.reason==='context_unknown';
+ const x=v6(item),thin=a.reason==='context_unknown'||a.reason==='request_unlocated';
  return {id:item.id,title:x.title?v6Text(x.title,zh):item.title,summary:insightSummary(item,zh,a),status:attentionLabel(a,zh),tone:thin?'muted':'warn',visual:readVisual<InsightVisual>(x.visual,['renew','cal','sig']),attention:a,sources:sourcesOf(item),item,sourceAt:requestAt(item)||''};
 }
 export function sourcesOf(item:InboxItem):{name:string;quote:string;at?:string}[]{

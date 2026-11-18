@@ -77,7 +77,24 @@
 
 缺少关键私有信息时：记录自身带 `v6.question` 才显示具体问题；否则显示按判断原因选择的简短状态（如“缺少所需资料或附件内容”），不编造问题，也不显示原始 JSON。
 
-判断失效期间，服务端用上一次成功判断中精确的未解决请求生成只读 `lastOpenRequest`。若该消息仍存在且未删除、未撤回，事项继续显示为“来源有更新，正在重新判断”。这是“来源变化”仍然显示给用户的唯一情形。
+判断失效期间，服务端用上一次成功判断中精确的未解决请求生成只读 `lastOpenRequest`。若该消息仍存在且未删除、未撤回，事项继续保留，具体状态按下节区分。
+
+### 判断未成功与未定位请求（2026-11-18）
+
+失败面（合成示例）：
+
+- A：事项有 `lastOpenRequest`，当前判断 `status:'failed'`、`route:'review'`、`attempt:3`，没有 `nextRetryAt`。旧界面仍显示“正在重新判断”，卡头写待回复，决策卡还按失败判断的 `route` 推荐“起草回复”。实际不会再自动重试，起草也会被服务端以 `draft_judgment_required` 拒绝。等待自动重试的卡同样仍提供起草。
+- B：多条聊天消息，判断成功但 `resolution:'unknown'`、没有 `requestMessageId`、草稿为空。因没有选中请求而没有请求时间，旧界面显示“消息时间待核实”，误报时间问题。
+
+规则（`shared/inbox-attention.ts`，界面 `web/src/v6/model.ts`、`Brief.tsx`、`MessageActions.tsx`）：
+
+- 绑定旧请求（`lastOpenRequest`）而当前判断未成功时，一律保持 `reevaluating_open` 和决策面，提醒、附着灵感、回执和投递语义不变。`detail` 如实区分：`running` 正在重新判断；`retry_scheduled`（`nextRetryAt` 存在且 `attempt` < 3）判断失败，等待自动重试；`failed` 判断失败，待重新判断；`pending` 等待判断。
+- 判断未成功（共享 `judgmentUnsettled`）：卡头不写待回复/待决策，任何选项都不标推荐，旧 `v6.options` 不使用。起草行按优先级显示：进行中或未确认的回执（可核对）→ 当前未过期草稿（查看草稿）→ `failed` 时「重新判断」（`POST /triage`，`force:true`，显示结果并回读）→ 其他情况只在卡头显示判断状态。
+- 新起草要求当前判断成功、事项在待处理中且动作为回复；主对话历史提醒也遵循这项要求，保留回执核对和查看草稿；详情只在判断成功时提供新的「起草回复」。
+- 判断成功、没有 `requestMessageId`、聊天中有消息且仅缺时间：`request_unlocated`，显示“未定位到具体请求”，保留查看详情，不用最近消息当作请求，也不显示来源时间。确有选中请求而时间无效，或没有消息时，仍显示“消息时间待核实”。
+- 卡片直接显示已有草稿正文摘要（旧草稿单独标注）；可回复的成功判断仍走「查看草稿」/起草的正常流程。
+
+隔离复验使用 `scripts/reply-card-judgment-fixture.mjs`（文件头有构建与启动命令）和 `scripts/reply-card-judgment-browser-e2e.mjs`。在 ego-browser 选择的 TaskSpace 中注入 `spaceId` 及绝对路径 `outputDir` 后运行浏览器脚本，得到两种诊断、草稿正文截图和 `browser.json`。模型输出为本机合成数据。
 
 ## 忽略与撤销
 

@@ -5,14 +5,13 @@ import {ContentArtwork} from './ContentArtwork';
 import {Hv,seg,btn,actBtn,unset} from './ui';
 import {DecisionVis,Meters,InsightVis,GalleryVis} from './visuals';
 import {getUI,setUI,api,enc,uid,inFlight,unsent} from './store';
-import {today,sourcesOf,insightOf,fmtStamp,ideaWhen,ideaDeadline,ideaSchedule,linkedTasksOf,taskStatus,type DecisionModel,type InsightModel,type GalleryModel} from './model';
+import {today,sourcesOf,insightOf,attentionLabel,fmtStamp,ideaWhen,ideaDeadline,ideaSchedule,linkedTasksOf,taskStatus,type DecisionModel,type InsightModel,type GalleryModel} from './model';
 import {useAttentionAction,useDismissAck,recheckTarget,tomorrowMorning,ideaAttentionCall,ackIdea,clearAck,useEntityAction} from './attention';
 import {DELIVERY_STRATEGIES,DELIVERY_LABELS,ideaProvenance,type DeliveryStrategy} from '../../../shared/attention-actions';
 import {messageRevision} from '../../../shared/inbox-surfacing';
 import {ideaTimeStrip,threadTimeline,type TimeStrip} from './derive';
-import {inboxAttention} from '../../../shared/inbox-attention';
+import {inboxAttention,canOfferReplyDraft,judgmentUnsettled} from '../../../shared/inbox-attention';
 import {Md,plain} from './md';
-import {dispositionOf} from '../../../shared/inbox-surfacing';
 import {InsightVisual} from './InsightVisual';
 import {useInsightVisuals,readyVisual,VisualBoundary} from './insight-visuals';
 
@@ -63,10 +62,22 @@ function DecisionCard({ctx,d,state}:{ctx:Ctx;d:DecisionModel;state:'pending'|'de
    {d.ideas.map(x=><Hv key={x.id} data-attached-idea={x.id} onClick={()=>ctx.openDetail({type:'ins',id:x.id})} style={{all:'unset',cursor:'pointer',fontSize:12,color:'var(--text2)'}} hover={{color:'var(--text)'}}>{(ctx.zh?'相关灵感：':'Related inspiration: ')+x.title}</Hv>)}
    <div style={{display:'flex',flexDirection:'column',borderRadius:12,boxShadow:'0 0 0 0.5px var(--lineStrong)',overflow:'hidden'}}>
     {d.opts.map((o,oi)=>{const sel=ctx.pendPick?.k==='brief'&&ctx.pendPick.id===d.id&&ctx.pendPick.i===oi;
-     return <Hv key={oi} disabled={typed.busy} onClick={(e:any)=>{if(o.action&&binding.requestMessageId)void typed.run(binding,o.action);else ctx.toComposer(e,d.q,o.label,{k:'brief',id:d.id,i:oi,label:o.label})}} style={{all:'unset',boxSizing:'border-box',cursor:'pointer',display:'flex',alignItems:'flex-start',gap:12,padding:'12px 14px',boxShadow:oi<d.opts.length-1?'inset 0 -0.5px 0 var(--line)':'none',transition:'background 150ms ease-out'}} hover={{background:'var(--hover)'}}>
+     const isDraft = o.action === 'draft_reply';
+     const review = isDraft && !!it.draft?.trim() && !it.draftStale;
+     const held = isDraft && !review && judgmentUnsettled(it);
+     const recheck = held && d.phase === 'failed';
+     if(isDraft && !review && !recheck && !canOfferReplyDraft(it)) return null;
+     const label = review ? (ctx.zh?'查看草稿':'View draft')
+       : recheck ? (ctx.zh?'重新判断':'Re-evaluate') : held ? d.statusNote : o.label;
+     return <Hv key={oi} data-action={recheck?'recheck':o.action} disabled={typed.busy || act.busy || (held && !recheck)} onClick={(e:any)=>{
+      if(review){ctx.openDetail({type:'dec',id:d.id});return}
+      if(recheck){void act.recheck(d.item,'triage');return}
+      if(held)return;
+      if(o.action&&binding.requestMessageId)void typed.run(binding,o.action);else ctx.toComposer(e,d.q,o.label,{k:'brief',id:d.id,i:oi,label:o.label})}} style={{all:'unset',boxSizing:'border-box',cursor:'pointer',display:'flex',alignItems:'flex-start',gap:12,padding:'12px 14px',boxShadow:oi<d.opts.length-1?'inset 0 -0.5px 0 var(--line)':'none',transition:'background 150ms ease-out'}} hover={{background:'var(--hover)'}}>
       <span style={{width:16,height:16,flex:'none',marginTop:2,borderRadius:'50%',boxSizing:'border-box',transition:'border 200ms',border:sel?'5px solid var(--accent)':'1.5px solid var(--lineStrong)'}}/>
       <span style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:6,textAlign:'left'}}>
-       <span style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><span style={{fontWeight:500,color:'var(--text)'}}>{o.label}</span>{o.rec?<span style={{height:20,padding:'0 8px',display:'inline-flex',alignItems:'center',borderRadius:10,background:'var(--accentSoft)',color:'var(--accentText)',fontSize:11,fontWeight:500}}>{XL.recommended}</span>:null}</span>
+       <span style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><span style={{fontWeight:500,color:'var(--text)'}}>{label}</span>{o.rec&&!review?<span style={{height:20,padding:'0 8px',display:'inline-flex',alignItems:'center',borderRadius:10,background:'var(--accentSoft)',color:'var(--accentText)',fontSize:11,fontWeight:500}}>{XL.recommended}</span>:null}</span>
+       {review?<span data-draft-excerpt style={{fontSize:13,color:'var(--text2)'}}>{plain(it.draft,120)}</span>:null}
        {d.meters?<Meters m={d.meters} index={oi} rec={o.rec} zh={ctx.zh}/>:null}
       </span></Hv>})}
    </div>
@@ -258,7 +269,7 @@ export function InsightDetail({ctx,id,discuss}:{ctx:Ctx;id:string;discuss:(id:st
   try{await api('POST','/api/inbox/'+enc(item.id)+'/draft',{requestId,mode:'auto',baseUpdatedAt:item.updatedAt});setDraftReq({id:requestId,status:'succeeded'});await ctx.refresh()}
   catch(e:any){let status='failed';try{const r=await api('GET','/api/inbox/'+enc(item.id)+'/draft-requests/'+enc(requestId));status=r.status||r.state||'unknown'}catch{status=e.status===409?'failed':'unknown'}setDraftReq({id:requestId,status,error:e.message});void ctx.refresh()}}
  // Items that really need a reply open the V6 email proposal; related items are grouped only by the records' own `v6.group`.
- const needsReply=(x:any)=>{try{const d=dispositionOf(x);return d.placement==='pending'&&d.actionType==='reply'&&!['sent','sending','send_unknown'].includes(String(x.status))}catch{return false}};
+ const needsReply=(x:any)=>{try{return canOfferReplyDraft(x)&&!['sent','sending','send_unknown'].includes(String(x.status))}catch{return false}};
  const group=(item as any)?.v6?.group;
  const replyIds=item&&needsReply(item)?[item.id,...(typeof group==='string'?ws.inbox.filter(x=>x.id!==item.id&&(x as any).v6?.group===group&&needsReply(x)).map(x=>x.id):[])]:[];
  const linkedTask=item?ws.tasks.find(t=>(t as any).inboxId===item.id||(t as any).sourceIds?.includes?.(item.id)):undefined;
@@ -270,7 +281,7 @@ export function InsightDetail({ctx,id,discuss}:{ctx:Ctx;id:string;discuss:(id:st
  // status and tone); other records keep the reply/decision status.
  const ins=item?insightOf(item,zh,T):null;
  const quietStatus=item&&attention&&attention.surface==='none'?(attention.state==='system_error'?(zh?'判断失败':'Review failed'):attention.state==='reevaluating'?(zh?'等待判断':'Waiting for review'):(zh?'无需处理':'Nothing needed')):'';
- const status=ins?ins.status:quietStatus||(item?((item as any).status==='send_unknown'?T.st.unknown:draftText?T.st.decide:T.st.reply):T.st.decide);
+ const status=attention?.reason==='reevaluating_open'?attentionLabel(attention,zh):ins?ins.status:quietStatus||(item?((item as any).status==='send_unknown'?T.st.unknown:draftText?T.st.decide:T.st.reply):T.st.decide);
  const tone=ins?.tone==='warn'?['--warnDot','--warnText']:ins?.tone==='muted'?['--text3','--text2']:['--accent','--accentText'];
  const summary=ins?ins.summary:item&&(item as any).summary?plain((item as any).summary,400):'';
  return <div style={box}>
@@ -291,7 +302,7 @@ export function InsightDetail({ctx,id,discuss}:{ctx:Ctx;id:string;discuss:(id:st
   {act.busy||act.error||act.note?<div role="status" style={{padding:'10px 12px',borderRadius:'var(--r-inner)',background:act.error?'var(--errSoft)':'var(--hover)',color:act.error?'var(--errText)':'var(--text2)',fontSize:12}}>{act.error||act.note||(zh?'处理中…':'Working…')}</div>:null}
   {item||idea?<DeliveryChoice ctx={ctx} kind={item?'inbox':'idea'} row={item||idea}/>:null}
   <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
-   {item&&replyIds.length?<Hv onClick={()=>ctx.propose(replyIds)} style={{...actBtn('primary'),marginRight:4}} hover={{background:'var(--accentHover)'}}>{zh?'起草回复':'Draft replies'}</Hv>:item&&!draftText?<Hv onClick={()=>void makeDraft()} disabled={draftReq?.status==='running'} style={{...actBtn('primary'),marginRight:4}} hover={{background:'var(--accentHover)'}}>{zh?'起草回复':'Draft a reply'}</Hv>:null}
+   {item&&!judgmentUnsettled(item)&&replyIds.length?<Hv onClick={()=>ctx.propose(replyIds)} style={{...actBtn('primary'),marginRight:4}} hover={{background:'var(--accentHover)'}}>{zh?'起草回复':'Draft replies'}</Hv>:item&&canOfferReplyDraft(item)&&item.triage?.requestMessageId&&!draftText?<Hv onClick={()=>void makeDraft()} disabled={draftReq?.status==='running'} style={{...actBtn('primary'),marginRight:4}} hover={{background:'var(--accentHover)'}}>{zh?'起草回复':'Draft a reply'}</Hv>:null}
    {idea?((idea.action||'task')==='task'?<CreateIdeaTask ctx={ctx} idea={idea}/>:<Hv onClick={(e:any)=>{const a=({task:zh?'创建任务':'Create a task',draft:zh?'起草草稿':'Draft it',automation:zh?'设置例行任务':'Set up a routine',file:zh?'整理成文件':'Make it a file'} as any)[idea.action||'task'];ctx.toComposer(e,idea.title,a,{k:'idea',id:idea.id,i:0,label:a})}} style={{...actBtn('primary'),marginRight:4}} hover={{background:'var(--accentHover)'}}>{zh?'交给 CyberMe':'Hand it to CyberMe'}</Hv>):null}
    {linkedTask?<Hv onClick={()=>ctx.openDetail({type:'task',id:linkedTask.id})} style={{...actBtn('sec'),marginRight:4}} hover={{background:'var(--selected)'}}>{T.viewTask}</Hv>:null}
    {target?<Hv onClick={()=>void act.recheck(item!,target)} disabled={act.busy} style={{height:32,padding:'0 12px',marginRight:4,border:'none',borderRadius:'var(--r-btn)',background:'var(--hover)',color:'var(--text)',font:'inherit',fontSize:14,cursor:act.busy?'default':'pointer',whiteSpace:'nowrap'}} hover={{background:'var(--selected)'}}>{zh?'重新判断':'Re-evaluate'}</Hv>:null}
