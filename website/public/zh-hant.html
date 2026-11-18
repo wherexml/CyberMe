@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#05060a">
+  <title>CyberMe · 你的個人 AI 助手</title>
+  <meta name="description" content="CyberMe 是 macOS 上的個人 AI 助手。在同一個工作台查看洞察、追蹤任務、整理記憶。">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="CyberMe">
+  <meta property="og:title" content="CyberMe · 你的個人 AI 助手">
+  <meta property="og:description" content="CyberMe 是 macOS 上的個人 AI 助手。在同一個工作台查看洞察、追蹤任務、整理記憶。">
+  <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
+  <link rel="stylesheet" href="/assets/site.css">
+  <link rel="alternate" hreflang="zh-Hans" href="/">
+<link rel="alternate" hreflang="zh-Hant" href="/zh-hant">
+<link rel="alternate" hreflang="en" href="/en">
+<link rel="alternate" hreflang="x-default" href="/">
+  <script src="/assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">跳到正文</a>
+  <header class="nav">
+    <div class="nav-capsule">
+      <a class="brand" href="#hero"><img src="/assets/logo.svg" alt="" width="28" height="28">CyberMe</a>
+      <nav class="nav-links" aria-label="選單"><a href="#features">功能</a><a href="#privacy">隱私</a><a href="#faq">常見問題</a></nav>
+      <div class="nav-end">
+        <nav class="locales" aria-label="語言"><a href="/en" lang="en" hreflang="en" aria-label="English">EN</a><a href="/" lang="zh-Hans" hreflang="zh-Hans" aria-label="简体中文">简</a><a href="/zh-hant" lang="zh-Hant" hreflang="zh-Hant" aria-label="繁體中文" aria-current="page">繁</a></nav>
+        <a class="btn tiny" href="#access">私人測試</a>
+        <details class="mobile-menu">
+          <summary aria-label="選單"><span></span><span></span></summary>
+          <div class="mobile-panel">
+            <nav aria-label="選單"><a href="#features">功能</a><a href="#privacy">隱私</a><a href="#faq">常見問題</a></nav>
+            <nav class="locales" aria-label="語言"><a href="/en" lang="en" hreflang="en" aria-label="English">EN</a><a href="/" lang="zh-Hans" hreflang="zh-Hans" aria-label="简体中文">简</a><a href="/zh-hant" lang="zh-Hant" hreflang="zh-Hant" aria-label="繁體中文" aria-current="page">繁</a></nav>
+          </div>
+        </details>
+      </div>
+    </div>
+  </header>
+  <main id="main">
+    <section class="hero" id="hero" aria-labelledby="hero-title">
+      <canvas class="field" aria-hidden="true"></canvas>
+      <div class="hero-copy">
+        <h1 id="hero-title"><span>你的個人</span><span class="accent">AI 助手。</span></h1>
+        <p>看見訊息裡的重點，在對話裡把事情往前推進。</p>
+        <a class="btn primary" href="#demo">查看產品 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14m-5-5 5 5 5-5"/></svg></a>
+      </div>
+    </section>
+    <section class="demo wrap" id="demo" aria-label="產品預覽"><div class="app-window overview">
+      <div class="app-top"><span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span><span>工作台</span><span class="example">產品預覽</span></div>
+      <div class="app-main">
+        <div class="app-chat">
+      <div class="app-chat-head"><img src="/assets/logo.svg" alt="" width="25" height="25"><strong>CyberMe</strong></div>
+      <div class="thread"><span class="app-today">今天</span><p class="bubble">幫我整理一下今天要追蹤的事。</p><p class="answer">今天有兩件事值得追蹤：先確認發布稿的審閱時間，再把設計意見彙整到專案記錄。</p></div>
+      <div class="composer">問 CyberMe<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg></span></div>
+    </div>
+        <div class="app-side">
+          <div class="app-tabs"><span class="app-tab current"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4-2.4 6.8-2.4-6.8L2.8 12l6.8-2.4z"/></svg>洞察</span><span class="app-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="4"/><path d="m8.5 12 2.4 2.4 4.7-4.7"/></svg>任務</span><span class="app-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6a6 6 0 0 0-7-1.5v13A6 6 0 0 1 12 19a6 6 0 0 1 7-1.5v-13A6 6 0 0 0 12 6zm0 0v13"/></svg>記憶</span><span class="app-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3m0 13v3m9.5-9.5h-3m-13 0h-3m16.2-6.7-2.1 2.1m-9.2 9.2-2.1 2.1m13.4 0-2.1-2.1m-9.2-9.2-2.1-2.1"/></svg>設定</span></div>
+          <ul class="demo-rows"><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4-2.4 6.8-2.4-6.8L2.8 12l6.8-2.4z"/></svg></span><div><strong>發布稿等待審閱</strong><span>需要確認週五的審閱時間</span></div></li><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4-2.4 6.8-2.4-6.8L2.8 12l6.8-2.4z"/></svg></span><div><strong>設計意見已彙整</strong><span>三個問題可在下一輪一起處理</span></div></li><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4-2.4 6.8-2.4-6.8L2.8 12l6.8-2.4z"/></svg></span><div><strong>週會有新議題</strong><span>下週優先討論發布準備</span></div></li></ul>
+        </div>
+      </div>
+    </div></section>
+    <section class="features" id="features" aria-label="功能">
+      <div class="features-pin">
+        <div class="features-track"><article class="feature-panel"><div class="feature-copy"><h2>把事情交給對話。</h2><p>提問、整理資訊，或直接交辦一件事。</p></div><div class="scene scene-chat"><div class="app-chat">
+      <div class="app-chat-head"><img src="/assets/logo.svg" alt="" width="25" height="25"><strong>CyberMe</strong></div>
+      <div class="thread"><span class="app-today">今天</span><p class="bubble">幫我整理一下今天要追蹤的事。</p><p class="answer">今天有兩件事值得追蹤：先確認發布稿的審閱時間，再把設計意見彙整到專案記錄。</p></div>
+      <div class="composer">問 CyberMe<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg></span></div>
+    </div></div></article><article class="feature-panel"><div class="feature-copy"><h2>從訊息中看見重點。</h2><p>把需要決定的事與值得了解的資訊放在眼前。</p></div><div class="scene scene-insights"><div class="scene-card"><span class="scene-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4-2.4 6.8-2.4-6.8L2.8 12l6.8-2.4z"/></svg></span><h3>洞察</h3><ul class="demo-rows"><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4-2.4 6.8-2.4-6.8L2.8 12l6.8-2.4z"/></svg></span><div><strong>發布稿等待審閱</strong><span>需要確認週五的審閱時間</span></div></li><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4-2.4 6.8-2.4-6.8L2.8 12l6.8-2.4z"/></svg></span><div><strong>設計意見已彙整</strong><span>三個問題可在下一輪一起處理</span></div></li><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8 14.4 9.6 21.2 12l-6.8 2.4-2.4 6.8-2.4-6.8L2.8 12l6.8-2.4z"/></svg></span><div><strong>週會有新議題</strong><span>下週優先討論發布準備</span></div></li></ul></div></div></article><article class="feature-panel"><div class="feature-copy"><h2>繼續追蹤手上的事。</h2><p>看到接下來要做什麼，也能回顧進度。</p></div><div class="scene scene-tasks"><div class="scene-card"><span class="scene-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="4"/><path d="m8.5 12 2.4 2.4 4.7-4.7"/></svg></span><h3>任務</h3><ul class="demo-rows"><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="4"/><path d="m8.5 12 2.4 2.4 4.7-4.7"/></svg></span><div><strong>確認審閱時間</strong><span>今天</span></div></li><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="4"/><path d="m8.5 12 2.4 2.4 4.7-4.7"/></svg></span><div><strong>彙整設計意見</strong><span>進行中</span></div></li><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="4"/><path d="m8.5 12 2.4 2.4 4.7-4.7"/></svg></span><div><strong>準備週會大綱</strong><span>本週</span></div></li></ul></div></div></article><article class="feature-panel"><div class="feature-copy"><h2>把脈絡留在記憶裡。</h2><p>儲存偏好和專案資料，下次接著聊。</p></div><div class="scene scene-memory"><div class="scene-card"><span class="scene-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6a6 6 0 0 0-7-1.5v13A6 6 0 0 1 12 19a6 6 0 0 1 7-1.5v-13A6 6 0 0 0 12 6zm0 0v13"/></svg></span><h3>記憶</h3><ul class="demo-rows"><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6a6 6 0 0 0-7-1.5v13A6 6 0 0 1 12 19a6 6 0 0 1 7-1.5v-13A6 6 0 0 0 12 6zm0 0v13"/></svg></span><div><strong>寫作偏好</strong><span>結論在前，保留原始出處</span></div></li><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6a6 6 0 0 0-7-1.5v13A6 6 0 0 1 12 19a6 6 0 0 1 7-1.5v-13A6 6 0 0 0 12 6zm0 0v13"/></svg></span><div><strong>發布資料</strong><span>審閱、發布與回顧</span></div></li><li><span class="row-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6a6 6 0 0 0-7-1.5v13A6 6 0 0 1 12 19a6 6 0 0 1 7-1.5v-13A6 6 0 0 0 12 6zm0 0v13"/></svg></span><div><strong>專案筆記</strong><span>產品方向與已確認事項</span></div></li></ul></div></div></article></div>
+        <div class="progress" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      </div>
+    </section>
+    <section class="privacy wrap" id="privacy" aria-labelledby="privacy-title">
+      <h2 id="privacy-title">隱私與資料</h2>
+      <div class="privacy-grid"><article><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v2"/></svg><h3>連線由你決定</h3><p>依需要授權飛書或 Gmail 等連線，可在設定中撤銷。</p></article><article><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg><h3>工作區存在本機</h3><p>工作區保存在你的 Mac 上。呼叫線上模型時，相關內容由所選模型服務處理。</p></article></div>
+    </section>
+    <section class="faq wrap" id="faq" aria-labelledby="faq-title">
+      <h2 id="faq-title">常見問題</h2>
+      <div class="questions"><details><summary>可以在哪個平台使用？</summary><p>CyberMe 是一款 macOS 桌面應用程式。</p></details><details><summary>可以公開下載嗎？</summary><p>目前僅向私人測試使用者發放。</p></details><details><summary>必須連線其他應用程式嗎？</summary><p>不用。可直接開始對話，需要時再設定連線。</p></details></div>
+    </section>
+    <section class="access" id="access" aria-labelledby="access-title">
+      <canvas class="field" aria-hidden="true"></canvas>
+      <div class="access-copy">
+        <img src="/assets/logo.svg" alt="" width="64" height="64">
+        <h2 id="access-title">CyberMe for Mac</h2>
+        <p>目前僅向私人測試使用者發放。</p>
+      </div>
+    </section>
+  </main>
+  <footer class="foot wrap">
+    <span>© 2026 CyberMe</span>
+    <nav class="locales" aria-label="語言"><a href="/en" lang="en" hreflang="en" aria-label="English">EN</a><a href="/" lang="zh-Hans" hreflang="zh-Hans" aria-label="简体中文">简</a><a href="/zh-hant" lang="zh-Hant" hreflang="zh-Hant" aria-label="繁體中文" aria-current="page">繁</a></nav>
+    <a href="#hero">返回頂部 ↑</a>
+  </footer>
+</body>
+</html>

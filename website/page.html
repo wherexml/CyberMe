@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="$lang">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#05060a">
+  <title>$title</title>
+  <meta name="description" content="$description">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="CyberMe">
+  <meta property="og:title" content="$title">
+  <meta property="og:description" content="$description">
+  <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
+  <link rel="stylesheet" href="/assets/site.css">
+  $alternates
+  <script src="/assets/site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">$skip</a>
+  <header class="nav">
+    <div class="nav-capsule">
+      <a class="brand" href="#hero"><img src="/assets/logo.svg" alt="" width="28" height="28">CyberMe</a>
+      <nav class="nav-links" aria-label="$menu">$links</nav>
+      <div class="nav-end">
+        <nav class="locales" aria-label="$language">$locales</nav>
+        <a class="btn tiny" href="#access">$access</a>
+        <details class="mobile-menu">
+          <summary aria-label="$menu"><span></span><span></span></summary>
+          <div class="mobile-panel">
+            <nav aria-label="$menu">$links</nav>
+            <nav class="locales" aria-label="$language">$locales</nav>
+          </div>
+        </details>
+      </div>
+    </div>
+  </header>
+  <main id="main">
+    <section class="hero" id="hero" aria-labelledby="hero-title">
+      <canvas class="field" aria-hidden="true"></canvas>
+      <div class="hero-copy">
+        <h1 id="hero-title"><span>$headline1</span><span class="accent">$headline2</span></h1>
+        <p>$lede</p>
+        <a class="btn primary" href="#demo">$preview $down</a>
+      </div>
+    </section>
+    <section class="demo wrap" id="demo" aria-label="$example">$preview_window</section>
+    <section class="features" id="features" aria-label="$nav_features">
+      <div class="features-pin">
+        <div class="features-track">$features</div>
+        <div class="progress" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      </div>
+    </section>
+    <section class="privacy wrap" id="privacy" aria-labelledby="privacy-title">
+      <h2 id="privacy-title">$privacy_title</h2>
+      <div class="privacy-grid">$privacy_cards</div>
+    </section>
+    <section class="faq wrap" id="faq" aria-labelledby="faq-title">
+      <h2 id="faq-title">$faq_title</h2>
+      <div class="questions">$questions</div>
+    </section>
+    <section class="access" id="access" aria-labelledby="access-title">
+      <canvas class="field" aria-hidden="true"></canvas>
+      <div class="access-copy">
+        <img src="/assets/logo.svg" alt="" width="64" height="64">
+        <h2 id="access-title">$access_title</h2>
+        <p>$access_note</p>
+      </div>
+    </section>
+  </main>
+  <footer class="foot wrap">
+    <span>© 2026 CyberMe</span>
+    <nav class="locales" aria-label="$language">$locales</nav>
+    <a href="#hero">$top ↑</a>
+  </footer>
+</body>
+</html>
