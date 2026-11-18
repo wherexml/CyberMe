@@ -224,7 +224,7 @@ export function DismissAck({ctx}:{ctx:Ctx}){
  return <div data-dismiss-ack style={{display:'flex',alignItems:'center',gap:12,padding:'6px 12px',borderRadius:14,background:'var(--card)',boxShadow:'0 0 0 0.5px var(--cardLine)',flexWrap:'wrap'}}>
   <span style={{flex:1,minWidth:0,fontSize:13,color:'var(--text2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{(zh?'已忽略：':'Dismissed: ')+(item||idea).title}</span>
   {error?<span role="alert" style={{fontSize:12,color:'var(--errText)'}}>{error}</span>:null}
-  <Hv onClick={()=>void (idea?undoIdea():act.undo(item))} disabled={busy} style={{height:26,padding:'0 10px',border:'none',borderRadius:13,background:'transparent',color:'var(--accent)',font:'inherit',fontSize:12,cursor:busy?'default':'pointer',whiteSpace:'nowrap'}} hover={{background:'var(--hover)'}}>{busy?(zh?'处理中…':'Working…'):XL.undo}</Hv>
+  <Hv onClick={()=>void (idea?undoIdea():act.undo(item,ack.dismissalId))} disabled={busy} style={{height:26,padding:'0 10px',border:'none',borderRadius:13,background:'transparent',color:'var(--accent)',font:'inherit',fontSize:12,cursor:busy?'default':'pointer',whiteSpace:'nowrap'}} hover={{background:'var(--hover)'}}>{busy?(zh?'处理中…':'Working…'):XL.undo}</Hv>
  </div>;
 }
 function InsightActions({ctx,it}:{ctx:Ctx;it:InsightModel}){

@@ -9,6 +9,7 @@
 - Use shared select controls. Keep UI concise, and do not treat mock behavior as real execution.
 - Scope console controls under `#ideas-console`; verify installed-app screenshots as legacy dialog styles can override browser fixture layouts.
 - For V6 reply cards, use the current inbox judgment and exact request to offer drafting. Preserve drafts and recovery receipts, and read fresh judgment data after rechecking. See `docs/public/intent-handling.md`.
+- Apply V6 dismissal and undo receipts to the exact item immediately. Reconcile the workspace in the background and guard against older snapshots. See `docs/public/intent-handling.md`.
 - For V6 models, follow the [selection, provider and test receipt contract](docs/public/v6-model-settings.md).
 - The ideas console is read-only. Registration, configuration, worker enablement and actual execution are separate facts; never infer completion from generation or conversion alone.
 - Update module specifications and provide precise validation boundaries in Chinese commit descriptions.

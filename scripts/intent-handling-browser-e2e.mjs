@@ -103,7 +103,7 @@ try{
 
  // Decision card dismissal, then a failure path with visible feedback.
  await openSub('决策');await page.waitForFunction(()=>!!document.querySelector('[data-item="short-request"]'));
- await page.evaluate(()=>{const f=window.fetch;window.__realFetch=f;window.fetch=(u,o)=>String(u).includes('short-request/attention-dismissal')?Promise.resolve(new Response(JSON.stringify({error:'network',message:'fixture failure'}),{status:500,headers:{'content-type':'application/json'}})):f(u,o)});
+ await page.evaluate(()=>{const f=window.fetch;window.__realFetch=f;window.fetch=(u,o)=>String(u).includes('short-request/attention-dismissal')&&o?.method==='POST'?Promise.resolve(new Response(JSON.stringify({error:'fixture_refused',message:'fixture failure'}),{status:403,headers:{'content-type':'application/json'}})):f(u,o)});
  await inCard('short-request','忽略');
  await page.waitForFunction(()=>document.body.innerText.includes('未能忽略'));
  check('failed dismissal keeps the matter pending',(await row('short-request')).status==='pending');

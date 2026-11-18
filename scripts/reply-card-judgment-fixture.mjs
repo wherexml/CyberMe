@@ -87,12 +87,25 @@ serve({fetch:model.fetch, hostname:'127.0.0.1', port:modelPort});
 const gate = new Hono();
 gate.get('/__fixture/legacy-refusal', c=>c.json(legacyRefusal));
 gate.get('/__fixture/evidence', c=>c.json({requests, sends:store.db.prepare('SELECT COUNT(*) AS n FROM send_intents').get().n}));
+gate.post('/__fixture/change-dismissal/:id', async c=>{
+  const id=c.req.param('id');
+  if(!['waiting','backoff','meeting'].includes(id))return c.notFound();
+  const input=await c.req.json();
+  const item=store.get('inbox',id);
+  const patch=input.change==='metadata'?{sourceUpdatedAt:new Date().toISOString()}
+    :input.change==='lock'?{status:'send_unknown'}
+    :input.change==='edit'?{messages:item.messages.map(message=>({...message,text:'请改到周五提交新版资料。'}))}:null;
+  if(!patch)return c.notFound();
+  store.put('inbox',{...item,...patch});
+  return c.json({updated:true});
+});
 gate.all('/api/*', async c=>{
   if(c.req.method === 'POST'){
     const path = c.req.path;
     const input = await c.req.raw.clone().json().catch(()=>({}));
     requests.push({path, force:input.force, type:input.type});
-    if(!['/api/inbox/meeting/triage','/api/attention/actions'].includes(path))return c.json({error:'fixture_read_only'},403);
+    if(!['/api/inbox/meeting/triage','/api/attention/actions'].includes(path)&&
+       !/^\/api\/inbox\/(running|waiting|backoff|meeting|saved)\/attention-dismissal(\/undo)?$/.test(path))return c.json({error:'fixture_read_only'},403);
   }
   return app.fetch(c.req.raw);
 });

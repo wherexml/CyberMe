@@ -22,7 +22,7 @@ import {SentSkill,parseSentSkill,SkillMenu,SkillToken,fetchSkills,useSkillCatalo
 
 export type Pend=DraftPick
 export type Detail={type:'ins'|'task'|'dec';id:string}|null;
-export interface Ctx{ws:Workspace;ui:UIState;zh:boolean;lang:Lang;T:typeof L.en;XL:typeof X.en;refresh:(afterWrite?:boolean)=>Promise<void>;notify:(m:string,tone?:'error'|'ok')=>void;
+export interface Ctx{ws:Workspace;ui:UIState;zh:boolean;lang:Lang;T:typeof L.en;XL:typeof X.en;refresh:(afterWrite?:boolean)=>Promise<void>;applyInboxChange:(item:Workspace['inbox'][number],revision:number)=>boolean;notify:(m:string,tone?:'error'|'ok')=>void;
  toComposer:(e:any,quote:string,draft:string,pend?:Pend|null,refs?:string[])=>void;prompt:(e:any,ref:string,text:string)=>void;
  openTab:(t:UIState['tab'])=>void;goSet:(page:string|null,sub?:any)=>void;openDetail:(d:Detail)=>void;jumpTo:(match:(m:Message)=>boolean)=>void;
  /** Reference hover quote control (R:1946-1952) for timeline rows rendered outside App (proposal/result). */
@@ -41,12 +41,21 @@ export default function App(){
  const [vw,setVw]=useState(window.innerWidth);
  const [toast,setToast]=useState<{m:string;tone:string}|null>(null);
  const latestRevision=useRef(0);
+ const inboxChangeRevisions=useRef(new Map<string,number>());
  const refreshFlight=useRef<Promise<void>|null>(null);
+ const applyInboxChange=useCallback<Ctx['applyInboxChange']>((item,revision)=>{
+  if(!Number.isSafeInteger(revision)||revision<latestRevision.current||revision<(inboxChangeRevisions.current.get(item.id)??0))return false;
+  inboxChangeRevisions.current.set(item.id,revision);
+  setWs(previous=>previous&&({...previous,inbox:previous.inbox.map(row=>row.id===item.id?item:row)}));
+  return true;
+ },[]);
  const refresh=useCallback(function reload(afterWrite=false):Promise<void>{
   // A refresh already in flight may have read its snapshot before the action committed.
   if(refreshFlight.current)return afterWrite?refreshFlight.current.then(()=>reload()):refreshFlight.current;
   const pending=(async()=>{try{
-   const data=await loadWorkspace();if(Number(data.revision)<latestRevision.current)return;latestRevision.current=Number(data.revision)||latestRevision.current;
+   const data=await loadWorkspace(),revision=Number(data.revision)||0;
+   if(revision<latestRevision.current||[...inboxChangeRevisions.current.values()].some(change=>change>revision))return;
+   latestRevision.current=revision;inboxChangeRevisions.current.clear();
    const cid=getUI().conversationId||data.primaryConversationId;
    setWs(previous=>({...data,work:(getUI().conversationId||previous?.primaryConversationId)===cid?previous?.work:undefined}));setOffline('');
    if(cid)await loadWork(cid).then(work=>setWs(current=>current&&current.revision===data.revision&&(getUI().conversationId||current.primaryConversationId)===cid?{...current,work}:current)).catch(()=>{});
@@ -61,7 +70,7 @@ export default function App(){
  const notify=useCallback((m:string,tone:'error'|'ok'='ok')=>{setToast({m,tone});setTimeout(()=>setToast(t=>t?.m===m?null:t),tone==='error'?4200:2200)},[]);
  if(!ws)return <Frame theme={ui.theme}><div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12,color:'var(--text2)'}}>
   <Buddy k={ui.buddy} S={52} hop={0} curHop={0} happy={false}/>{offline?<><span>{T.offline}</span><span style={{fontSize:12,color:'var(--text3)'}}>{offline}</span><Hv onClick={()=>void refresh()} style={{height:32,padding:'0 14px',border:'none',borderRadius:'var(--r-btn)',background:'var(--accent)',color:'var(--onAccent)',font:'inherit',fontSize:14,fontWeight:500,cursor:'pointer'}} hover={{background:'var(--accentHover)'}}>{T.reconnect}</Hv></>:<span>{T.loading}</span>}</div></Frame>;
- return <Shell ws={ws} ui={ui} zh={zh} lang={lang} T={T} XL={XL} vw={vw} refresh={refresh} notify={notify} toast={toast} offline={offline}/>;
+ return <Shell ws={ws} ui={ui} zh={zh} lang={lang} T={T} XL={XL} vw={vw} refresh={refresh} applyInboxChange={applyInboxChange} notify={notify} toast={toast} offline={offline}/>;
 }
 
 function Frame({theme,children,winRef}:{theme:keyof typeof THEMES;children:React.ReactNode;winRef?:React.Ref<HTMLDivElement>}){
@@ -72,7 +81,7 @@ function Frame({theme,children,winRef}:{theme:keyof typeof THEMES;children:React
  return <div id="cyberme-v6-root" data-theme={theme} style={root}><div data-screen-label="CyberMe window" ref={winRef} style={win}>{children}</div></div>;
 }
 
-function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspace;ui:UIState;zh:boolean;lang:Lang;T:typeof L.en;XL:typeof X.en;vw:number;refresh:Ctx['refresh'];notify:Ctx['notify'];toast:{m:string;tone:string}|null;offline:string}){
+function Shell({ws,ui,zh,lang,T,XL,vw,refresh,applyInboxChange,notify,toast,offline}:{ws:Workspace;ui:UIState;zh:boolean;lang:Lang;T:typeof L.en;XL:typeof X.en;vw:number;refresh:Ctx['refresh'];applyInboxChange:Ctx['applyInboxChange'];notify:Ctx['notify'];toast:{m:string;tone:string}|null;offline:string}){
  const [timeNow,setTimeNow]=useState(()=>new Date());
  useEffect(()=>{const t=setInterval(()=>setTimeNow(new Date()),60000);return()=>clearInterval(t)},[]);
  const native=isNative();
@@ -324,7 +333,7 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
   if(switching){setUI({conversationId:conv});lastLen.current=null;void refresh()}
   const attempt=()=>{if(nav.current!==token||flashed)return;token.align();if(flashed)return;if(Date.now()-t0<15000)later(150,attempt);else nav.current=null};later(switching?200:0,attempt)};
 
- const ctx:Ctx={ws,ui,zh,lang,T,XL,refresh,notify,toComposer,prompt,openTab,goSet,openDetail,jumpTo,jumpToProposal,pendPick,conversationId,
+ const ctx:Ctx={ws,ui,zh,lang,T,XL,refresh,applyInboxChange,notify,toComposer,prompt,openTab,goSet,openDetail,jumpTo,jumpToProposal,pendPick,conversationId,
   quoteRow:(id,text)=>({row:hoverProps(id),btn:<button type="button" onClick={()=>quoteFrom(text)} aria-label="Quote reply" title={XL.quoteReply} style={quoteBtn(hoverMid===id)}><I n="arrow-bend-up-left" style={{fontSize:14}}/></button>}),
   propose:ids=>{if(!conversationId||!ids.length)return;propose(conversationId,ids);setDetail(null)},
   setConversation:id=>{cancelNav();setUI({conversationId:id});setDetail(null);lastLen.current=null;void refresh()},setPage,setSub,buddy,

@@ -40,40 +40,52 @@ function recheckResult(target:RecheckTarget,r:any,zh:boolean):string{
  return zh?'结果未确认。':'Result not confirmed.';
 }
 const conflict=(e:any)=>e?.status===409;
+type DismissalInput={operationId:string;baseUpdatedAt?:string;dismissalKey:string|null};
+type DismissalReceipt={item:InboxItem;revision:number};
+const dismissalPath=(id:string)=>'/api/inbox/'+enc(id)+'/attention-dismissal';
+const dismissalTimeout=()=>AbortSignal.timeout(5000);
+function receiptFor(item:InboxItem,operationId:string){
+ const ack=item.attentionAck;
+ return ack?.operationId===operationId?ack:item.attentionDismissal?.operationId===operationId?item.attentionDismissal:undefined;
+}
+function unconfirmedDismissal(error:any){
+ return !error?.status||error.status>=500||error.status===408||error.status===429;
+}
 export function useAttentionAction(ctx:Ctx){
  const {zh}=ctx,[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState('');
  const lock=useRef(false);
- async function run(work:()=>Promise<string|void>,failure:(e:any)=>string){
+ const retryDismissal=useRef<{itemId:string;input:DismissalInput}|null>(null);
+ async function run(work:()=>Promise<string|void>,failure:(e:any)=>string,waitForWorkspace=true){
   if(lock.current)return;lock.current=true;setBusy(true);setError('');setNote('');
-  try{const done=await work();await ctx.refresh(true);if(done)setNote(done)}
-  catch(e:any){setError(failure(e));try{await ctx.refresh(true)}catch{}}
+  const reload=()=>ctx.refresh(true).catch(()=>{});
+  try{const done=await work();if(waitForWorkspace)await reload();else void reload();if(done)setNote(done)}
+  catch(e:any){setError(failure(e));if(waitForWorkspace)await reload();else void reload()}
   finally{lock.current=false;setBusy(false)}
  }
  const reason=(e:any)=>e?.message?`：${e.message}`:'';
  return {busy,error,note,
-  dismiss:(item:InboxItem)=>{const operationId=uid('dismiss');return run(async()=>{
-   let row:any;const post=(base:unknown)=>api<{item:InboxItem}>('POST','/api/inbox/'+enc(item.id)+'/attention-dismissal',{operationId,baseUpdatedAt:base});
-   try{row=(await post(item.updatedAt)).item}
+  dismiss:(item:InboxItem)=>run(async()=>{
+   const prior=retryDismissal.current;
+   const input=prior?.itemId===item.id?prior.input:{operationId:uid('dismiss'),baseUpdatedAt:item.updatedAt,dismissalKey:item.attention?.dismissalKey??null};
+   const path=dismissalPath(item.id);
+   let result:DismissalReceipt;
+   try{result=await api('POST',path,input,dismissalTimeout())}
    catch(e:any){
-    if(e?.status===409&&e?.data?.error!=='dismiss_blocked'){
-     // A background update moved the version. Retry once only if the card still means the same request; otherwise show the conflict.
-     const latest:any=await api<InboxItem>('GET','/api/inbox/'+enc(item.id));
-     if(latest.triage?.requestMessageId!==(item as any).triage?.requestMessageId||!latest.attention?.canDismiss)throw e;
-     row=(await post(latest.updatedAt)).item;
-    }else{
-     // The response was lost, not refused: read the record back instead of repeating or guessing.
-     if(e?.status)throw e;
-     row=await api<InboxItem>('GET','/api/inbox/'+enc(item.id));
-     if(row.attentionDismissal?.operationId!==operationId&&row.attentionAck?.operationId!==operationId)throw e;
-    }
+    if(!unconfirmedDismissal(e)){retryDismissal.current=null;throw e;}
+    retryDismissal.current={itemId:item.id,input};
+    const readback=await api<DismissalReceipt>('GET',path,undefined,dismissalTimeout()).catch(()=>null);
+    if(!readback||!receiptFor(readback.item,input.operationId))return zh?'忽略结果待确认':'Dismissal unconfirmed';
+    result=readback;
    }
-   const binding=row.attentionAck?.operationId===operationId?row.attentionAck:row.attentionDismissal;
-   if(binding)setAck({itemId:row.id,dismissalId:binding.id,label:row.title});
-  },e=>conflict(e)?(zh?'事项已有更新，未忽略。':'This item changed and was not dismissed.'):(zh?'未能忽略':"Couldn't dismiss")+reason(e))},
-  undo:(item:InboxItem)=>run(async()=>{
-   await api('POST','/api/inbox/'+enc(item.id)+'/attention-dismissal/undo',{dismissalId:(item as any).attentionAck?.id||item.attentionDismissal?.id,baseUpdatedAt:item.updatedAt});
+   retryDismissal.current=null;
+   const {item:row,revision}=result,binding=receiptFor(row,input.operationId);
+   if(ctx.applyInboxChange(row,revision)&&binding)setAck({itemId:row.id,dismissalId:binding.id,label:row.title});
+  },e=>e?.data?.error==='edit_conflict'?(zh?'事项已有更新，未忽略。':'This item changed and was not dismissed.'):(zh?'未能忽略':"Couldn't dismiss")+reason(e),false),
+  undo:(item:InboxItem,dismissalId:string)=>run(async()=>{
+   const result=await api<DismissalReceipt>('POST',dismissalPath(item.id)+'/undo',{dismissalId,baseUpdatedAt:item.updatedAt},dismissalTimeout());
+   ctx.applyInboxChange(result.item,result.revision);
    setAck(null);
-  },e=>conflict(e)?(zh?'已有更新，未撤销。':'This item changed, so nothing was undone.'):(zh?'未能撤销':"Couldn't undo")+reason(e)),
+  },e=>conflict(e)?(zh?'已有更新，未撤销。':'This item changed, so nothing was undone.'):(zh?'未能撤销':"Couldn't undo")+reason(e),false),
   recheck:(item:InboxItem,target:RecheckTarget)=>run(async()=>{
    const r=await api('POST','/api/inbox/'+enc(item.id)+(target==='process-source'?'/process-source/retry':'/triage'),target==='process-source'?{}:{force:true});
    return recheckResult(target,r,zh);

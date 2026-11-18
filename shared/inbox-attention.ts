@@ -5,7 +5,7 @@ import {closureTimeUnknown,dispositionOf,hasNoReplyDecision,messageRevision,inbo
 
 export type AttentionState='actionable'|'execution'|'reevaluating'|'system_error'|'quiet';
 export type AttentionSurface='decision'|'insight'|'none';
-export interface InboxAttention {state:AttentionState;surface:AttentionSurface;reason:string;canDismiss:boolean;canRecheck:boolean;question?:string;detail?:string}
+export interface InboxAttention {state:AttentionState;surface:AttentionSurface;reason:string;canDismiss:boolean;canRecheck:boolean;question?:string;detail?:string;dismissalKey?:string}
 export interface AttentionDismissal {id:string;operationId:string;requestMessageId?:string;sourceVersion?:string;knownMessages:Record<string,string>;priorStatus:string;priorClosedAt?:string;dismissedAt:string}
 
 export const CLOSED_STATUSES=['sent','delivered','done','dismissed','cancelled','archived','recalled'];
@@ -108,10 +108,13 @@ export function dismissalBlock(item:any):string|undefined{
  if(LOCKED.includes(item.status))return 'outbound_state';
  if(item.draftPreparation?.status==='unknown')return 'draft_unknown';
 }
+export function attentionRequestId(item:any):string|undefined {
+ return item.triage?.status==='succeeded'?item.triage.requestMessageId:item.lastOpenRequest?.requestMessageId;
+}
 export function buildDismissal(item:any,id:string,operationId:string,sourceVersion:string|undefined,at:string):AttentionDismissal{
  const prior=item.status==='dismissed'?item.attentionDismissal:undefined;
- const t=item.triage;
- return {id,operationId,...(t?.status==='succeeded'&&t.requestMessageId?{requestMessageId:t.requestMessageId}:{}),...(sourceVersion?{sourceVersion}:{}),
+ const requestMessageId=attentionRequestId(item);
+ return {id,operationId,...(requestMessageId?{requestMessageId}:{}),...(sourceVersion?{sourceVersion}:{}),
   knownMessages:Object.fromEntries((Array.isArray(item.messages)?item.messages:[]).filter((m:any)=>typeof m?.id==='string').slice(-MAX_KNOWN_MESSAGES).map((m:any)=>[m.id,messageRevision(m)])),
   priorStatus:prior?.priorStatus||(item.status==='dismissed'?'pending':String(item.status||'pending')),
   ...(prior?.priorClosedAt||(!prior&&item.closedAt)?{priorClosedAt:prior?.priorClosedAt||item.closedAt}:{}),dismissedAt:at};

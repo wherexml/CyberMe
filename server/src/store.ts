@@ -9,8 +9,8 @@ import {wechatGroupAttentionExcluded} from './wechat-attention';
 import {storedWechatCategory} from './wechat-categories';
 import {connectionCredentialValues} from './connection-credentials-policy';
 import { presentInbox } from './message-presentation';
-import {inboxDisposition} from '../../shared/inbox-surfacing';
-import {inboxAttention} from '../../shared/inbox-attention';
+import {inboxDisposition,messageRevision} from '../../shared/inbox-surfacing';
+import {attentionRequestId,inboxAttention} from '../../shared/inbox-attention';
 import { normalizeInboxAttachments } from '../../shared/attachments';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync } from 'node:fs';
@@ -128,7 +128,7 @@ function withInboxTriage(item:any,evaluatedAt=Date.now(),context?:InboxReadConte
  // identity while the new scoped version is re-evaluated; never duplicate the sibling.
  const priorRequestId=item.requestRoundId||saved?.requestMessageId;
  const failedPriorId=item.requestRoundId||saved?.priorOpenRequest?.requestMessageId;
- const {triage,sourceRule,disposition,attention,lastOpenRequest,sourceUnavailable,...rest}=item;
+ const {triage,sourceRule,disposition,attention:_attention,lastOpenRequest,sourceUnavailable,...rest}=item;
  // Reuse only within this projection: identical source evidence must not be parsed/hashed repeatedly.
  const sourceVersion=inboxTriageVersion(item,context);
  const projectedRule=item.sourceId?projectSourceRule(get('inbox_source_rules',hash([item.channel,item.sourceId])),item,saved?.status==='succeeded'?saved.requestMessageId:undefined):undefined;
@@ -137,7 +137,14 @@ function withInboxTriage(item:any,evaluatedAt=Date.now(),context?:InboxReadConte
  if((connection&&connection.status!=='connected')||wechatUnavailable||(item.sourceSystem==='virtual-im'&&(!connection||connection.config?.instanceId!==item.virtualImInstanceId||!connection.permissions?.includes('read'))))result.sourceUnavailable=true;
  result.sourceAttentionExcluded=wechatGroupAttentionExcluded(item,evaluatedAt);
  if(item.sourceSystem==='wechat-sync'){result.wechatCategory=storedWechatCategory(item);result.sourceAttentionReason=result.wechatCategory==='other'?'wechat_other':result.wechatCategory?'group_mentions_only':'wechat_category_unknown';}
- const projected=inboxDisposition(result,evaluatedAt);return {...result,disposition:projected,attention:inboxAttention({...result,disposition:projected}),dismissalFeedbackActive:get('inbox_feedback',item.id)?.active===true,surfacing:projected.placement==='quiet'?'quiet':projected.placement==='pending'?'attention':projected.placement};
+ const projected=inboxDisposition(result,evaluatedAt),attention=inboxAttention({...result,disposition:projected});
+ const requestId=attention.canDismiss?attentionRequestId(result):undefined;
+ if(requestId&&result.messages?.some((m:any)=>m.id===requestId&&!m.deleted&&!m.recalled)){
+  // Use the full stored evidence. The workspace only sends the most recent messages.
+  const evidence=result.messages.map((m:any)=>JSON.stringify([m.id,messageRevision(m),m.isMine,m.direction])).sort();
+  attention.dismissalKey=hash([requestId,evidence]);
+ }
+ return {...result,disposition:projected,attention,dismissalFeedbackActive:get('inbox_feedback',item.id)?.active===true,surfacing:projected.placement==='quiet'?'quiet':projected.placement==='pending'?'attention':projected.placement};
 }
 
 const defaultSettings:Settings={

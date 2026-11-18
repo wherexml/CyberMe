@@ -8,6 +8,11 @@ import {ApiError} from './integrations';
 const OPERATION=/^[\w-]{1,160}$/;
 function need(id:string){const item=get('inbox',id);if(!item)throw new ApiError(404,'not_found','对象不存在');return item;}
 function checkBase(item:any,base:unknown){if(!base||base!==item.updatedAt)throw new ApiError(409,'edit_conflict','事项已更新，请读取最新状态',{updatedAt:item.updatedAt});}
+function checkDismissalTarget(item:any,input:any){
+ const key=item.attention?.dismissalKey;
+ if(input.dismissalKey!==undefined&&input.dismissalKey!==(key??null))throw new ApiError(409,'edit_conflict','事项已更新，请读取最新状态',{updatedAt:item.updatedAt});
+ if(!input.baseUpdatedAt||!key||input.dismissalKey!==key)checkBase(item,input.baseUpdatedAt);
+}
 
 /** The binding every path to status:'dismissed' records, including classic PATCH and Agent tools. */
 export function dismissalBinding(item:any,operationId=uid('dismissal-op')){return buildDismissal(item,uid('dismissal'),operationId,inboxTriageVersion(item),now());}
@@ -19,14 +24,14 @@ export function dismissInboxAttention(id:string,input:any,invalidate:(id:string)
  if(item.attentionAck?.operationId===input.operationId)return {item,replayed:true};
  // A closed record's status and receipts are real outcomes: clearing a new-request card records an acknowledgement beside them.
  if(['sent','delivered','done','cancelled'].includes(item.status)&&['new_request','closure_unverified'].includes(inboxAttention(item).reason)){
-  checkBase(item,input.baseUpdatedAt);
+  checkDismissalTarget(item,input);
   const id=item.triage?.requestMessageId,request=(item.messages||[]).find((m:any)=>m.id===id);
   const saved=put('inbox',{...item,attentionAck:{id:uid('dismissal'),operationId:input.operationId,requestMessageId:id,requestRevision:request?messageRevision(request):undefined,at:now()}});
   activity(`清除新请求：${saved.title}`,'surfacing','succeeded',undefined,saved.id);
   return {item:get('inbox',saved.id)};
  }
- checkBase(item,input.baseUpdatedAt);
  const blocked=dismissalBlock(item);if(blocked)throw new ApiError(409,'dismiss_blocked','发送或生成结果未确认的事项不能忽略，请先回查',{reason:blocked});
+ checkDismissalTarget(item,input);
  // A new request on an already dismissed record rebinds; any other repeat changes nothing.
  if(item.status==='dismissed'&&!inboxAttention(item).canDismiss)return {item,replayed:true};
  if(item.status!=='dismissed'&&['done','cancelled','archived'].includes(item.status))throw new ApiError(409,'already_closed','事项已结束');

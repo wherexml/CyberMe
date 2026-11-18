@@ -104,15 +104,27 @@
 
 ## 忽略与撤销
 
-- `POST /api/inbox/:id/attention-dismissal`：`{operationId,baseUpdatedAt}`。复用规范状态 `status:'dismissed'`，经典界面和 V6 读取同一字段，不是本机标记，也不经过模型。
+2026-11-18 实现前失败面：
+
+- 忽略已经写入，卡片仍要等正在读的整个工作区及后续刷新才消失。慢读、失败的读取和旧快照均可能让用户误以为没忽略。
+- 重新判断期间旧实现只比较 `triage.requestMessageId`。同一请求的无关写入会触发额外读写甚至误报冲突；两边都缺当前判断时也可能误把不同请求当成同一条。
+- POST 响应丢失或超过等待上限时，要按同一操作编号核对并保留恢复入口。失败检查覆盖新证据、被编辑的请求、真实拒绝、旧快照回流及撤销保稿。
+
+- `POST /api/inbox/:id/attention-dismissal` 接收 `{operationId,baseUpdatedAt,dismissalKey?}`。V6 回传服务端随 `attention` 投影的 `dismissalKey`，没有精确请求时传 `null`。键绑定原请求和完整消息证据；只有证据保持一致才可接受普通同步导致的 `updatedAt` 变化。旧客户端和无绑定记录仍核对 `baseUpdatedAt`。
+- 忽略直接写入规范状态 `status:'dismissed'`，经典界面和 V6 共用，无模型步骤。重新判断期间沿用 `lastOpenRequest` 绑定，保留后续真正不同的请求。
 - `POST /api/inbox/:id/attention-dismissal/undo`：`{dismissalId,baseUpdatedAt}`。
+- 写入返回 `{item,revision}`。界面先按回执更新单条事项，再后台刷新工作区。更早的快照不得覆盖该回执。提交和核对各有 5 秒传输预算，响应未确认时用 `GET /api/inbox/:id/attention-dismissal` 按原编号核对；仍不明确时显示「忽略结果待确认」，再次点击复用原编号及请求内容。
 - 同一 `operationId` 或已撤销的同一 `dismissalId` 重放返回 `replayed:true`，不重复写入。
-- 版本不符返回 409 `edit_conflict`；界面刷新后由用户决定。
+- 消息证据或绑定有变化，或无绑定操作的基线版本不符，返回 409 `edit_conflict`；保留事项并刷新。
 - `sending`、`send_unknown`、`sent`、`delivered`、`recalled` 和结果未知的草稿生成不可忽略（409 `dismiss_blocked`）；已完成事项返回 409 `already_closed`。
 - 撤销只恢复 `status`、`closedAt` 和绑定字段，保留此后写入的消息、草稿和批准。忽略已被替换（`dismissal_superseded`）或新请求已转出独立轮次（`dismissal_forwarded`）时拒绝。撤销不设置 `attentionOverride`，事项回到注意力投射本来的位置。
 - 经典界面和 Agent 工具的 `PATCH status` 写入同样的绑定，不产生第二套状态。
 - 忽略一件事只产生同发送者的弱反馈，不屏蔽发送者。
 - 忽略成功后，简报只显示一条撤销确认，15 秒后自动消失，新的忽略会替换旧确认。确认只存在于当前页面，刷新后消失，已忽略状态不变。更早的事项在完整收件箱重新打开。
+
+复验使用 `scripts/reply-card-judgment-fixture.mjs` 与 `scripts/inbox-dismissal-browser-e2e.mjs`。传入 ego-browser TaskSpace `spaceId`、fixture `origin` 和绝对 `outputDir`，可得到视觉截图、逐项结果和卡片移除耗时。测试持有旧工作区和会话请求，核对早于全量刷新的卡片移除、撤销、并发证据变更和响应丢失。
+
+源码与嵌入桌面包的资源各通过 10 项浏览器检查，回复卡片回归 15 项、意图处理 HTTP 129 项、注意力动作 HTTP 28 项通过。隔离原生窗口实测点击约 0.5 秒后已移除卡片并显示撤销，撤销后恢复原请求，服务端记录一次忽略、一次撤销和零发送。
 
 ## 绑定与重新进入
 
