@@ -54,7 +54,7 @@ const refresh=()=>request('/api/ideas/refresh',{prompt:'根据当前资料核对
 try{
  const paths=await request('/api/settings/knowledge-paths');check('configure existing private Wiki through versioned HTTP',(await request('/api/settings/knowledge-paths',{version:paths.data.version,paths:[{id:'people-wiki',path:root+'/wiki'}]},'PATCH')).status===200);
  mode='delegation';seed([msg('assign','甲同事，请你把公开方案跑完给我验收。',true)]);
- const delegated=await refresh();check('owner delegation is analyzed successfully',delegated.status===200);check('delegation does not become owner task or Idea',!S.list('ideas').length&&!S.list('tasks').length);
+ const delegated=await refresh();check('owner delegation is analyzed successfully',delegated.status===200);check('delegation stays an observation without owner task',S.list('ideas').length===1&&S.list('ideas')[0].intent==='delegation'&&!S.list('tasks').length);
  check('owner name aliases and Markdown reach dedicated analysis',lastInput.analysisContext.owner.name==='许茂林'&&lastInput.analysisContext.owner.aliases.includes('Steve')&&lastInput.analysisContext.owner.markdown.includes('本人'));
  check('distinct role Markdown and review dates reach analysis',lastInput.analysisContext.people.some(p=>p.name==='甲同事'&&p.relationship.includes('高管')&&p.reviewedAt==='2026-07-24')&&lastInput.analysisContext.people.some(p=>p.name==='乙同事'&&p.relationship.includes('直属')));
  check('actor and message timestamp survive source serialization',lastInput.sources[0].messages[0].actor==='owner'&&!!lastInput.sources[0].messages[0].sentAt);
@@ -65,6 +65,7 @@ try{
  check('manual tracking note can be saved',(await request('/api/memories/'+tracked.id,{body:edited},'PATCH')).status===200);
  mode='progress';seed([msg('progress','甲同事：公开方案已提交候选，等待验收。',false)]);check('new progress succeeds',(await refresh()).status===200);
  tracked=S.get('memories',tracked.id);check('tracking appends while preserving manual notes and history',tracked.body.startsWith('人工补充')&&tracked.observations.length===2&&S.list('person_tracking_history').length===1);
+ S.db.prepare("DELETE FROM entities WHERE type='ideas'").run();
  mode='fresh';seed([msg('old','公开故障请排查证书。',false,72),msg('resolved','好了，公开故障已经恢复。',false,71),msg('noise','公开计费规则另外讨论。',false,.2)]);
  check('old incident can be processed without becoming a new alert',(await refresh()).status===200&&!S.list('ideas').length);C.syncIdeasChat();check('unrelated recent message cannot rejuvenate old quote',!S.list('messages').length);
  mode='fresh';seed([msg('new','公开方案需要你决定选择 A 还是 B。',false)]);const fresh=await refresh();check('fresh incoming owner request creates one Idea',fresh.status===200&&S.list('ideas').length===1);

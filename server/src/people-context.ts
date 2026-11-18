@@ -4,6 +4,20 @@ import {settings,hash,list,get,put} from './store';
 import {analysisOwner} from './analysis-context';
 
 type Person={id:string;name:string;aliases:string[];role:string;relationship:string;reviewedAt:string;markdown:string;fingerprint:string;truncated:boolean};
+export type EmploymentStatus='active'|'left';
+
+// Match a whole direct statement, never an occurrence inside a question or supplied material.
+export function personStatusStatement(text:string){
+ const m=text.trim().match(/^(?:(?:记住|更正)[：:，,][ \t]*)?([\p{L}][\p{L}\p{M} ·.'’-]{0,48}?)[ \t]*(?:(?:已经|已|现在|目前)[ \t]*)?(离职|在岗|重新入职|复职|返岗)(了)?[。.!！]?$/u);
+ if(!m||(!['离职','在岗'].includes(m[2])&&!m[3]&&!/(?:已经|已)[ \t]*(?:重新入职|复职|返岗)/.test(text)))return undefined;
+ return {name:m[1].trim().toLocaleLowerCase(),status:(m[2]==='离职'?'left':'active') as EmploymentStatus};
+}
+export function matchPersonStatus(statement:NonNullable<ReturnType<typeof personStatusStatement>>,context:ReturnType<typeof peopleContext>){
+ // If a directory couldn't be read or the scan hit its cap, uniqueness is unconfirmed.
+ if(context.coverage.unavailable.length||context.coverage.loaded>=context.coverage.limit)return undefined;
+ const matches=context.people.filter(p=>p.aliases.some(a=>a.toLocaleLowerCase()===statement.name));
+ return matches.length===1?matches[0]:undefined;
+}
 // Only explicitly configured folders with the personnel template are traversed.
 // Nothing is copied into the repository or written back over the human Wiki.
 export function peopleContext(){

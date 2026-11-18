@@ -14,8 +14,10 @@ import (
 // No arbitrary notification text, URL or command is accepted from a page.
 // The server owns freshness and a durable at-most-once claim; native owns OS delivery.
 type DesktopNotifications struct {
-	mu   sync.Mutex
-	last string
+	mu          sync.Mutex
+	last        string
+	openMu      sync.Mutex
+	pendingOpen string
 }
 
 func noticeAPI(method, path string, body any) (map[string]any, error) {
@@ -51,7 +53,7 @@ func (n *DesktopNotifications) show(id, body string) error {
 		n.last = "unsupported"
 		return errors.New("请使用已安装的 CyberMe 应用")
 	}
-	err := mygo.NewNotification(mygo.NotificationOptions{ID: id, Title: "CyberMe", Body: body, Silent: true, Group: "cyberme-insights"}).Show()
+	err := mygo.NewNotification(mygo.NotificationOptions{ID: id, Title: "CyberMe", Body: body, Group: "cyberme-insights"}).Show()
 	n.last = "accepted"
 	if err != nil {
 		n.last = "failed"
@@ -98,7 +100,15 @@ func (n *DesktopNotifications) poll() {
 			continue
 		}
 		id, ok := r["id"].(string)
-		if !ok || !strings.HasPrefix(id, "idea-insight-") {
+		if !ok {
+			continue
+		}
+		body := "有新的洞察，点击查看。"
+		switch {
+		case strings.HasPrefix(id, "idea-insight-"):
+		case strings.HasPrefix(id, "inbox-digest-"):
+			body = "有新的洞察摘要，点击查看。"
+		default:
 			continue
 		}
 		claim, err := noticeAPI("POST", "/"+id+"/claim", map[string]any{})
@@ -111,7 +121,7 @@ func (n *DesktopNotifications) poll() {
 			continue
 		}
 		// A successful Show means OS acceptance, never proof of visible presentation.
-		err = n.show("cyberme-"+id, "有新的洞察，点击查看主对话和简报。")
+		err = n.show("cyberme-"+id, body)
 		status := "accepted"
 		if err != nil {
 			status = "failed"
@@ -125,12 +135,24 @@ func (n *DesktopNotifications) poll() {
 		}
 	}
 }
-func (n *DesktopNotifications) start(w *mygo.Window) {
+// Keep a cold-launch click until the workspace is ready to navigate.
+func (n *DesktopNotifications) TakeOpen() string {
+	n.openMu.Lock()
+	defer n.openMu.Unlock()
+	id := n.pendingOpen
+	n.pendingOpen = ""
+	return id
+}
+
+func (n *DesktopNotifications) listen(window func() *mygo.Window) {
 	mygo.App.OnNotificationClick(func(id string) {
 		if !strings.HasPrefix(id, "cyberme-") {
 			return
 		}
-		if !w.IsDestroyed() {
+		n.openMu.Lock()
+		n.pendingOpen = strings.TrimPrefix(id, "cyberme-")
+		n.openMu.Unlock()
+		if w := window(); w != nil && !w.IsDestroyed() {
 			mygo.App.Show()
 			w.Restore()
 			w.Show()
@@ -142,6 +164,9 @@ func (n *DesktopNotifications) start(w *mygo.Window) {
 			}()
 		}
 	})
+}
+
+func (n *DesktopNotifications) start() {
 	go func() {
 		timer := time.NewTicker(10 * time.Second)
 		defer timer.Stop()

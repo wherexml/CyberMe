@@ -10,17 +10,19 @@ import {Buddy,BUDDY} from './Buddy';
 import {Md} from './md';
 import {api,enc,uid,getUI,setUI,subscribeUI,loadWorkspace,loadWork,loadMessages,startChat,retryChat,recover,resumeChats,inFlight,unsent,uiError,type DraftPick,type DraftState,type Workspace,type ChatRecord,type UIState} from './store';
 import {decisions,insights,gallery,mood,relTime,fmtStamp} from './model';
-import {installWindowChrome,isNative} from './native';
+import {desktopNotifications,installWindowChrome,isNative} from './native';
 import Brief,{InsightDetail,DismissAck} from './Brief';
 import {MessageActions,DigestBody} from './MessageActions';
 import Tasks,{TaskDetail,WorkEvent} from './Tasks';
 import Memory from './Memory';
 import Settings from './Settings';
 import {ProposalBlocks,propose} from './Proposal';
+import {chatTimeline} from './chat-timeline';
+import {SentSkill,parseSentSkill,SkillMenu,SkillToken,fetchSkills,useSkillCatalog,slashQuery,rankSkills,sameSkill,skillCommand,skillOptionId,SKILL_LIST_ID,type SkillPick,type SkillRow} from './SkillComposer';
 
 export type Pend=DraftPick
 export type Detail={type:'ins'|'task'|'dec';id:string}|null;
-export interface Ctx{ws:Workspace;ui:UIState;zh:boolean;lang:Lang;T:typeof L.en;XL:typeof X.en;refresh:()=>Promise<void>;notify:(m:string,tone?:'error'|'ok')=>void;
+export interface Ctx{ws:Workspace;ui:UIState;zh:boolean;lang:Lang;T:typeof L.en;XL:typeof X.en;refresh:(afterWrite?:boolean)=>Promise<void>;notify:(m:string,tone?:'error'|'ok')=>void;
  toComposer:(e:any,quote:string,draft:string,pend?:Pend|null,refs?:string[])=>void;prompt:(e:any,ref:string,text:string)=>void;
  openTab:(t:UIState['tab'])=>void;goSet:(page:string|null,sub?:any)=>void;openDetail:(d:Detail)=>void;jumpTo:(match:(m:Message)=>boolean)=>void;
  /** Reference hover quote control (R:1946-1952) for timeline rows rendered outside App (proposal/result). */
@@ -40,18 +42,14 @@ export default function App(){
  const [toast,setToast]=useState<{m:string;tone:string}|null>(null);
  const latestRevision=useRef(0);
  const refreshFlight=useRef<Promise<void>|null>(null);
- const refresh=useCallback(()=>{
-  if(refreshFlight.current)return refreshFlight.current;
+ const refresh=useCallback(function reload(afterWrite=false):Promise<void>{
+  // A refresh already in flight may have read its snapshot before the action committed.
+  if(refreshFlight.current)return afterWrite?refreshFlight.current.then(()=>reload()):refreshFlight.current;
   const pending=(async()=>{try{
    const data=await loadWorkspace();if(Number(data.revision)<latestRevision.current)return;latestRevision.current=Number(data.revision)||latestRevision.current;
    const cid=getUI().conversationId||data.primaryConversationId;
-   setWs(previous=>({...data,models:previous?.models||{unavailable:true},work:(getUI().conversationId||previous?.primaryConversationId)===cid?previous?.work:undefined}));setOffline('');
-   // Enrich independently: a slow model/settings endpoint cannot block work,
-   // and neither endpoint delays the first render or changes the active chat.
-   await Promise.allSettled([
-    api('GET','/api/settings/models',undefined,AbortSignal.timeout(15000)).then(models=>setWs(current=>current&&current.revision===data.revision?{...current,models}:current)),
-    cid?loadWork(cid).then(work=>setWs(current=>current&&current.revision===data.revision&&(getUI().conversationId||current.primaryConversationId)===cid?{...current,work}:current)):Promise.resolve(),
-   ]);
+   setWs(previous=>({...data,work:(getUI().conversationId||previous?.primaryConversationId)===cid?previous?.work:undefined}));setOffline('');
+   if(cid)await loadWork(cid).then(work=>setWs(current=>current&&current.revision===data.revision&&(getUI().conversationId||current.primaryConversationId)===cid?{...current,work}:current)).catch(()=>{});
   }catch(e:any){setOffline(e.message||'offline')}})();
   refreshFlight.current=pending;
   void pending.finally(()=>{if(refreshFlight.current===pending)refreshFlight.current=null});
@@ -74,7 +72,7 @@ function Frame({theme,children,winRef}:{theme:keyof typeof THEMES;children:React
  return <div id="cyberme-v6-root" data-theme={theme} style={root}><div data-screen-label="CyberMe window" ref={winRef} style={win}>{children}</div></div>;
 }
 
-function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspace;ui:UIState;zh:boolean;lang:Lang;T:typeof L.en;XL:typeof X.en;vw:number;refresh:()=>Promise<void>;notify:Ctx['notify'];toast:{m:string;tone:string}|null;offline:string}){
+function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspace;ui:UIState;zh:boolean;lang:Lang;T:typeof L.en;XL:typeof X.en;vw:number;refresh:Ctx['refresh'];notify:Ctx['notify'];toast:{m:string;tone:string}|null;offline:string}){
  const [timeNow,setTimeNow]=useState(()=>new Date());
  useEffect(()=>{const t=setInterval(()=>setTimeNow(new Date()),60000);return()=>clearInterval(t)},[]);
  const native=isNative();
@@ -91,8 +89,8 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  const convRef=useRef(conversationId);convRef.current=conversationId;
  // Cached older pages keep ordinary messages, but Inbox/Ideas analysis projections the server has withdrawn are dropped.
  const loadThread=useCallback(async(keep=false)=>{const v=visit.current.n;if(!conversationId){setThread({visit:v,items:[]});setHasMore(false);return}const g=++msgGen.current;try{const page=await loadMessages(conversationId);if(convRef.current!==conversationId||visit.current.n!==v||(accepted.current.visit===v&&g<accepted.current.g))return;accepted.current={visit:v,g};const owned=threadRef.current.visit===v;
-  const known=Array.isArray(page.inboxAnalysisIds)&&Array.isArray(page.ideaAnalysisIds)?new Set([...page.inboxAnalysisIds!,...page.ideaAnalysisIds!]):null;
-  const withdrawn=(m:any)=>!!known&&(m.inboxAnalysis?.kind==='inbox-analysis-v1'||m.ideaAnalysis?.kind==='idea-insight-v1')&&!known.has(m.id);
+  const known=Array.isArray(page.inboxAnalysisIds)&&Array.isArray(page.ideaAnalysisIds)?new Set([...page.inboxAnalysisIds!,...page.ideaAnalysisIds!,...(page.followUpReminderIds||[])]):null;
+  const withdrawn=(m:any)=>!!known&&(m.inboxAnalysis?.kind==='inbox-analysis-v1'||m.ideaAnalysis?.kind==='idea-insight-v1'||m.derivedKind==='follow-up-v1'&&Array.isArray(page.followUpReminderIds))&&!known.has(m.id);
   setThread(t=>{const prev=t.visit===v?t.items:[];if(!keep||t.visit!==v)return {visit:v,items:page.items};const ids=new Set(page.items.map(m=>m.id));const older=prev.filter(m=>!ids.has(m.id)&&!withdrawn(m)&&(!page.items[0]||String(m.createdAt)<String(page.items[0].createdAt)));return {visit:v,items:[...older,...page.items]}});if(!keep||!owned)setHasMore(page.hasMore)}catch{}},[conversationId]);
  useEffect(()=>{void loadThread(false);const t=setInterval(()=>{if(document.visibilityState==='visible')void loadThread(true)},15000);return()=>clearInterval(t)},[loadThread]);
  const reqKey=ui.requests.filter(r=>r.conversationId===conversationId||!r.conversationId).map(r=>r.requestId+r.status).join();
@@ -106,17 +104,42 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  // The hidden pick binding and the automatic fragment are saved with the draft of their owner, so a reload or a
  // conversation switch keeps the record context of an unsent choice without showing it as a chip.
  const autoFill=useRef<string|null>(saved.auto||null);
+ // WebKit can end composition before its confirming Enter (keyCode 229).
+ const composing=useRef(false);
  const [pendPick,setPendPick]=useState<Pend|null>(saved.pick||null);
- type Snap={draft:string;quote:string|null;refs:string[];pick:Pend|null;auto:string|null};
- const owner=useRef(dkey);const latest=useRef<Snap>({draft,quote,refs,pick:saved.pick||null,auto:autoFill.current});
- const saveDraft=(k:string,v:Snap)=>{const cur=getUI().drafts[k];const next:DraftState={text:v.draft,quote:v.quote,refs:v.refs,pick:v.pick,auto:v.draft?v.auto:null};
-  if(cur&&JSON.stringify({...cur,pick:cur.pick||null,auto:cur.auto||null})===JSON.stringify(next))return;if(!cur&&!v.draft&&!v.quote&&!v.refs.length&&!v.pick)return;setUI(s=>({drafts:{...s.drafts,[k]:next}}))};
+ // Selected composer skill (one at most); persisted with its owner's draft and serialized as `/skill:name` on send.
+ const [skill,setSkill]=useState<SkillPick|null>(saved.skill||null);
+ type Snap={draft:string;quote:string|null;refs:string[];pick:Pend|null;auto:string|null;skill:SkillPick|null};
+ const owner=useRef(dkey);const latest=useRef<Snap>({draft,quote,refs,pick:saved.pick||null,auto:autoFill.current,skill:saved.skill||null});
+ const saveDraft=(k:string,v:Snap)=>{const cur=getUI().drafts[k];const next:DraftState={text:v.draft,quote:v.quote,refs:v.refs,pick:v.pick,auto:v.draft?v.auto:null,skill:v.skill};
+  const canon=(d:DraftState)=>JSON.stringify([d.text,d.quote,d.refs,d.pick||null,d.auto||null,d.skill||null]);
+  if(cur&&canon(cur)===canon(next))return;if(!cur&&!v.draft&&!v.quote&&!v.refs.length&&!v.pick&&!v.skill)return;setUI(s=>({drafts:{...s.drafts,[k]:next}}))};
  useEffect(()=>{const k=dkey;return()=>saveDraft(k,latest.current)},[dkey]);// eslint-disable-line react-hooks/exhaustive-deps
- useEffect(()=>{owner.current=dkey;const s:DraftState=getUI().drafts[dkey]||{text:'',quote:null,refs:[]};setDraft(s.text);setQuote(s.quote);setRefs(s.refs);setPendPick(s.pick||null);autoFill.current=s.auto||null;setAttachments([])},[dkey]);
- useEffect(()=>{const k=dkey;const t=setTimeout(()=>{if(owner.current===k)saveDraft(k,{draft,quote,refs,pick:pendPick,auto:autoFill.current})},400);return()=>clearTimeout(t)},[draft,quote,refs,pendPick,dkey]);// eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>{owner.current=dkey;const s:DraftState=getUI().drafts[dkey]||{text:'',quote:null,refs:[]};setDraft(s.text);setQuote(s.quote);setRefs(s.refs);setPendPick(s.pick||null);setSkill(s.skill||null);setSlash({caret:-1,dismissed:null,active:0});autoFill.current=s.auto||null;setAttachments([])},[dkey]);
+ useEffect(()=>{const k=dkey;const t=setTimeout(()=>{if(owner.current===k)saveDraft(k,{draft,quote,refs,pick:pendPick,auto:autoFill.current,skill})},400);return()=>clearTimeout(t)},[draft,quote,refs,pendPick,skill,dkey]);// eslint-disable-line react-hooks/exhaustive-deps
  const [menu,setMenu]=useState(false),[cFlash,setCFlash]=useState(false),[showDown,setShowDown]=useState(false),[hoverMid,setHoverMid]=useState<string|null>(null),[sel,setSel]=useState<{text:string;x:number;y:number}|null>(null),[flash,setFlash]=useState<string|null>(null),[uploading,setUploading]=useState(false);
- latest.current={draft,quote,refs,pick:pendPick,auto:autoFill.current};
- useEffect(()=>{const flush=()=>saveDraft(owner.current,latest.current);window.addEventListener('cyberme-before-update',flush);return()=>window.removeEventListener('cyberme-before-update',flush)},[]);
+ latest.current={draft,quote,refs,pick:pendPick,auto:autoFill.current,skill};
+ const liveAttach=useRef<string[]>([]);liveAttach.current=attachments.map(a=>a.id);
+ // ----- skill picker: derived from the textarea text and caret, so a late catalog response can never open another owner's list -----
+ const [slash,setSlash]=useState<{caret:number;dismissed:string|null;active:number}>({caret:-1,dismissed:null,active:0});
+ const skillCat=useSkillCatalog();
+ const sq=!skill&&slash.caret>=0?slashQuery(draft,slash.caret,slash.caret):null;
+ // Dismissal key: the token's position and bytes, so caret moves keep Escape while another token can still open.
+ const sqToken=sq?sq.start+':'+draft.slice(sq.start,sq.end):null;
+ const slashOpen=!!sq&&slash.dismissed!==sqToken;
+ const skillItems=useMemo<SkillRow[]>(()=>slashOpen&&sq?rankSkills(skillCat.items,sq.query):[],[slashOpen,sq?.query,skillCat.items]);// eslint-disable-line react-hooks/exhaustive-deps
+ const skillActive=Math.min(slash.active,Math.max(0,skillItems.length-1));
+ const syncCaret=(el:HTMLTextAreaElement)=>{const c=el.selectionStart===el.selectionEnd?el.selectionStart:-1;setSlash(x=>x.caret===c?x:{...x,caret:c})};
+ // Fetch on each opening so the list reflects the current catalog; failures show Retry instead of old rows.
+ useEffect(()=>{if(slashOpen){setMenu(false);void fetchSkills().catch(()=>{})}},[slashOpen]);
+ useEffect(()=>{setSlash(x=>x.active===0?x:{...x,active:0})},[sq?.query]);
+ const chooseSkill=(row:SkillRow)=>{const el=taRef.current;const cur=el?el.value:draft;const q=el?slashQuery(cur,el.selectionStart,el.selectionEnd):sq;if(!q)return;
+  // Only the active token is removed; prefix and suffix bytes are kept exactly and the caret returns to the token's
+  // start. Choosing never sends or loads the skill; the send path still writes the canonical leading `/skill:name`.
+  const at=q.start;setSkill({id:row.id,name:row.name});setDraft(cur.slice(0,at)+cur.slice(q.end));setSlash({caret:-1,dismissed:null,active:0});
+  later(0,()=>{const t=taRef.current;if(t){t.focus();t.setSelectionRange(at,at)}})};
+ const removeSkill=()=>{setSkill(null);focus()};
+ useEffect(()=>{const flush=()=>saveDraft(owner.current,latest.current);const events=['cyberme-before-update','pagehide','beforeunload'];events.forEach(e=>window.addEventListener(e,flush));return()=>events.forEach(e=>window.removeEventListener(e,flush))},[]);
  const focus=()=>setTimeout(()=>taRef.current?.focus(),30);
  // ----- panel -----
  const [detail,setDetail]=useState<Detail>(null),[setPage,setSetPage]=useState<string|null>(null),[setSub,setSetSub]=useState<any>(null),[drag,setDrag]=useState(false),[hHover,setHHover]=useState(false);
@@ -135,7 +158,26 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  const openTab=(t:UIState['tab'])=>{setDetail(null);setSetPage(null);setSetSub(null);setUI({panel:true,tab:t})};
  const goSet=(page:string|null,sub?:any)=>{setDetail(null);setSetPage(page);setSetSub(sub||null);setUI({panel:true,tab:'settings'})};
  const openDetail=(d:Detail)=>{setDetail(d);if(d)setUI({panel:true,tab:d.type==='task'?'tasks':'today'})};
- useEffect(()=>{const open=()=>{setDetail(null);setSetPage(null);setSetSub(null);setUI({panel:true,tab:'today',briefTab:'ins',conversationId:null});void refresh()};window.addEventListener('cyberme-open-insights',open);return()=>window.removeEventListener('cyberme-open-insights',open)},[refresh]);
+ const [noticeDigest,setNoticeDigest]=useState<{id:string}|null>(null);
+ const consumedDigest=useRef<typeof noticeDigest>(null);
+ useEffect(()=>{
+  let active=true,reading=false,queued=false;
+  async function open(){
+   if(!isNative())return;
+   if(reading){queued=true;return}
+   reading=true;
+   try{
+    const id=await desktopNotifications.takeOpen();if(!active||!id)return;
+    setDetail(null);setSetPage(null);setSetSub(null);
+    setUI({panel:true,tab:'today',briefTab:'ins',conversationId:null});
+    setNoticeDigest(/^inbox-digest-[a-f0-9]{32}$/.test(id)?{id}:null);
+    void refresh();
+   }catch{/* Older native hosts can still render the workspace. */}
+   finally{reading=false;if(queued&&active){queued=false;void open()}}
+  }
+  window.addEventListener('cyberme-open-insights',open);void open();
+  return()=>{active=false;window.removeEventListener('cyberme-open-insights',open)};
+ },[refresh]);
  const backAny=()=>{if(detail)setDetail(null);else if(setSub)setSetSub(null);else setSetPage(null)};
  useEffect(()=>installWindowChrome(()=>{if(detail||setSub||setPage){backAny();return true}if(menu){setMenu(false);return true}return false}),[detail,setSub,setPage,menu]);// eslint-disable-line react-hooks/exhaustive-deps
  function startDrag(e:React.MouseEvent){e.preventDefault();const win=winRef.current;if(!win)return;
@@ -160,12 +202,12 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  function fly(e:any,text:string){try{const b=e?.currentTarget as HTMLElement|undefined,ta=taRef.current;if(!b||!ta||!b.getBoundingClientRect)return;const a=b.getBoundingClientRect(),c=ta.getBoundingClientRect(),cs=getComputedStyle(ta);
   const g=document.createElement('div');g.textContent=text;Object.assign(g.style,{position:'fixed',left:a.left+'px',top:a.top+'px',width:a.width+'px',height:Math.max(32,a.height)+'px',zIndex:'9999',pointerEvents:'none',borderRadius:'16px',background:cs.getPropertyValue('--accent').trim()||'#0a84ff',color:'#fff',font:'500 13px/1.3 -apple-system, BlinkMacSystemFont, system-ui, sans-serif',display:'flex',alignItems:'center',padding:'0 14px',boxSizing:'border-box',overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis',boxShadow:'0 12px 32px rgba(0,0,0,.22)',transformOrigin:'left center'});
   document.body.appendChild(g);const dx=c.left+14-a.left,dy=c.top+c.height/2-(a.top+a.height/2),sc=Math.min(1,220/a.width);
-  const an=g.animate([{transform:'translate(0,0) scale(1)',opacity:1},{offset:.15,transform:'translate(0,-6px) scale(1.04)',opacity:1},{offset:.6,transform:'translate('+dx*.62+'px,'+(dy*.62-60)+'px) scale('+sc+')',opacity:1},{transform:'translate('+dx+'px,'+dy+'px) scale('+sc*.7+')',opacity:0}],{duration:720,easing:'cubic-bezier(.45,0,.2,1)'});an.onfinish=()=>g.remove()}catch{}}
+  const an=g.animate([{transform:'translate(0,0) scale(1)',opacity:1},{offset:.15,transform:'translate(0,-6px) scale(1.04)',opacity:1},{offset:.6,transform:'translate('+dx*.62+'px,'+(dy*.62-60)+'px) scale('+sc+')',opacity:1},{transform:'translate('+dx+'px,'+dy+'px) scale('+sc*.7+')',opacity:0}],{duration:720,easing:'cubic-bezier(.45,0,.2,1)'});an.onfinish=()=>g.remove();an.oncancel=()=>g.remove();later(1000,()=>{an.cancel();g.remove()})}catch{}}
  // A fill whose conversation changed meanwhile is dropped. As in the reference, picking option B after A replaces
  // A's automatic fragment while it is still unedited; any text the user typed stays, and other fills append on a new line.
  const merge=(cur:string,add:string,auto:string|null)=>{if(!cur.trim()||cur.trim()===add.trim())return add;
   const at=auto?cur.lastIndexOf(auto):-1;if(auto&&at>=0)return cur.slice(0,at)+add+cur.slice(at+auto.length);return cur.replace(/\s+$/,'')+'\n'+add};
- const caretEnd=()=>requestAnimationFrame(()=>{const el=taRef.current;if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length)}});
+ const caretEnd=()=>later(0,()=>{const el=taRef.current;if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length)}});
  const toComposer:Ctx['toComposer']=(e,q,d,pend,addRefs)=>{fly(e,d);const k=owner.current;later(560,()=>{if(owner.current!==k)return;if(q)setQuote(q);const prev=autoFill.current;autoFill.current=d;setDraft(cur=>merge(cur,d,prev));setCFlash(true);setPendPick(pend?{...pend,quote:q||null}:null);setMenu(false);if(addRefs?.length)setRefs(r=>[...new Set([...r,...addRefs])]);later(900,()=>setCFlash(false));caretEnd()})};
  const prompt:Ctx['prompt']=(e,ref,text)=>{if(e)fly(e,text);const k=owner.current;later(e?560:40,()=>{if(owner.current!==k)return;const prev=autoFill.current;autoFill.current=text;setDraft(cur=>merge(cur,text,prev));setRefs(r=>r.includes(ref)?r:[...r,ref]);setMenu(false);setCFlash(true);later(700,()=>setCFlash(false));caretEnd()})};
  const discuss=(id:string)=>{setRefs(r=>r.includes(id)?r:[...r,id]);setMenu(false);focus()};
@@ -174,23 +216,43 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  const typing=ui.requests.some(r=>(r.conversationId===conversationId||!r.conversationId)&&inFlight(r));
  const titleOf=useCallback((id:string)=>ws.inbox.find(x=>x.id===id)?.title||ws.ideas.find(x=>x.id===id)?.title||ws.tasks.find(x=>x.id===id)?.title||id,[ws]);
  const submitting=useRef(false);
- // New chat messages use the existing interruptCurrent handshake; executable choices keep their busy gate.
+ // Chat messages enter the durable FIFO; executable choices keep their busy gate.
  // Id-less requests go to the primary conversation (server), so they block only there; other conversations stay free.
  const replying=ui.requests.some(r=>inFlight(r)&&(r.conversationId?r.conversationId===conversationId:(!conversationId||conversationId===ws.primaryConversationId)));
  async function send(){
   if(submitting.current)return;
-  const text=draft.trim();if(!text&&!refs.length&&!quote&&!attachments.length)return;
-  const pk=pendPick;if(replying&&((pk?.k==='work'&&pk.optionId&&text===pk.label&&(!quote||quote===pk.quote))||(pk?.k==='idea'&&text===pk.label)))return;const clear=()=>{autoFill.current=null;setDraft('');setRefs([]);setQuote(null);setPendPick(null);setMenu(false);setSel(null);setAttachments([])};
-  const k0=dkey,sent=draft;const clearIfUnchanged=()=>{if(owner.current===k0&&taRef.current?.value===sent)clear();setUI(s=>s.drafts[k0]?.text===sent?{drafts:{...s.drafts,[k0]:{text:'',quote:null,refs:[],pick:null,auto:null}}}:{})};
+  const text=draft.trim(),sk=skill;if(!text&&!refs.length&&!quote&&!attachments.length&&!sk)return;
+  const pk=pendPick;if(!sk&&replying&&pk?.k==='work'&&pk.optionId&&text===pk.label&&(!quote||quote===pk.quote))return;const clear=()=>{autoFill.current=null;setDraft('');setRefs([]);setQuote(null);setPendPick(null);setMenu(false);setSel(null);setAttachments([]);setSkill(null)};
+  // Cleared only for the same owner, text and skill that were sent; newer edits and other owners' saved drafts stay.
+  // The full composer snapshot (text, quote, refs, pick, auto fragment, skill, attachment ids) is compared, so anything
+  // added while verification or the durable save was pending survives; the saved owner draft is compared field by field.
+  const k0=dkey,sent=draft;
+  const live=()=>JSON.stringify([latest.current.quote,latest.current.refs,latest.current.pick||null,autoFill.current||null,latest.current.skill||null,liveAttach.current]);
+  const snap0=JSON.stringify([quote,refs,pendPick||null,autoFill.current||null,skill||null,attachments.map(a=>a.id)]);
+  const savedSnap=JSON.stringify([sent,quote,refs,pendPick||null,sent?autoFill.current||null:null,skill||null]);
+  const savedOf=(d?:DraftState)=>d?JSON.stringify([d.text,d.quote,d.refs,d.pick||null,d.auto||null,d.skill||null]):'';
+  const clearIfUnchanged=()=>{if(owner.current===k0&&taRef.current?.value===sent&&live()===snap0)clear();setUI(s=>savedOf(s.drafts[k0])===savedSnap?{drafts:{...s.drafts,[k0]:{text:'',quote:null,refs:[],pick:null,auto:null,skill:null}}}:{})};
   // A work option runs only when the composer still holds exactly that option (its automatic quote allowed); edited or combined text is sent as a conversation message.
-  if(pk?.k==='work'&&pk.optionId&&text===pk.label&&(!quote||quote===pk.quote)){if(submitting.current)return;submitting.current=true;const panel=(ws.work?.panels||[]).find((p:any)=>p.id===pk.id);
+  if(!sk&&pk?.k==='work'&&pk.optionId&&text===pk.label&&(!quote||quote===pk.quote)){if(submitting.current)return;submitting.current=true;const panel=(ws.work?.panels||[]).find((p:any)=>p.id===pk.id);
    try{await api('POST','/api/chat/choices/'+enc(pk.id)+'/select',{operationId:uid('select'),revision:panel?.revision??pk.revision,optionId:pk.optionId,conversationId:panel?.conversationId||conversationId});clearIfUnchanged();await refresh();void loadThread(true)}catch(e:any){notify(e.message,'error');void refresh()}finally{submitting.current=false}return}
-  if(pk?.k==='idea'&&text===pk.label){if(submitting.current)return;submitting.current=true;try{const r=await api('POST','/api/ideas/'+enc(pk.id)+'/execute',{action:ws.ideas.find(i=>i.id===pk.id)?.action||'task'});clearIfUnchanged();await refresh();if(r?.task?.id)openDetail({type:'task',id:r.task.id})}catch(e:any){notify(e.message,'error')}finally{submitting.current=false}return}
-  const body=[quote?quote.split('\n').map(l=>'> '+l).join('\n'):'',text||(refs.length?XL.chatAbout(refs.map(titleOf).join('、')):'')].filter(Boolean).join('\n\n');
+
+  const task=text||(refs.length?XL.chatAbout(refs.map(titleOf).join('、')):'');
+  const quoted=quote?quote.split('\n').map(l=>'> '+l).join('\n'):'';
+  // A selected skill is the leading `/skill:name` of the original message (the backend's existing parser); the quote follows the task.
+  const body=sk?[skillCommand(sk)+(task?' '+task:''),quoted].filter(Boolean).join('\n\n'):[quoted,task].filter(Boolean).join('\n\n');
   // Brief options and "talk it through" bind their record internally (the reference shows only the quote, no chip).
-  const contextIds=[...new Set([...refs,...(pk&&['idea','brief','ctx'].includes(pk.k)?[pk.id]:[])])];
+  const selectedIds=[...new Set([...refs,...(pk&&['idea','brief','ctx'].includes(pk.k)?[pk.id]:[])])];
+  const contextIds=[...new Set(selectedIds.flatMap(id=>{const idea=ws.ideas.find(i=>i.id===id);return [id,...(Array.isArray(idea?.sourceIds)?idea.sourceIds.filter((s:unknown):s is string=>typeof s==='string'&&!!s):[])];}))];
   // The composer stays editable until the request receipt is durably saved; a failed save posts nothing and keeps the input.
   if(submitting.current)return;submitting.current=true;
+  if(sk){
+   // The selected identity must still be the catalog's skill of that name; never silently resolve another one.
+   let rows:SkillRow[]|null=null;try{rows=await fetchSkills()}catch{}
+   if(!rows){submitting.current=false;notify(zh?`未发送：无法核对技能 ${sk.name}，输入已保留。`:`Not sent: couldn't verify skill ${sk.name}. Your input is kept.`,'error');return}
+   if(!rows.some(r=>r.id===sk.id&&r.name===sk.name)){submitting.current=false;notify(zh?`未发送：技能 ${sk.name} 已不可用或已变更，请移除后重新选择。`:`Not sent: skill ${sk.name} is no longer available or changed. Remove it and choose again.`,'error');return}
+   // Same owner but the skill was removed or changed meanwhile: the user's intent changed, so nothing is sent.
+   if(owner.current===k0&&!sameSkill(latest.current.skill,sk)){submitting.current=false;return}
+  }
   try{const rec=await startChat({conversationId:conversationId||'',message:body,contextIds,attachmentIds:attachments.map(a=>a.id),quote:quote||undefined,refs:[...refs],pick:pk&&pk.k==='brief'?{kind:'brief',id:pk.id,index:pk.i,label:pk.label}:undefined});
    if(pk?.k==='brief')setUI(s=>({brief:{...s.brief,[pk.id]:{pick:{label:pk.label,index:pk.i,requestId:rec.requestId},at:new Date().toISOString()}}}));
    clearIfUnchanged()}
@@ -203,9 +265,10 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  function checkSel(){const clear=()=>{if(sel)setSel(null)};const s=window.getSelection();const el=scrollRef.current;if(!s||s.isCollapsed||!el||!s.rangeCount)return clear();const txt=s.toString().trim();const nd=(n:Node|null)=>n&&(n.nodeType===3?n.parentElement:n as Element);const a=nd(s.anchorNode),fo=nd(s.focusNode);const ai=a&&(a as Element).closest?.('[data-ai-text]');if(!txt||!ai||!fo||!ai.contains(fo))return clear();const r=s.getRangeAt(0).getBoundingClientRect();const col=el.parentElement!.getBoundingClientRect();setSel({text:txt.slice(0,400),x:Math.round(r.left+r.width/2-col.left),y:Math.round(Math.max(4,r.top-col.top-40))})}
  // ----- scrolling -----
  const lastLen=useRef<number|null>(null);
- const pending=ui.requests.filter(r=>(r.conversationId===conversationId||!r.conversationId)&&!msgs.some(m=>(m as any).requestId===r.requestId)&&r.status!=='succeeded');
+ const timeline=chatTimeline(msgs,ui.requests.filter(r=>r.conversationId?r.conversationId===conversationId:conversationId===ws.primaryConversationId));
+ const pending=timeline.filter(entry=>entry.kind==='request');
  const shown=msgs.length+pending.length+(typing?1:0)+ui.proposals.filter(x=>x.conversationId===conversationId).length;
- // An explicit proposal jump outranks default bottom-scrolling until it settles; a newer jump, conversation change or user scroll cancels it.
+ // Explicit timeline navigation outranks bottom-scrolling until it settles.
  const nav=useRef<{align:()=>void}|null>(null);
  // Initial bottom-scroll timers belong to the visit that scheduled them; a conversation change, jump or user scroll clears them.
  const initScroll=useRef<number[]>([]);const stopInit=()=>{initScroll.current.forEach(clearTimeout);initScroll.current=[]};
@@ -215,6 +278,41 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  useEffect(()=>{nav.current?.align()},[thread]);
  // Each highlight has its own generation: only the newest one's 1400ms timer clears it, and cancelling navigation never cancels a running highlight.
  const flashGen=useRef(0);const showFlash=(key:string)=>{const g=++flashGen.current;setFlash(key);later(1400,()=>{if(flashGen.current===g)setFlash(null)})};
+ useEffect(()=>{
+  if(!noticeDigest||noticeDigest===consumedDigest.current||!conversationId||conversationId!==ws.primaryConversationId)return;
+  consumedDigest.current=noticeDigest;
+  const {id}=noticeDigest,cid=conversationId,v=visit.current.n;stopInit();
+  let ready=false,flashed=false;
+  const current=()=>nav.current===token&&visit.current.n===v;
+  const token={align:()=>{
+   if(!current()||!ready||flashed)return;
+   const el=scrollRef.current,node=el?.querySelector<HTMLElement>(`[data-mid="${id}"]`);
+   if(!el||!node?.querySelector('[data-digest]'))return;
+   el.scrollTop=Math.max(0,node.offsetTop-100);flashed=true;showFlash(id);
+   later(1400,()=>{if(current())nav.current=null});
+  }};
+  nav.current=token;
+  void (async()=>{
+   try{
+    let page=await loadMessages(cid);if(!current())return;
+    if(!page.inboxAnalysisIds?.includes(id))throw Error();
+    let items=page.items;
+    const found=()=>items.some(m=>m.id===id&&m.inboxAnalysis?.digest);
+    for(let i=0;!found()&&page.nextBefore&&i<3;i++){
+     page=await loadMessages(cid,page.nextBefore);if(!current())return;
+     if(!page.inboxAnalysisIds?.includes(id))throw Error();
+     items=[...page.items,...items];
+    }
+    if(!found())throw Error();
+    ready=true;
+    setThread(t=>{const ids=new Set(items.map(m=>m.id)),extra=t.visit===v?t.items.filter(m=>!ids.has(m.id)):[];const first=String(items[0].createdAt||'');
+     return {visit:v,items:[...extra.filter(m=>String(m.createdAt||'')<first),...items,...extra.filter(m=>String(m.createdAt||'')>=first)]}});
+    if(!threadRef.current.items[0]||String(items[0]?.createdAt)<String(threadRef.current.items[0].createdAt))setHasMore(page.hasMore);
+    requestAnimationFrame(token.align);
+   }catch{if(current()){nav.current=null;notify(zh?'暂时无法定位这条动态':'Could not locate this update','error')}}
+  })();
+  return()=>{if(nav.current===token)nav.current=null};
+ },[noticeDigest,conversationId,ws.primaryConversationId,notify,zh]); // eslint-disable-line react-hooks/exhaustive-deps
  const jumpTo:Ctx['jumpTo']=match=>{cancelNav();const m=msgs.find(match);const el=scrollRef.current;if(!m||!el)return;const node=el.querySelector(`[data-mid="${m.id}"]`) as HTMLElement|null;if(!node)return;el.scrollTo({top:Math.max(0,node.offsetTop-100),behavior:'smooth'});showFlash(m.id)};
  // The panel detail stays open; the target conversation loads, then the exact [data-pid] anchor is scrolled to and flashed (1400ms).
  const jumpToProposal:Ctx['jumpToProposal']=(pid,conv)=>{stopInit();const key='prop:'+pid;const target=conv||conversationId;const switching=!!conv&&conv!==conversationId;
@@ -238,7 +336,7 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  const sideTitle=conversationId&&ws.primaryConversationId&&conversationId!==ws.primaryConversationId?(ws.conversations.find(c=>c.id===conversationId)?.title||''):'';
  const capsuleText=happy?XL.hi:{think:XL.capThink,work:XL.capWork(m.running),wait:XL.capWait,idle:XL.capIdle}[m.mode];
  const executablePick=(pendPick?.k==='work'&&!!pendPick.optionId&&draft.trim()===pendPick.label&&(!quote||quote===pendPick.quote))||(pendPick?.k==='idea'&&draft.trim()===pendPick.label);
- const canSend=!!(draft.trim()||refs.length||quote||attachments.length)&&!(replying&&executablePick);
+ const canSend=!!(draft.trim()||refs.length||quote||attachments.length||skill)&&!(replying&&executablePick&&!skill);
  const circle:React.CSSProperties={width:32,height:32,flex:'none',display:'flex',alignItems:'center',justifyContent:'center',border:'none',borderRadius:'50%',transition:'background 250ms ease-out, color 250ms ease-out, transform 250ms ease-out'};
  const menuItems=[...decs.map(d=>({id:d.id,title:d.q,status:T.st.decide})),...ins.map(i=>({id:i.id,title:i.title,status:i.status})),...gal.map(g=>({id:g.id,title:g.title,status:g.kind}))];
  const lastRef=refs[refs.length-1];const sugg=lastRef?(decs.find(d=>d.id===lastRef)?.opts.map(o=>o.label)||[]):[];
@@ -254,19 +352,22 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
  let precedingTime:string|undefined;
  const timeMeta=(at?:string)=>{const show=messageTime.showsSeparator(at,precedingTime);precedingTime=at;if(!show)return null;return <div data-msg-time style={metaStyle}>{zh?messageTime.label(at,timeNow):fmtStamp(at,false)}</div>};
  const sourceMeta=(at?:string,source?:string)=>{const from=fmtStamp(source,zh);if(!from||source===at)return null;return <div data-source-time style={{fontSize:12,lineHeight:'16px',color:'var(--text3)',overflowWrap:'anywhere'}}>{zh?'来源':'From'} {from}</div>};
- const userBubble=(id:string,content:string,ctxIds:string[]|undefined,stamp?:string)=>{const {quote:q,text}=splitQuote(content);return <div key={'u'+id} data-mid={id} style={wrap(id)}>{timeMeta(stamp)}<div style={{display:'flex',justifyContent:'flex-end'}}><div style={{maxWidth:'78%',background:'var(--userBubble)',padding:'10px 14px',borderRadius:'var(--r-bubble)',display:'flex',flexDirection:'column',gap:4}}>
+ // Display projection only: a leading canonical `/skill:name` becomes a read-only capsule; stored/sent bytes are unchanged.
+ const userBubble=(id:string,content:string,ctxIds:string[]|undefined,stamp?:string)=>{const sk=parseSentSkill(content);const {quote:q,text}=sk?{quote:sk.quote,text:sk.text}:splitQuote(content);return <div key={'u'+id} data-mid={id} style={wrap(id)}>{timeMeta(stamp)}<div style={{display:'flex',justifyContent:'flex-end'}}><div style={{maxWidth:'78%',background:'var(--userBubble)',padding:'10px 14px',borderRadius:'var(--r-bubble)',display:'flex',flexDirection:'column',gap:4}}>
   {q?<div style={{display:'flex',gap:6,fontSize:12,color:'var(--text2)',padding:'6px 10px',margin:'-4px -8px 2px',borderRadius:10,background:'var(--hover)'}}><I n="quotes" style={{fontSize:12,flex:'none',marginTop:3}}/><span style={{display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden'} as React.CSSProperties}>{q}</span></div>:null}
   {(ctxIds||[]).map(r=><Hv key={r} onClick={()=>{const d=ws.inbox.some(x=>x.id===r);const t=ws.tasks.some(x=>x.id===r);openDetail({type:t?'task':d?'ins':'ins',id:r})}} style={{all:'unset',cursor:'pointer',display:'flex',gap:8,fontSize:12,color:'var(--text2)',minWidth:0}} hover={{color:'var(--text)'}}><span style={{color:'var(--text3)',flex:'none'}}>{T.insightRef}</span><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{titleOf(r)}</span></Hv>)}
-  {text?<span style={{whiteSpace:'pre-wrap',textWrap:'pretty'} as React.CSSProperties}>{text}</span>:null}</div></div></div>};
+  {text||sk?<span style={{whiteSpace:'pre-wrap',textWrap:'pretty',...(sk?{overflowWrap:'anywhere',minWidth:0}:{})} as React.CSSProperties}>{sk?<SentSkill name={sk.name}/>:null}{text}</span>:null}</div></div></div>};
 
  const rows:React.ReactNode[]=[];
  // Email proposals are placed in the timeline at their creation time, among the server messages.
  const props=ui.proposals.filter(x=>x.conversationId===conversationId).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));let pi=0;
  // WeSync: compare adjacent rendered events; only first, 15-minute gaps or day boundaries get a separator.
  const flush=(until?:string)=>{while(pi<props.length&&(!until||props[pi].createdAt<=until)){const x=props[pi++];rows.push(<div key={'p'+x.id} data-pid={x.id} style={{...wrap('prop:'+x.id),animation:'none'}}>{timeMeta(x.createdAt)}<div style={{display:'flex',flexDirection:'column',gap:16}}><ProposalBlocks ctx={ctx} p={x}/></div></div>)}};
- for(const msg of msgs){const at=msg.createdAt;flush(at);
+ for(const entry of timeline){const at=entry.at;flush(at);
+  if(entry.kind==='request'){const r=entry.request;rows.push(userBubble(r.requestId,r.message,r.refs,at));if(!inFlight(r))rows.push(<RequestCard key={'r'+r.requestId} ctx={ctx} r={r}/>);continue}
+  const msg=entry.message;
   const anyMsg=msg as any;
-  if(msg.role==='user'){const rec=anyMsg.requestId?ui.requests.find(r=>r.requestId===anyMsg.requestId):undefined;rows.push(userBubble(msg.id,msg.content,rec?rec.refs:anyMsg.contextIds,at));if(rec&&['failed','unknown','partial','cancelled'].includes(rec.status))rows.push(<RequestCard key={'r'+rec.requestId} ctx={ctx} r={rec}/>);continue}
+  if(msg.role==='user'){const rec=entry.request;rows.push(userBubble(msg.id,msg.content,rec?rec.refs:anyMsg.contextIds,at));if(rec&&['failed','unknown','partial','cancelled'].includes(rec.status))rows.push(<RequestCard key={'r'+rec.requestId} ctx={ctx} r={rec}/>);continue}
   if(msg.role!=='assistant')continue;
   const workId=anyMsg.chatWork?.workId;const work=workId?(ws.work?.works||[]).find((w:any)=>w.id===workId):null;
   if(work){rows.push(<div key={msg.id} data-mid={msg.id} style={wrap(msg.id)}>{timeMeta(at)}<WorkEvent ctx={ctx} work={work} label={T.taskCreated} onOpen={()=>openDetail({type:'task',id:work.id})}/></div>);continue}
@@ -279,16 +380,16 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
   </div><button type="button" onClick={()=>quoteFrom(text)} aria-label="Quote reply" title={XL.quoteReply} style={quoteBtn(hoverMid===msg.id)}><I n="arrow-bend-up-left" style={{fontSize:14}}/></button></div><div style={{marginTop:anyMsg.inboxAnalysis||anyMsg.ideaAnalysis?6:0}}><MessageActions ctx={ctx} message={anyMsg}/></div></div>);
  }
  flush();
- for(const r of pending){rows.push(userBubble(r.requestId,r.message,r.refs,r.createdAt));if(inFlight(r))continue;rows.push(<RequestCard key={'r'+r.requestId} ctx={ctx} r={r}/>)}
 
  const panelStyle:React.CSSProperties={width:ui.panel?W:0,flex:'none',overflow:'hidden',background:'var(--panel)',boxShadow:ui.panel?'inset 0.5px 0 0 var(--line)':'none',transition:drag||resizing?'none':'width 250ms ease-out'};
- const hasAdd=tab==='settings'&&!detail&&!setSub&&(setPage==='connections'||setPage==='skills');
+ // Skills are a read-only local catalog (no create contract); only Connections has an add flow.
+ const hasAdd=tab==='settings'&&!detail&&!setSub&&setPage==='connections';
  return <Frame theme={ui.theme} winRef={winRef}>
   <UpdateNotice zh={zh}/>
   <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',position:'relative'}}>
-   <div data-drag-region="" style={{height:100,flex:'none',display:'grid',gridTemplateColumns:'1fr auto 1fr',alignItems:'start',padding:'18px 16px 0 18px'}}>
+   <div data-drag-region="" style={{minHeight:74,flex:'none',display:'grid',gridTemplateColumns:'1fr auto 1fr',alignItems:'start',padding:'18px 16px 0 18px'}}>
     <div style={{display:'flex',gap:8,paddingTop:2}}>{native?null:<><span style={{width:12,height:12,borderRadius:'50%',background:'#ff5f57',boxShadow:'inset 0 0 0 0.5px rgba(0,0,0,.15)'}}/><span style={{width:12,height:12,borderRadius:'50%',background:'#febc2e',boxShadow:'inset 0 0 0 0.5px rgba(0,0,0,.15)'}}/><span style={{width:12,height:12,borderRadius:'50%',background:'#28c840',boxShadow:'inset 0 0 0 0.5px rgba(0,0,0,.15)'}}/></>}</div>
-    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,paddingBottom:12}}>
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,paddingBottom:8}}>
      {bk==='classic'?<Hv onClick={poke} aria-label="CyberMe" style={{width:48,height:48,padding:0,border:'none',borderRadius:'50%',background:'var(--accent)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:5,cursor:'pointer',boxShadow:'0 8px 20px -8px var(--accent)',transition:'transform 250ms ease-out'}} hover={{transform:'scale(1.06)'}} press={{transform:'scale(0.94)'}}>
       <span style={{display:'flex',alignItems:'center',gap:7,height:10,transform:m.mode==='think'?'translate(3px,-2px)':'none',transition:'transform 250ms ease-out'}}>{[0,1].map(i=><span key={i} style={happy?{width:8,height:5,borderRadius:'8px 8px 0 0',border:'2px solid #fff',borderBottom:'none',boxSizing:'border-box'}:{width:6,height:10,borderRadius:3,background:'#fff',animation:'cmBlink 4.5s ease-out infinite'}}/>)}</span>
       <span style={m.mode==='think'?{width:6,height:2,borderRadius:2,background:'#fff',opacity:.9,transition:'all 250ms ease-out'}:{width:happy?12:10,height:happy?6:5,borderRadius:'0 0 6px 6px',background:'#fff',opacity:.9,transition:'all 250ms ease-out'}}/>
@@ -303,7 +404,7 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
    <div ref={scrollRef} className="cm-scroll cm-chat-scroll" onScroll={e=>{const el=e.currentTarget;const far=el.scrollHeight-el.scrollTop-el.clientHeight>240;if(far!==showDown)setShowDown(far);if(sel)setSel(null);if(el.scrollTop<40&&hasMore)void older()}} onWheel={cancelNav} onTouchMove={cancelNav} onKeyDown={cancelNav} onMouseUp={()=>setTimeout(checkSel,0)} onMouseDown={()=>{cancelNav();if(sel)setSel(null)}} style={{flex:1,minHeight:0,overflowY:'auto',position:'relative'}}>
     <div className="cm-chat-column" style={{padding:'calc(var(--chat-top-fade) + 8px) 0 28px',display:'flex',flexDirection:'column',gap:14}}>
      {hasMore?<Hv onClick={()=>void older()} style={{alignSelf:'center',height:26,padding:'0 10px',border:'none',borderRadius:13,background:'transparent',color:'var(--text3)',font:'inherit',fontSize:12,cursor:'pointer'}} hover={{background:'var(--hover)',color:'var(--text)'}}>{loadingOlder?'…':T.loadOlder}</Hv>:null}
-     {!rows.length&&!typing?<div style={{paddingTop:'24vh',display:'flex',flexDirection:'column',alignItems:'center',gap:6,textAlign:'center',animation:'cmIn 250ms ease-out both'}}><div style={{fontSize:20,fontWeight:600,letterSpacing:'-0.01em'}}>{T.greeting(ws.settings.identity.name||'')}</div><div style={{color:'var(--text2)'}}>{T.greetSub}</div></div>:null}
+     {!rows.length&&!typing?<div style={{paddingTop:'24vh',display:'flex',flexDirection:'column',alignItems:'center',gap:6,textAlign:'center',animation:'cmIn 250ms ease-out both'}}><div style={{fontSize:20,fontWeight:600,letterSpacing:'-0.01em'}}>{T.greeting(ws.settings.identity.name||'')}</div></div>:null}
      {rows}
      {typing?<div style={{display:'flex',gap:10,alignItems:'flex-start',animation:'cmIn 250ms ease-out both'}}><div style={{width:'fit-content',...bubble,padding:'0 14px',display:'flex',gap:4,height:40,alignItems:'center',animation:'cmIn 250ms ease-out both'}}>{[0,.15,.3].map(d=><span key={d} style={{width:6,height:6,borderRadius:'50%',background:'var(--text3)',animation:`cmDot 1.2s ease-out ${d}s infinite`}}/>)}</div></div>:null}
     </div>
@@ -313,7 +414,8 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
    <div style={{flex:'none',padding:'0 0 20px',position:'relative'}}>
     {showDown?<Hv onClick={()=>{cancelNav();scrollRef.current?.scrollTo({top:scrollRef.current.scrollHeight,behavior:'smooth'})}} aria-label="Scroll to latest" style={{position:'absolute',left:'50%',top:-46,marginLeft:-17,width:34,height:34,borderRadius:'50%',border:'none',background:'var(--composer)',boxShadow:'0 0 0 0.5px var(--lineStrong), 0 4px 12px -4px rgba(0,0,40,.18)',color:'var(--text2)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',animation:'cmIn 250ms ease-out both'}} hover={{color:'var(--text)'}}><I n="arrow-down" style={{fontSize:16}}/></Hv>:null}
     <div className="cm-chat-column cm-composer-column" style={{display:'flex',flexDirection:'column',gap:10,position:'relative'}}>
-     {menu?<div style={{position:'absolute',left:0,bottom:'calc(100% + 8px)',width:'min(420px, 100%)',maxHeight:360,overflowY:'auto',background:'var(--composer)',borderRadius:'var(--r-menu)',boxShadow:'0 0 0 0.5px var(--lineStrong), 0 12px 32px -8px rgba(0,0,40,.22)',padding:6,display:'flex',flexDirection:'column',gap:2,transformOrigin:'bottom left',animation:'cmPop 250ms ease-out both',zIndex:3}}>
+     {slashOpen?<SkillMenu zh={zh} items={skillItems} active={skillActive} status={skillCat.status} onHover={i=>setSlash(x=>({...x,active:i}))} onChoose={chooseSkill} onRetry={()=>{void fetchSkills().catch(()=>{});focus()}}/>:null}
+     {menu&&!slashOpen?<div style={{position:'absolute',left:0,bottom:'calc(100% + 8px)',width:'min(420px, 100%)',maxHeight:360,overflowY:'auto',background:'var(--composer)',borderRadius:'var(--r-menu)',boxShadow:'0 0 0 0.5px var(--lineStrong), 0 12px 32px -8px rgba(0,0,40,.22)',padding:6,display:'flex',flexDirection:'column',gap:2,transformOrigin:'bottom left',animation:'cmPop 250ms ease-out both',zIndex:3}}>
       <div style={{padding:'6px 10px 4px',fontSize:12,color:'var(--text3)'}}>{T.attachH}</div>
       {!menuItems.length?<div style={{padding:'6px 10px 10px',color:'var(--text2)'}}>{T.insEmpty}</div>:null}
       {menuItems.map(mi=><Hv key={mi.id} onClick={()=>discuss(mi.id)} style={{all:'unset',boxSizing:'border-box',cursor:'pointer',padding:'8px 10px',borderRadius:'var(--r-menuItem)',display:'flex',flexDirection:'column',gap:2}} hover={{background:'var(--hover)'}}><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{mi.title}</span><span style={{fontSize:12,color:'var(--text3)'}}>{mi.status}</span></Hv>)}
@@ -330,7 +432,17 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
       </div>:null}
       <div style={{display:'flex',alignItems:'flex-end',gap:6}}>
        <button type="button" onClick={()=>setMenu(x=>!x)} aria-label="Attach insight" style={{...circle,cursor:'pointer',background:menu?'var(--selected)':'var(--hover)',color:'var(--text2)',transform:menu?'rotate(45deg)':'none'}}><I n="plus" style={{fontSize:16}}/></button>
-       <textarea ref={taRef} value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Escape')setMenu(false);if(e.key!=='Enter'||e.nativeEvent.isComposing)return;const go=ui.cfg.enterSend?!e.shiftKey:(e.metaKey||e.ctrlKey);if(go){e.preventDefault();void send()}}} placeholder={T.placeholder} rows={1} style={{flex:1,minWidth:0,boxSizing:'border-box',resize:'none',border:'none',background:'transparent',color:'var(--text)',font:'inherit',fontSize:14,lineHeight:'20px',padding:'6px 4px',maxHeight:120,fieldSizing:'content'} as React.CSSProperties}/>
+       {skill?<SkillToken zh={zh} skill={skill} onRemove={removeSkill}/>:null}
+       <textarea ref={taRef} value={draft} onChange={e=>{setDraft(e.target.value);const t=e.target,c=t.selectionStart===t.selectionEnd?t.selectionStart:-1;setSlash(x=>({...x,caret:c,dismissed:null}))}} onSelect={e=>syncCaret(e.currentTarget)} onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onBlur={()=>{composing.current=false;setSlash(x=>x.caret===-1?x:{...x,caret:-1})}} onFocus={e=>syncCaret(e.currentTarget)}
+        aria-autocomplete={slashOpen?'list':undefined} aria-controls={slashOpen&&skillItems.length?SKILL_LIST_ID:undefined} aria-activedescendant={slashOpen&&skillItems.length?skillOptionId(skillActive):undefined}
+        onKeyDown={e=>{if(composing.current||e.nativeEvent.isComposing||e.nativeEvent.keyCode===229)return;
+        if(slashOpen){
+         if(e.key==='Escape'){e.preventDefault();setSlash(x=>({...x,dismissed:sqToken}));return}
+         if(skillItems.length&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();const n=skillItems.length;setSlash(x=>({...x,active:(Math.min(x.active,n-1)+(e.key==='ArrowDown'?1:n-1))%n}));return}
+         if(skillItems.length&&(e.key==='Tab'||e.key==='Enter')&&!e.shiftKey&&!e.altKey&&!e.metaKey&&!e.ctrlKey){e.preventDefault();if(!e.repeat)chooseSkill(skillItems[skillActive]);return}
+        }
+        if(skill&&e.key==='Backspace'&&!e.altKey&&!e.metaKey&&!e.ctrlKey){const t=e.currentTarget;if(t.selectionStart===0&&t.selectionEnd===0){e.preventDefault();setSkill(null);return}}
+        if(e.key==='Escape')setMenu(false);if(e.key!=='Enter')return;const go=ui.cfg.enterSend?!e.shiftKey:(e.metaKey||e.ctrlKey);if(go){e.preventDefault();if(!e.repeat)void send()}}} placeholder={T.placeholder} rows={1} style={{flex:1,minWidth:0,boxSizing:'border-box',resize:'none',border:'none',background:'transparent',color:'var(--text)',font:'inherit',fontSize:14,lineHeight:'20px',padding:'6px 4px',maxHeight:120,fieldSizing:'content'} as React.CSSProperties}/>
        <button type="button" onClick={()=>{if(canSend)void send()}} aria-label="Send" aria-disabled={!canSend} style={{...circle,cursor:canSend?'pointer':'default',background:canSend?'var(--accent)':'var(--hover)',color:canSend?'var(--onAccent)':'var(--text3)'}}><I n="arrow-up" style={{fontSize:16}}/></button>
       </div>
      </div>
@@ -350,14 +462,14 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
       {keys.map(k=><button key={k} type="button" onClick={()=>openTab(k)} style={{position:'relative',zIndex:1,width:TW,height:28,display:'flex',alignItems:'center',justifyContent:'center',gap:6,border:'none',borderRadius:'var(--r-segOn)',background:'transparent',font:'inherit',fontSize:14,color:tab===k?'var(--text)':'var(--text2)',fontWeight:tab===k?500:400,cursor:'pointer',whiteSpace:'nowrap',transition:'color 250ms ease-out'}}><span>{lab[k]}</span></button>)}
      </div>
      <div style={{display:'flex',justifyContent:'flex-end',gap:2}}>
-      {hasAdd?<Hv onClick={()=>setPage==='skills'?goSet('skills',{type:'new'}):goSet('connections',{type:'add'})} aria-label="Add" style={{width:30,height:30,display:'flex',alignItems:'center',justifyContent:'center',border:'none',borderRadius:'var(--r-sm)',background:'transparent',color:'var(--text2)',cursor:'pointer',animation:'cmIn 250ms ease-out both'}} hover={{background:'var(--hover)',color:'var(--text)'}}><I n="plus" style={{fontSize:16}}/></Hv>:null}
+      {hasAdd?<Hv onClick={()=>goSet('connections',{type:'add'})} aria-label="Add" style={{width:30,height:30,display:'flex',alignItems:'center',justifyContent:'center',border:'none',borderRadius:'var(--r-sm)',background:'transparent',color:'var(--text2)',cursor:'pointer',animation:'cmIn 250ms ease-out both'}} hover={{background:'var(--hover)',color:'var(--text)'}}><I n="plus" style={{fontSize:16}}/></Hv>:null}
       <Hv onClick={()=>setUI({panel:false})} aria-label="Hide panel" style={{width:30,height:30,display:'flex',alignItems:'center',justifyContent:'center',border:'none',borderRadius:'var(--r-sm)',background:'transparent',color:'var(--text2)',cursor:'pointer'}} hover={{background:'var(--hover)',color:'var(--text)'}}><I n="sidebar-simple" style={{fontSize:16,transform:'scaleX(-1)'}}/></Hv>
      </div>
     </div>
-    <div className="cm-scroll" style={{flex:1,minHeight:0,overflowY:'auto',padding:'8px 20px 32px',boxSizing:'border-box'}}>
+    <div className="cm-scroll" style={{flex:1,minHeight:0,overflowY:'auto',overflowAnchor:!detail&&tab==='today'?'none':undefined,padding:'8px 20px 32px',boxSizing:'border-box'}}>
      {/* Shared reading width for every tab and detail: at most 720 (the former 760 panel minus its 20px gutters), centered so extra panel width becomes equal side whitespace; the scroll bar stays at the panel edge. */}
      <div style={{display:'flex',flexDirection:'column',gap:12,width:'100%',maxWidth:720,margin:'0 auto'}}>
-      {detail?.type==='ins'||detail?.type==='dec'?<InsightDetail ctx={ctx} id={detail.id} discuss={discuss}/>:null}
+      {detail?.type==='ins'||detail?.type==='dec'?<InsightDetail ctx={ctx} id={detail.id}/>:null}
       {detail?.type==='task'?<TaskDetail ctx={ctx} id={detail.id} discuss={discuss}/>:null}
       {!detail&&tab==='today'?<Brief ctx={ctx} decs={decs} ins={ins} gal={gal}/>:null}
       {!detail&&tab==='tasks'?<Tasks ctx={ctx}/>:null}
@@ -373,8 +485,13 @@ function Shell({ws,ui,zh,lang,T,XL,vw,refresh,notify,toast,offline}:{ws:Workspac
 // Chat request outcome card: failed / unknown / partial / stopped are kept visible and truthful.
 function RequestCard({ctx,r}:{ctx:Ctx;r:ChatRecord}){
  const {T}=ctx;const notSent=unsent(r);const status=r.status==='cancelled'?'cancelled':r.status==='partial'?'partial':r.status==='failed'||notSent?'failed':'unknown';
- const failureText=r.failureCode==='model_quota_exceeded'?T.quotaReply:r.failureCode==='model_runtime_missing'?(ctx.zh?'模型组件缺失，请更新应用后重试。':'A model component is missing. Update the app and retry.'):r.failureCode==='model_timeout'?(ctx.zh?'模型响应超时，请重试。':'The model timed out. Please retry.'):T.failedReply;
- const text=notSent?(ctx.zh?'未发送：本地保存失败，内容已保留。':'Not sent: saving locally failed. Your message is kept.'):r.status==='failed'?failureText:r.status==='partial'?T.partialReply:r.status==='cancelled'?T.stoppedReply:T.unknownReply;
+ // Each mounted partial is re-read once (GET only, never resent) so a cached failure category picks up the server's current mapping.
+ useEffect(()=>{if(r.status==='partial')void recover(r.requestId)},[r.requestId,r.status]);
+ const say=(zh:string,en:string)=>ctx.zh?zh:en;
+ const reason=r.failureCode==='processing_deadline'?say('处理超时，本轮已停止。','Processing timed out; this turn stopped.'):r.failureCode==='model_timeout'?say('模型回复超时。','The model timed out.'):r.failureCode==='preparation_timeout'?say('长会话整理超时，本轮未发送，可重试。','Preparing the long conversation timed out; this turn was not sent and can be retried.'):r.failureCode==='server_interrupted'?say('服务重启中断了回复。','The service restarted before replying.'):r.failureCode==='chat_interrupted'?T.stoppedReply:'';
+ const scopeConflict=r.failureCode?.startsWith('scope_');
+  const failureText=reason||(scopeConflict?say('旧版记忆范围限制使这条消息未发送给模型。记忆现已统一为全局，可以重试。','An old memory scope rule kept this message from the model. Memory is now global, so you can retry.'):r.failureCode==='model_quota_exceeded'?T.quotaReply:r.failureCode==='model_runtime_missing'?say('模型组件缺失，请更新应用后重试。','A model component is missing. Update the app and retry.'):T.failedReply);
+ const text=notSent?say('未发送：本地保存失败，内容已保留。','Not sent: saving locally failed. Your message is kept.'):status==='failed'?failureText:status==='partial'?[reason,T.partialReply].filter(Boolean).join(ctx.zh?'':' '):status==='cancelled'?T.stoppedReply:T.unknownReply;
  const tone={failed:['--errSoft','--errText'],unknown:['--warnSoft','--warnText'],partial:['--warnSoft','--warnText'],cancelled:['--hover','--text2']}[status]!;
  return <div style={{display:'flex',gap:10,alignItems:'flex-start',animation:'cmIn 250ms ease-out both'}}><div style={{flex:1,minWidth:0,maxWidth:'85%',background:'var(--aiBubble)',boxShadow:'0 0 0 0.5px var(--aiLine)',borderRadius:'var(--r-bubble)',padding:'12px 12px 12px 14px',display:'flex',flexDirection:'column',gap:10}}>
   <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:'8px 12px'}}>

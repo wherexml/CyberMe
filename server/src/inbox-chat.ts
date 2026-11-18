@@ -2,10 +2,11 @@ import {db,get,list,put,remove,restore,meta,setMeta,now,hash,settings} from './s
 import {dispositionOf} from '../../shared/inbox-surfacing';
 import {snoozeActive} from '../../shared/inbox-attention';
 import {DIGEST_LINES,deliveryModes,digestDue,heldRows,inboxMatter,inboxTier,ledgerGet,ledgerPut,markDigest,planDelivery,type Tier} from './attention-delivery';
-import {ideaReminderDeliverable} from './ideas-chat';
+import {ideaReminderValidator} from './ideas-chat';
+import {readyIdeaVisualFingerprint} from './insight-visuals';
 import {onEntityChange} from './entity-events';
 
-// A main-chat reminder is a user action, not an Inbox status feed.
+// Main-chat delivery combines actionable requests and read-only insight updates.
 const kind='inbox-analysis-v1';
 const line=(text:any)=>String(text||'').replace(/[\r\n]+/g,' ').replace(/[\\`*_[\]<>#]/g,'\\$&');
 function meaningful(text:unknown){
@@ -48,20 +49,22 @@ function digestLine(row:any,en:boolean){
  const item=get('inbox',row.entityId),value:any=project(item);if(!value||value.tier==='recovery')return;
  return {occurredAt:value.occurredAt,line:clip(line(item.sender||item.title),16)+(en?': ':'：')+clip(line(requestText(item).replace(/\s+/g,' ')),36)};
 }
-const entryLive=(e:any)=>{
- if(e.kind==='idea')return ideaReminderDeliverable(e.entityId);
+const entryLive=(e:any,ideaValid:ReturnType<typeof ideaReminderValidator>)=>{
+ if(e.kind==='idea')return ideaValid(e.entityId,e.revision,e.visualFingerprint);
  const item=get('inbox',e.entityId);if(item?.attention?.reason==='reevaluating_open')return inboxMatter(item).requestRevision===e.revision;
  const v:any=project(item);return !!v&&v.matterKey===e.matterKey&&v.revision===e.revision;
 };
 function digestText(entries:any[],more:number,en:boolean){
- const total=entries.length+more;
- return [en?`${total} item${total===1?'':'s'} waiting for you:`:`有 ${total} 件事等你看：`,...entries.map(e=>'- '+e.line),...(more?[en?`${more} more in Decisions.`:`另有 ${more} 件在决策里。`]:[])].join('\n');
+ return [en?'Updates':'最新动态',...entries.map(e=>'- '+e.line)].join('\n');
 }
 function syncDigests(conversationId:string){
  let changed=0;const en=settings().identity.language==='en',modes=deliveryModes();
+ // One fresh source snapshot per sync, never one full scan per held/delivered line.
+ let validateIdea:ReturnType<typeof ideaReminderValidator>|undefined;
+ const ideaValid=(id:string,revision?:string,visualFingerprint?:string)=>(validateIdea??=ideaReminderValidator())(id,revision,visualFingerprint);
  // Every line is rechecked: a resolved, snoozed or changed matter leaves the digest, and an empty digest is withdrawn.
  for(const m of list('messages').filter(x=>x.inboxAnalysis?.kind===kind&&x.inboxAnalysis.digest)){
-  const entries=m.inboxAnalysis.entries||[],live=entries.filter(entryLive);if(live.length===entries.length)continue;
+  const entries=m.inboxAnalysis.entries||[],live=entries.filter((e:any)=>entryLive(e,ideaValid));if(live.length===entries.length)continue;
   if(!live.length){remove('messages',m.id);changed++;continue}
   put('messages',{...m,content:digestText(live,m.inboxAnalysis.more||0,en),inboxAnalysis:{...m.inboxAnalysis,entries:live}});changed++;
  }
@@ -70,13 +73,19 @@ function syncDigests(conversationId:string){
   const item=row.kind==='inbox'?get('inbox',row.entityId):undefined;
   // A snoozed or re-judged matter keeps waiting; held work is never dropped while it is still open.
   if(item&&(snoozeActive(item)||item.attention?.reason==='reevaluating_open'))continue;
-  const value:any=row.kind==='inbox'?project(item):undefined,valid=row.kind==='idea'?ideaReminderDeliverable(row.entityId):!!value&&value.matterKey===row.matterKey&&value.revision===row.revision;
+  const value:any=row.kind==='inbox'?project(item):undefined,valid=row.kind==='idea'?ideaValid(row.entityId,row.revision):!!value&&value.matterKey===row.matterKey&&value.revision===row.revision;
   if(!valid){ledgerPut(row.matterKey,row.revision,{kind:row.kind,entityId:row.entityId,tier:row.tier,decision:'suppressed',reason:'no_longer_valid'});changed++;continue}
-  ready.push(row);
+  const visualFingerprint=row.kind==='idea'?readyIdeaVisualFingerprint(get('ideas',row.entityId)):undefined;
+  // A valid held insight can still be waiting for generation or a newer reviewed graph.
+  if(row.kind==='idea'&&!visualFingerprint)continue;
+  ready.push({...row,visualFingerprint});
  }
  if(!ready.length||!digestDue(modes))return changed;
+ // Withdrawal above remains immediate. A due background digest can wait
+ // until the primary chat has finished; it is never part of the answer.
+ if(db.prepare("SELECT 1 FROM chat_requests WHERE state='running' AND json_extract(data,'$.conversationId')=? LIMIT 1").get(conversationId))return changed;
  ready.sort((a,b)=>Number(b.tier==='urgent')-Number(a.tier==='urgent')||String(a.at).localeCompare(String(b.at))||String(a.id).localeCompare(String(b.id)));
- const entries=ready.slice(0,DIGEST_LINES).flatMap(row=>{const l=digestLine(row,en);return l?[{kind:row.kind,entityId:row.entityId,matterKey:row.matterKey,revision:row.revision,...l}]:[]});
+ const entries=ready.slice(0,DIGEST_LINES).flatMap(row=>{const l=digestLine(row,en);return l?[{kind:row.kind,entityId:row.entityId,matterKey:row.matterKey,revision:row.revision,visualFingerprint:row.visualFingerprint,...l}]:[]});
  if(!entries.length)return changed;
  const more=ready.length-entries.length,at=now(),id='inbox-digest-'+hash(entries.map(e=>[e.matterKey,e.revision])).slice(0,32);
  put('messages',{id,conversationId,role:'assistant',content:digestText(entries,more,en),inboxAnalysis:{kind,digest:true,entries,more,surfacedAt:at}});
@@ -134,6 +143,6 @@ export function startInboxChat(){
  // Source sync commits many records across async reads. Coalesce them and let
  // pending HTTP/health requests run before projecting the full Inbox again.
  const schedule=()=>{if(!scheduled){scheduled=true;setTimeout(run,1000).unref()}};
- onEntityChange(type=>{if(['inbox','inbox_triages','conversations','inbox_source_rules','inbox_feedback','connections','attention_ledger'].includes(type))schedule()});
+ onEntityChange(type=>{if(['inbox','inbox_triages','conversations','inbox_source_rules','inbox_feedback','connections','attention_ledger','insight_visuals'].includes(type))schedule()});
  schedule();const timer=setInterval(run,3000);timer.unref();return timer;
 }

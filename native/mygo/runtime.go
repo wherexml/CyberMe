@@ -134,12 +134,12 @@ func runtimeStart(root *os.Root, name, entry string) error {
 	cmd.Dir = runtimeCodeRoot
 	// Do not inherit fixture ports, alternate data roots or test-only configuration.
 	for _, v := range os.Environ() {
-		if !strings.HasPrefix(v, "OPSTWIN_") && !strings.HasPrefix(v, "NODE_OPTIONS=") && !strings.HasPrefix(v, "NODE_PATH=") && !strings.HasPrefix(v, "PATH=") {
+		if !strings.HasPrefix(v, "OPSTWIN_") && !strings.HasPrefix(v, "CYBERME_FOLLOWUP_") && !strings.HasPrefix(v, "NODE_OPTIONS=") && !strings.HasPrefix(v, "NODE_PATH=") && !strings.HasPrefix(v, "PATH=") {
 			cmd.Env = append(cmd.Env, v)
 		}
 	}
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(runtimeNode)+":"+os.Getenv("HOME")+"/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
-	cmd.Env = append(cmd.Env, "OPSTWIN_NO_BACKGROUND=1", "OPSTWIN_INBOX_BACKGROUND=1", "OPSTWIN_MEMORY_BACKGROUND=1", "OPSTWIN_IDEAS_BACKGROUND=1", "OPSTWIN_CONNECTION_BACKGROUND=1", "OPSTWIN_API_PORT=46110")
+	cmd.Env = append(cmd.Env, "OPSTWIN_NO_BACKGROUND=1", "OPSTWIN_INBOX_BACKGROUND=1", "OPSTWIN_MEMORY_BACKGROUND=1", "OPSTWIN_IDEAS_BACKGROUND=1", "OPSTWIN_CONNECTION_BACKGROUND=1", "CYBERME_FOLLOWUP_WORKER=1", "OPSTWIN_API_PORT=46110")
 	if runtimeMode == "standalone" {
 		cmd.Env = append(cmd.Env, "OPSTWIN_STANDALONE=1")
 	}

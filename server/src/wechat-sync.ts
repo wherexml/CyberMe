@@ -63,6 +63,21 @@ function message(m:any,owner?:{id:string;names:string[]}){
   return {id:m.id,conversationId:m.conversationId,senderId:m.sender,sender:m.senderDisplayName||m.sender||'微信联系人',at:m.createdAtUnix,text:text===undefined?`[${m.messageTypeLabel||'非文本消息'}]`:text.slice(0,max),messageType:m.messageType,messageTypeLabel:m.messageTypeLabel,messageSubtype:m.messageSubtype,contentDecodeState:m.contentDecodeState,contentTruncated:m.contentTruncated===true||adapterTruncated,cliContentTruncated:m.contentTruncated===true,adapterTruncated,originalLength,self:owner&&typeof m.sender==='string'?m.sender===owner.id:null,mentionsOwner,mentionEvidence:mentionsOwner?'visible-account-name':undefined,directionEvidence:owner?'cli-account-holder-id':'unknown',untrustedSource:true};
 }
 export async function wechatChats(cursor?:string,limit?:unknown){const value=await read(['chats','--limit',String(boundedLimit(limit,20,100)),...cursorArgs(cursor)]);rememberConversations(rows(value),value);return {...pageInfo(value),items:rows(value).map((c:any)=>({id:c.id,name:c.displayName||c.id,isOfficialAccount:c.isOfficialAccount===true,category:wechatCategory(c.id,c.isOfficialAccount,digest(value.source?.identity)),lastAt:c.sortTimestamp,syncFingerprint:digest({id:c.id,at:c.sortTimestamp,summary:c.summary,type:c.lastMessageType,sender:c.lastMessageSender}),summaryTruncated:c.summaryTruncated===true}))};}
+// Follow-up check read: the exact conversation bound at creation (persisted item instead of the
+// interactive one-hour directory lookup). The account hash must match the binding, the connection lease
+// must be identical before and after every await, and every raw row must belong to this conversation.
+// Bounded to one 100-message page; coverage is complete only when that page reaches back to the anchor.
+export async function wechatFollowUpRead(conversation:string,sinceMs:number,accountHash:string){
+  const id=exactId(conversation,'conversation');const lease=requireConnection().updatedAt;
+  const same=()=>{if(requireConnection().updatedAt!==lease)throw new ApiError(409,'connection_changed','连接已变更，请重新读取。');};
+  const value=await read(['messages','list','--conversation',id,'--limit','100','--json']);same();const info=pageInfo(value);
+  if(!accountHash||info.sourceHash!==accountHash)throw new ApiError(409,'wechat_source_changed','微信账号已变化，请重新连接');
+  const owner=await boundOwner(value.source);same();
+  const raw=rows(value),own=raw.filter((m:any)=>m.conversationId===id),items=own.map((m:any)=>message(m,owner));
+  const times=items.map((m:any)=>Number(m.at)).filter(Number.isFinite);const reachedAnchor=!info.hasMore||(times.length>0&&Math.min(...times)*1000<=sinceMs);
+  const reasons=[own.length!==raw.length&&'conversation_mismatch',!info.coverageComplete&&'coverage_incomplete',info.hasWarnings&&'source_warnings',!owner&&'account_holder_unknown',!reachedAnchor&&'window_limited',items.some((m:any)=>m.contentTruncated)&&'content_truncated',items.some((m:any)=>!Number.isFinite(Number(m.at)))&&'timestamp_missing'].filter(Boolean) as string[];
+  return {complete:!reasons.length,reason:reasons.join(','),messages:items.filter((m:any)=>!Number.isFinite(Number(m.at))||Number(m.at)*1000>=sinceMs-60000)};
+}
 export async function wechatMessages(conversation:string,cursor?:string,limit?:unknown){
   const id=verifiedConversation(conversation);const before=requireConnection();const value=await read(['messages','list','--conversation',id,'--limit',String(boundedLimit(limit,50,100)),'--json',...cursorArgs(cursor)]);assertConversationSource(id,value);const owner=await boundOwner(value.source);if(requireConnection().updatedAt!==before.updatedAt)throw new ApiError(409,'connection_changed','连接已变更，请重新读取。');
   return {...pageInfo(value),accountHolderKnown:!!owner,items:rows(value).map((m:any)=>message(m,owner))};

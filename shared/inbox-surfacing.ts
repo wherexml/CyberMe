@@ -61,6 +61,10 @@ export function canForwardRequest(item:any,t:any,now=Date.now()):boolean{
 export function hasNoReplyDecision(item: InboxItem) {return item.triage?.status==='succeeded'&&item.triage.route==='no_reply'&&!item.attentionOverride;}
 export function inboxDisposition(item:InboxItem,at=Date.now()):InboxDisposition {
  if(item.sourceAttentionExcluded&&!['sending','send_unknown'].includes(item.status)&&item.draftPreparation?.status!=='unknown')return {policyVersion:INBOX_PENDING_POLICY,placement:'quiet',primaryReason:item.sourceAttentionReason||'group_mentions_only',reasons:[item.sourceAttentionReason||'group_mentions_only'],recoveryReasons:[],evaluatedAt:new Date(at).toISOString(),canRestore:false};
+ // Mentions-only rule with a verified non-mentioned current request (projection already kept outbound and
+ // human drafts active=false): stale/failed analysis must not make it actionable again.
+ const sr=item.sourceRule;
+ if(sr?.active&&sr.mode==='mentions'&&sr.mentionGate==='not_mentioned'&&!item.attentionOverride&&!['sent','delivered','done','cancelled','archived','dismissed'].includes(item.status))return {policyVersion:INBOX_PENDING_POLICY,placement:'quiet',primaryReason:'source_rule',reasons:['source_rule','mentions_only'],recoveryReasons:[],evaluatedAt:new Date(at).toISOString(),canRestore:false};
  const t=item.triage,ok=t?.status==='succeeded',messages=Array.isArray(item.messages)?item.messages:[];
  const request=ok&&t.requestMessageId?messages.find((m:any)=>m.id===t.requestMessageId):undefined;
  // Jev selects the current request, not the latest unrelated conversation event.

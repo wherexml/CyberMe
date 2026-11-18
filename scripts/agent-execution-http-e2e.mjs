@@ -24,9 +24,9 @@ const node=JSON.stringify(process.execPath),script=s=>`${node} - <<'CYBERME_E2E'
 const networkCommand=script(`const fs=require('node:fs');fetch('http://127.0.0.1:${upstreamPort}/probe',{headers:{Authorization:'Bearer '+process.env.CYBERME_SECRET_TOKEN},redirect:'error'}).then(async r=>{const v=await r.json();if(!r.ok)process.exitCode=1;else fs.writeFileSync('result.txt',v.marker,{mode:0o600});console.log(JSON.stringify(v));console.log(process.env.CYBERME_SECRET_TOKEN);});`);
 const model=createServer(async(req,res)=>{
  let raw='';for await(const c of req)raw+=c;const input=JSON.parse(raw);modelCalls++;if(raw.includes(fixtureKey))providerSawSecret=true;
- const initial=input.messages.find(m=>m.role==='user')?.content;const text=typeof initial==='string'?initial:(initial||[]).map(p=>p.text||'').join('\n');
+ const userIndex=input.messages.findLastIndex(m=>m.role==='user');const initial=input.messages[userIndex]?.content;const text=typeof initial==='string'?initial:(initial||[]).map(p=>p.text||'').join('\n');
  const direct=text.split('当前用户请求：\n').at(-1);const caseName=direct.match(/CASE_([A-Z]+)/)?.[1]||'NONE';
- const tools=input.tools||[],messages=input.messages.filter(m=>m.role==='tool');
+ const tools=input.tools||[],messages=input.messages.slice(userIndex+1).filter(m=>m.role==='tool');
  const haveExecution=tools.some(t=>t.function?.name==='run_command');
  res.writeHead(200,{'content-type':'text/event-stream'});
  const chunk=(delta,finish=null)=>res.write('data: '+JSON.stringify({id:'fixture',object:'chat.completion.chunk',created:1,model:'public-command',choices:[{index:0,delta,finish_reason:finish}]})+'\n\n');
@@ -67,7 +67,12 @@ try{
    const count=modelCalls;const replay=await fetch(`http://127.0.0.1:${port}/api/chat`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(r.payload)});check(name+' same chat ID replays',replay.status===200&&modelCalls===count);
   }
   await new Promise(r=>setTimeout(r,1100));check('timed-out child cannot write late file',await access(scope+'/late.txt').then(()=>false,()=>true));
-  for(const [prompt,options] of [['请测试命令 CASE_READONLY',{readOnly:true}],['> 请测试命令 CASE_QUOTED',{}],['不要执行测试命令 CASE_DENY',{}],['只讨论如何测试命令 CASE_DISCUSS',{}]]){const before=hits,r=await chat(prompt,options);check('no executor: '+prompt,!r.data.run.availableTools.includes('run_command')&&hits===before)}
+  for(const [prompt,options] of [['请测试命令 CASE_READONLY',{readOnly:true}],['> 请测试命令 CASE_QUOTED',{}],['不要执行测试命令 CASE_DENY',{}],['只讨论如何测试命令 CASE_DISCUSS',{}]]){const before=hits,r=await chat(prompt,options);
+   // Since 2026-11-12 (local-skills.md / agent-execution.md) run_command is registered for every writable
+   // direct input (discovery); authority comes only from the bound directive at dispatch. readOnly still
+   // removes the tool. A quoted/negated/discussion input must be refused at dispatch with no effect.
+   if(options.readOnly)check('no executor: '+prompt,!r.data.run.availableTools.includes('run_command')&&hits===before);
+   else{const tools=r.data.run.tools||[],rejected=tools.filter(t=>t.name==='run_command_rejected');check('dispatcher refuses: '+prompt,!tools.some(t=>t.name==='run_command')&&rejected.length>0&&rejected.every(t=>t.output?.code==='execution_not_requested')&&!r.data.run.workScope?.id&&hits===before)}}
   check('provider never receives source secret',!providerSawSecret);
   const {executionTools,executionCredentials}=await import('../server/src/agent-execution.ts');
   const run=S.beginRun('chat','public stop'),abort=new AbortController(),credentials=executionCredentials();const tool=executionTools(run.id,'请执行本机检查',credentials,abort.signal).find(t=>t.name==='run_command');
@@ -85,4 +90,4 @@ try{
  await writeFile(out+'/result.json',JSON.stringify({scope:real?'real configured model + synthetic HTTP credential + actual OS/file execution':'controlled model + actual Chat HTTP/SDK/OS/HTTP upstream',checks,hits,authenticated,modelCalls,sourceHashes:Object.fromEntries(await Promise.all(['server/src/agent-execution.ts','server/src/agent.ts','server/agent/agents.md'].map(async p=>[p,createHash('sha256').update(await readFile(p)).digest('hex')])))},null,2));
  console.log(JSON.stringify({pass:true,checks:checks.length,real,out}));
 }catch(e){await writeFile(out+'/result.json',JSON.stringify({checks,error:e.message,hits,authenticated,real},null,2));console.error(e.message);process.exitCode=1}
-finally{api.close();if(!real)model.close();upstream.close();S.db.close();await rm(scope+'/config.json',{force:true})}
+finally{await Promise.all([new Promise(r=>api.close(r)),new Promise(r=>upstream.close(r)),...(!real?[new Promise(r=>model.close(r))]:[])]);await rm(scope+'/config.json',{force:true});process.exit(process.exitCode||0)}

@@ -6,6 +6,8 @@ The desktop product uses MyGO; preserve bundle identifiers, local data and updat
 
 For reply cards and message actions, follow the judgment and request binding rules in `docs/public/intent-handling.md`.
 
+For model configuration and connection tests, follow `docs/public/v6-model-settings.md`.
+
 For the console, isolate control styles from generic dialog rules and verify both browser interaction and the actual installed native layout. See `docs/public/ideas-console.md` and `docs/public/validation.md`.
 
 Private local guidance, when present, is stored at `.local/private-project-instructions/CLAUDE.md`. Never commit private guidance, configuration, user data or historical acceptance evidence.

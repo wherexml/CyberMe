@@ -20,9 +20,9 @@ body{-webkit-font-smoothing:antialiased}
 /* Fade at the scroll viewport edge, independent of theme and message position.
    Matching content padding keeps the first message fully readable at scrollTop 0. */
 #cyberme-v6 .cm-chat-scroll{
-  --chat-top-fade:32px;
-  -webkit-mask-image:linear-gradient(to bottom,transparent,#000 var(--chat-top-fade));
-  mask-image:linear-gradient(to bottom,transparent,#000 var(--chat-top-fade));
+  --chat-top-fade:96px;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,rgba(0,0,0,.18) 16px,rgba(0,0,0,.5) 40px,rgba(0,0,0,.84) 68px,#000 var(--chat-top-fade));
+  mask-image:linear-gradient(to bottom,transparent 0,rgba(0,0,0,.18) 16px,rgba(0,0,0,.5) 40px,rgba(0,0,0,.84) 68px,#000 var(--chat-top-fade));
 }
 #cyberme-v6 .cm-chat-column{width:80%;min-width:0;margin:0 auto}
 #cyberme-v6 .cm-md p{margin:0 0 .5em}#cyberme-v6 .cm-md p:last-child{margin-bottom:0}
@@ -40,6 +40,40 @@ body{-webkit-font-smoothing:antialiased}
 #cyberme-v6 .cm-md th,#cyberme-v6 .cm-md td{border:.5px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
 #cyberme-v6 .cm-md th{font-weight:600;background:var(--hover)}
 #cyberme-v6 .cm-select{appearance:none;-webkit-appearance:none}
+#cyberme-v6 .cm-model-editor{display:grid;gap:16px;min-width:0}
+#cyberme-v6 .cm-model-editor h2{margin:4px 4px 0;font-size:20px;font-weight:600;overflow-wrap:anywhere}
+#cyberme-v6 .cm-model-card{display:grid;gap:12px;min-inline-size:0;margin:0;padding:14px;border:0;border-radius:var(--r-card);background:var(--card);box-shadow:0 0 0 .5px var(--cardLine)}
+#cyberme-v6 .cm-model-card legend{padding:0 4px;font-size:12px;color:var(--text3)}
+#cyberme-v6 .cm-model-card label{display:grid;gap:5px;min-width:0;font-size:12px;color:var(--text2)}
+#cyberme-v6 .cm-model-card input:not([type=checkbox]),#cyberme-v6 .cm-model-card select{box-sizing:border-box;width:100%;height:34px;padding:0 10px;border:0;border-radius:var(--r-innerBtn);background:var(--convBg);box-shadow:inset 0 0 0 .5px var(--lineStrong);color:var(--text);font:inherit;font-size:14px}
+#cyberme-v6 .cm-model-select{position:relative;display:block}
+#cyberme-v6 .cm-model-select select{padding-inline-end:28px}
+#cyberme-v6 .cm-model-select i{position:absolute;right:10px;top:10px;pointer-events:none}
+#cyberme-v6 .cm-model-card .cm-model-toggle{display:flex;align-items:center;gap:6px;width:fit-content;min-height:26px}
+#cyberme-v6 .cm-model-toggle input{margin:0;accent-color:var(--accent)}
+#cyberme-v6 .cm-model-entry{display:grid;border-top:.5px solid var(--line)}
+#cyberme-v6 .cm-model-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px}
+#cyberme-v6 .cm-model-row{display:flex;align-items:center;gap:8px;width:100%;min-height:36px;padding:6px 0;text-align:left;border:0;background:transparent;color:var(--text);font:inherit;cursor:pointer}
+#cyberme-v6 .cm-model-row>span:first-of-type{min-width:0;overflow-wrap:anywhere}
+#cyberme-v6 .cm-model-outcome{margin-inline-start:auto;text-align:end;font-size:12px;color:var(--text2)}
+#cyberme-v6 .cm-model-outcome[data-status=succeeded]{color:var(--okText)}
+#cyberme-v6 .cm-model-outcome[data-status=failed]{color:var(--errText)}
+#cyberme-v6 .cm-model-outcome[data-status=unknown]{color:var(--warnText)}
+#cyberme-v6 .cm-model-edit-fields{display:grid;gap:8px;padding:4px 0 12px}
+#cyberme-v6 .cm-model-edit-fields[hidden]{display:none}
+#cyberme-v6 .cm-model-pick{display:grid;gap:8px;padding:10px;border-radius:var(--r-innerBtn);background:var(--convBg)}
+#cyberme-v6 .cm-model-pick-list{max-height:220px;overflow:auto}
+#cyberme-v6 .cm-model-pick-list label{padding:4px 0;overflow-wrap:anywhere}
+#cyberme-v6 .cm-model-entry summary{width:fit-content;color:var(--text2);font-size:12px;line-height:26px;cursor:pointer}
+#cyberme-v6 .cm-model-limits{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(130px,100%),1fr));gap:8px;margin:6px 0}
+#cyberme-v6 .cm-model-options,#cyberme-v6 .cm-model-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+#cyberme-v6 .cm-model-actions{justify-content:flex-end}
+#cyberme-v6 .cm-model-link,#cyberme-v6 .cm-model-save{width:fit-content;min-height:30px;padding:4px 8px;border:0;border-radius:var(--r-innerBtn);background:transparent;color:var(--accentText);font:inherit;font-size:13px;cursor:pointer}
+#cyberme-v6 .cm-model-link:hover{background:var(--hover)}
+#cyberme-v6 .cm-model-remove{color:var(--text2)}
+#cyberme-v6 .cm-model-save{padding-inline:14px;background:var(--accent);color:var(--onAccent)}
+#cyberme-v6 .cm-model-editor :disabled{opacity:.6;cursor:default}
+#cyberme-v6 .cm-model-message{padding:0 4px;color:var(--text2);font-size:13px}
 /* Content stays readable when a background WKWebView suspends its animation timeline. */
 @keyframes cmIn{from{opacity:1;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes cmSlide{from{opacity:1;transform:translateX(14px)}to{opacity:1;transform:none}}
@@ -61,3 +95,24 @@ body{-webkit-font-smoothing:antialiased}
 @media (prefers-reduced-motion:reduce){#cyberme-v6 *{animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important}}
 #cyberme-v6 .cm-row:focus{outline:none}
 #cyberme-v6 .cm-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:var(--r-innerBtn)}
+/* Composer skill picker (SkillComposer.tsx). Bounded width/height so long names, narrow panes and native WebKit stay contained. */
+#cyberme-v6 .cm-skill-menu{position:absolute;left:0;bottom:calc(100% + 8px);width:min(460px,100%);max-height:min(320px,46vh);display:flex;flex-direction:column;background:var(--composer);border-radius:var(--r-menu);box-shadow:0 0 0 .5px var(--lineStrong),0 12px 32px -8px rgba(0,0,40,.22);padding:4px;z-index:3;animation:cmPop 200ms ease-out both;transform-origin:bottom left;font-size:13px}
+#cyberme-v6 .cm-skill-list{overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:1px;overscroll-behavior:contain}
+#cyberme-v6 .cm-skill-row{display:flex;align-items:center;gap:8px;min-width:0;height:32px;flex:none;padding:0 10px;border-radius:var(--r-menuItem);cursor:pointer;color:var(--text)}
+#cyberme-v6 .cm-skill-row.is-active{background:var(--hover)}
+#cyberme-v6 .cm-skill-name{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+#cyberme-v6 .cm-skill-desc{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text3)}
+#cyberme-v6 .cm-skill-src{flex:none;max-width:22%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--text3);opacity:.8}
+#cyberme-v6 .cm-skill-note{display:flex;align-items:center;gap:8px;padding:8px 10px;color:var(--text3)}
+#cyberme-v6 .cm-skill-error{color:var(--text2)}
+#cyberme-v6 .cm-skill-retry{all:unset;cursor:pointer;color:var(--accentText);font-weight:500}
+#cyberme-v6 .cm-skill-retry:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+/* Shared skill capsule base (composer token and sent messages): same height, icon, type and accent tokens. */
+#cyberme-v6 .cm-skill-capsule{display:inline-flex;align-items:center;gap:5px;height:24px;border-radius:var(--r-chip);background:var(--accentSoft);color:var(--accentText);font-size:13px;font-weight:500;white-space:nowrap}
+#cyberme-v6 .cm-skill-capsule-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#cyberme-v6 .cm-skill-token{align-self:flex-start;flex:none;max-width:min(42%,240px);margin:4px 0 0 2px;padding:0 2px 0 8px;animation:cmIn 200ms ease-out both}
+#cyberme-v6 .cm-skill-token-x{all:unset;box-sizing:border-box;width:18px;height:18px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:50%;cursor:pointer;color:inherit;opacity:.7}
+#cyberme-v6 .cm-skill-token-x:hover{opacity:1;background:var(--hover)}
+#cyberme-v6 .cm-skill-token-x:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* Sent-message skill capsule: same look as the composer token, read-only, inline before the task text. */
+#cyberme-v6 .cm-sent-skill{max-width:100%;margin-right:6px;padding:0 8px;vertical-align:middle;cursor:default;user-select:text}

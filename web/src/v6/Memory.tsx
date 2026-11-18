@@ -4,7 +4,7 @@ import {I} from './icons';
 import {Hv,pill,avColor,initials} from './ui';
 import {Buddy,BUDDY} from './Buddy';
 import {saveDoc,getUI,setUI,type Doc} from './store';
-import {useMemoryData,memorySnapshot,refreshMemory,cacheMemoryDocument,forgetMemory} from './memory-data';
+import {useMemoryData,memorySnapshot,refreshMemory,cacheMemoryDocument,forgetMemory,retryMemory} from './memory-data';
 import {relTime} from './model';
 import {memoryCategories,memoryCategory} from './memory-categories';
 import {MemoryHome,MemoryPeople,MemoryCategoryDetail,memoryEntries,type MemoryView} from './MemoryLibrary';
@@ -32,6 +32,7 @@ export default function Memory({ctx}:{ctx:Ctx}){
  // can never save over a newer server copy (the server answers 409 and the conflict stays blocking).
  const [edit,setEdit]=useState<Edit|null>(buffered?{kind:buffered.kind,idx:buffered.idx,text:buffered.text,base:buffered.base}:null),[status,setStatus]=useState<''|'saving'|'conflict'|'error'>(buffered?.status||''),[hover,setHover]=useState<string|null>(null);
  useEffect(()=>{const st=status==='conflict'||status==='error'?status:'';setUI({memDraft:edit?{...edit,status:st}:null})},[edit,status]);
+ const [retrying,setRetrying]=useState<string|null>(null);
  const [view,setView]=useState<MemoryView>(buffered?(buffered.kind==='soul'?'soul':`section:${buffered.idx}`):'home');
  const docsRef=useRef<{soul?:Doc;memory?:Doc}>(docs);
  useEffect(()=>{void refreshMemory();const refresh=()=>{if(document.visibilityState==='visible')void refreshMemory()};const timer=setInterval(refresh,15000);window.addEventListener('focus',refresh);window.addEventListener('online',refresh);document.addEventListener('visibilitychange',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);window.removeEventListener('online',refresh);document.removeEventListener('visibilitychange',refresh)}},[]);
@@ -74,7 +75,7 @@ export default function Memory({ctx}:{ctx:Ctx}){
  if(edit&&!cards.some(c=>c.kind===edit.kind&&c.idx===edit.idx))cards.unshift({key:'kept-edit',kind:edit.kind,idx:edit.idx,title:'',raw:edit.text,items:[],paras:[]});
  const folders=cards.filter(c=>c.kind==='memory').map(c=>({idx:c.idx,title:c.title,preview:c.raw.replace(/^#{1,2} .*\n?/, '')}));
  const entries=memoryEntries(folders);
- const category=memoryCategories.find(c=>view===`category:${c.id}`);
+ const category=memoryCategories.find(c=>view===`category:${c.id}`)||(view==='category:notes'?{id:'notes',zh:'其他记忆',en:'Other memories'}:undefined);
  const k=BUDDY[buddy.k]?buddy.k:'classic';
  const hint=status==='saving'?'…':status==='conflict'?T.conflict:status==='error'?T.saveFailed:XL.mdHint;
 
@@ -93,7 +94,7 @@ export default function Memory({ctx}:{ctx:Ctx}){
   <div className="mem-library-header">{viewing==='home'?<h2>{title}</h2>:<button className="mem-breadcrumb" onClick={()=>open(viewing.startsWith('person:')?'people':'home')}><I n="caret-left"/>{viewing.startsWith('person:')?(zh?'人物档案':'People'):(zh?'记忆':'Memory')}</button>}{viewing==='home'?<button className="mem-add" title={XL.memNew} aria-label={XL.memNew} disabled={!docs.memory||status==='saving'} onClick={()=>void addMemory()}><I n="plus"/></button>:null}</div>
   {viewing!=='home'&&!viewing.startsWith('person:')?<h2 className="mem-detail-title">{title}</h2>:null}
   {(['soul','memory','automatic','people'] as const).map(key=>{const r=data[key],name=key==='people'?(zh?'人物档案':'People'):key==='soul'?(zh?'身份与 Agent 设定':'Identity & agent settings'):key==='memory'?(zh?'笔记':'Notes'):(zh?'自动记住':'Learned automatically');return r.error?<div key={key} role="alert" data-memory-error={key} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',color:'var(--errText)',fontSize:12}}><span style={{flex:1}}>{name} · {zh?'读取失败':'Could not load'}</span><Hv onClick={()=>void refreshMemory()} style={{border:0,background:'var(--hover)',color:'var(--text)',borderRadius:8,padding:'4px 10px',cursor:'pointer'}}>{zh?'重试':'Retry'}</Hv></div>:r.value===undefined?<div key={key} data-memory-loading={key} role="status" aria-label={zh?'正在读取'+name:'Loading '+name} aria-busy="true" style={{height:key==='soul'?150:70,borderRadius:14,background:'var(--hover)'}}/>:null})}
-  {viewing==='home'&&data.memory.value!==undefined?<MemoryHome zh={zh} people={data.people.error?undefined:data.people.value} folders={folders} entries={entries} automatic={auto} onOpen={open}/>:null}
+  {viewing==='home'&&data.memory.value!==undefined?<MemoryHome zh={zh} people={data.people.error?undefined:data.people.value} entries={entries} automatic={auto} onOpen={open}/>:null}
   {viewing.startsWith('category:')&&category?<MemoryCategoryDetail zh={zh} id={category.id} entries={entries} people={data.people.error?undefined:data.people.value} onOpen={open} onAdd={()=>void addMemory(zh?category.zh:category.en)} disabled={!docs.memory||data.memory.error||status==='saving'}/>:null}
   {(viewing==='people'||viewing.startsWith('person:'))&&data.people.value&&!data.people.error?<MemoryPeople zh={zh} library={data.people.value} personId={viewing.startsWith('person:')?viewing.slice(7):undefined} onOpen={open}/>:null}
   {viewing.startsWith('section:')&&!visibleCards.length&&!data.memory.loading&&!data.memory.error?<p className="mem-empty">{zh?'这条记忆已不存在':'This memory no longer exists'}</p>:null}
@@ -136,6 +137,9 @@ export default function Memory({ctx}:{ctx:Ctx}){
      {!c.paras.length&&!c.items.length&&!c.isAbout?<div style={{padding:'14px 16px',color:'var(--text3)'}}>{XL.clickEdit}</div>:null}
     </Hv>
    </div>})}
+  {viewing==='automatic'&&data.automatic.enabled===false?<p className="mem-empty" role="status">{zh?'自动记忆未启用':'Automatic memory is paused'}</p>:null}
+  {viewing==='automatic'&&data.automatic.jobs?.some(j=>['queued','running'].includes(j.status))?<p className="mem-empty" role="status" data-memory-processing>{zh?'正在整理记忆…':'Organizing memories…'}</p>:null}
+  {viewing==='automatic'?data.automatic.jobs?.filter(j=>['failed','stale'].includes(j.status)).map(j=><div key={j.id} className="mem-settings-entry" role="alert" data-memory-job={j.id}><span style={{flex:1}}>{zh?'记忆整理未完成':'Memory processing incomplete'}</span><button className="mem-link" disabled={retrying!==null} onClick={()=>{setRetrying(j.id);void retryMemory(j).catch(()=>ctx.notify(zh?'暂未确认，请刷新后重试':'Not confirmed. Refresh before retrying.','error')).finally(()=>setRetrying(null))}}>{retrying===j.id?'…':zh?'重试':'Retry'}</button></div>):null}
   {(viewing==='automatic'||category)&&auto.some(m=>viewing==='automatic'||memoryCategory('',m.content,m.category)===category?.id)?<div style={{display:'flex',flexDirection:'column',gap:6,animation:'cmIn 250ms ease-out both'}}>
    <div style={{display:'flex',alignItems:'center',gap:8,minHeight:26,padding:'0 4px 0 16px'}}><div style={{flex:1,minWidth:0,fontSize:12,fontWeight:500,color:'var(--text3)'}}>{zh?'自动记住':'Learned automatically'}</div></div>
    <div style={{background:'var(--card)',boxShadow:'0 0 0 0.5px var(--cardLine)',borderRadius:14,overflow:'hidden',display:'flex',flexDirection:'column'}}>
@@ -145,6 +149,6 @@ export default function Memory({ctx}:{ctx:Ctx}){
       <Hv disabled={data.forgetting} aria-label={(zh?'忘记：':'Forget: ')+m.content} onClick={()=>void revoke(m)} style={{height:26,padding:'0 10px',border:'none',borderRadius:13,background:'transparent',color:'var(--text3)',font:'inherit',fontSize:12,cursor:'pointer',whiteSpace:'nowrap',opacity:1,transition:'opacity 200ms ease-out'}} hover={{background:'var(--hover)',color:'var(--text)'}}>{zh?'忘记':'Forget'}</Hv>
      </div></div>)}
    </div></div>:null}
-  {viewing==='automatic'&&!auto.length&&data.automatic.value!==undefined&&!data.automatic.error?<p className="mem-empty">{zh?'暂无自动记忆':'No learned memories yet'}</p>:null}
+  {viewing==='automatic'&&!auto.length&&!data.automatic.jobs?.some(j=>['queued','running','failed','stale'].includes(j.status))&&data.automatic.value!==undefined&&!data.automatic.error?<p className="mem-empty">{zh?'暂无自动记忆':'No learned memories yet'}</p>:null}
  </div>;
 }

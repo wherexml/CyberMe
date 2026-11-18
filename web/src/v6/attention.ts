@@ -1,10 +1,10 @@
 // Direct record actions for the Brief. None of these write to the composer or call chat or a model by themselves,
 // except recheck, which runs the real analysis or source recovery once and reports what actually came back.
-import {useRef,useState,useSyncExternalStore} from 'react';
+import {useEffect,useRef,useState,useSyncExternalStore} from 'react';
 import type {InboxItem} from '../../../shared/types';
 import type {InboxAttention} from '../../../shared/inbox-attention';
 import {api,enc,uid} from './store';
-import type {AttentionActionType,AttentionBinding} from '../../../shared/attention-actions';
+import type {AttentionBinding} from '../../../shared/attention-actions';
 import {ideaProvenance} from '../../../shared/attention-actions';
 import type {Ctx} from './App';
 
@@ -19,9 +19,9 @@ const ACK_MS=15000;
 export type Ack={itemId:string;dismissalId:string;kind?:'inbox'|'idea';operationId?:string;label?:string};
 let ack:Ack|null=null,ackTimer:ReturnType<typeof setTimeout>|undefined;
 const ackListeners=new Set<()=>void>();
-function setAck(next:Ack|null){
+function setAck(next:Ack|null,ms=ACK_MS){
  clearTimeout(ackTimer);ack=next;
- if(next)ackTimer=setTimeout(()=>setAck(null),ACK_MS);
+ if(next)ackTimer=setTimeout(()=>setAck(null),Math.min(ACK_MS,ms));
  ackListeners.forEach(fn=>fn());
 }
 /** Next local morning: a server snooze needs a real instant, not a date string. */
@@ -81,28 +81,85 @@ export function useAttentionAction(ctx:Ctx){
  };
 }
 
-/** One typed action. Refusals are reported as they are; a lost response is read back by operation ID, never repeated. */
-export function useEntityAction(ctx:Ctx){
- const {zh}=ctx,[busy,setBusy]=useState(false),[error,setError]=useState(''),lock=useRef(false);
- async function run(binding:AttentionBinding,type:AttentionActionType,extra?:{until?:string}):Promise<boolean>{
-  if(lock.current)return false;lock.current=true;setBusy(true);setError('');
-  const operationId=uid('action');
-  try{
-   let op:any;
-   try{op=await api('POST','/api/attention/actions',{...binding,type,operationId,...extra})}
-   catch(e:any){if(e?.status)throw e;op=await api('GET','/api/attention/actions/'+enc(operationId))}
-   if(op.status==='running'||op.status==='unknown'){setError(zh?'结果未确认，请查看原记录。':'Result not confirmed. Check the record.');return false}
-   if(op.status==='failed'){setError(zh?'未能完成，没有外发任何内容。':"Couldn't finish. Nothing was sent.");return false}
-   if(type==='dismiss'&&binding.entityKind==='inbox'&&op.result?.dismissalId)setAck({itemId:binding.entityId,dismissalId:op.result.dismissalId,kind:'inbox'});
-   if(type==='dismiss'&&binding.entityKind==='idea')setAck({itemId:binding.entityId,dismissalId:operationId,kind:'idea',operationId});
-   await ctx.refresh();return true;
-  }catch(e:any){
-   setError(e?.status===409?(zh?'来源已更新，这个动作已失效。':'The source changed, so this action no longer applies.'):(zh?'未能完成：':"Couldn't finish: ")+(e?.message||''));
-   try{await ctx.refresh()}catch{}
-   return false;
-  }finally{lock.current=false;setBusy(false)}
- }
- return {busy,error,run};
+// ---------- Feishu message cooldown for draft generation. A normal wait, never a failure; the server gate stays authoritative.
+// Readiness is granted only by a successful read-only GET of the exact record (App's refresh swallows read errors, so it
+// cannot prove anything). Deadlines a refused draft returned are kept here until that read supersedes them.
+const raceCooling=new Map<string,number>();          // itemId -> latest deadline learned from a refusal (or "now": read first)
+const reconciled=new Map<string,string>();           // itemId -> identity proven ready by the latest successful exact read
+// Deadlines seen in the future in this session (module-level, so remounts keep them). A deadline already past when first seen
+// was not waited on here and needs no read; the server gate still refuses any newer source version.
+const watched=new Set<string>();
+const reading=new Map<string,number>(),readFailed=new Set<string>();let readGen=0;
+let coolingVersion=0;const coolingListeners=new Set<()=>void>();
+const emitCooling=()=>{coolingVersion++;coolingListeners.forEach(fn=>fn())};
+const subscribeCooling=(fn:()=>void)=>{coolingListeners.add(fn);return()=>{coolingListeners.delete(fn)}};
+const feishuPending=(item:any)=>/^feishu$/i.test(String(item?.channel||''))&&item?.sourceSystem!=='virtual-im'&&item?.copilot?.state==='pending';
+/** Latest known deadline, including one already past but not yet reconciled. */
+function deadlineOf(item:any):number{
+ const own=feishuPending(item)?Date.parse(String(item.copilot.notBefore||'')):NaN;
+ return Math.max(Number.isFinite(own)?own:0,raceCooling.get(item?.id)||0);
+}
+const identityOf=(item:any,deadline:number)=>String(item?.id)+'|'+String(item?.copilot?.signature||'')+'|'+deadline;
+/** A refused draft: wait for the returned deadline, or (without one) until an exact read decides. Never replays anything. */
+export function noteDraftCooling(itemId:string,notBefore?:unknown){
+ const parsed=Date.parse(String(notBefore??'')),at=Number.isFinite(parsed)?parsed:Date.now();
+ raceCooling.set(itemId,Math.max(at,raceCooling.get(itemId)||0));emitCooling();
+}
+export function draftCooling(item:any,now=Date.now()):{waiting:boolean;until?:number;expired?:boolean;readFailed?:boolean}{
+ const until=deadlineOf(item);if(!until)return {waiting:false};
+ const identity=identityOf(item,until);
+ if(until>now){watched.add(identity);return {waiting:true,until}}
+ if(!watched.has(identity)&&raceCooling.get(item.id)!==until)return {waiting:false};
+ return {waiting:reconciled.get(item.id)!==identity,until,expired:true,readFailed:readFailed.has(item.id)};
+}
+/** One exact read-only GET per record at a time; only the latest generation may settle. No action or model is ever called. */
+async function reconcileCooling(ctx:Ctx,id:string){
+ if(reading.has(id))return;
+ const my=++readGen;reading.set(id,my);emitCooling();
+ try{
+  // Bounded: a stalled connection fails after 15 s, so the read-only retry loop can recover.
+  const fresh=await api<any>('GET','/api/inbox/'+enc(id),undefined,AbortSignal.timeout(15000));
+  if(reading.get(id)!==my)return;
+  readFailed.delete(id);
+  const race=raceCooling.get(id);if(race&&race<=Date.now())raceCooling.delete(id);
+  const until=deadlineOf(fresh);
+  // Extended or still cooling: keep waiting; otherwise exactly this source version is ready.
+  if(!until||until<=Date.now())reconciled.set(id,identityOf(fresh,until));
+  void ctx.refresh(true).catch(()=>{});
+ }catch{if(reading.get(id)===my)readFailed.add(id)}
+ finally{if(reading.get(id)===my)reading.delete(id);emitCooling()}
+}
+/** Waits until the deadline, then until a successful exact read of the current source. Timers, focus, visibility and remount
+ * only re-read; a held or failed read keeps the draft locked and is retried. */
+export function useDraftCooling(ctx:Ctx,item:any){
+ useSyncExternalStore(subscribeCooling,()=>coolingVersion);
+ const [,setTick]=useState(0);
+ const c=draftCooling(item),id=item?.id?String(item.id):'';
+ const key=identityOf(item,c.until||0)+'|'+(c.waiting?'w':'r')+'|'+(c.expired?'x':'f');
+ useEffect(()=>{
+  if(!c.waiting||!id)return;
+  let live=true;const bump=()=>{if(live)setTick(x=>x+1)};
+  const read=()=>{if(live&&draftCooling(item).expired)void reconcileCooling(ctx,id)};
+  const timers:any[]=[];
+  if(!c.expired)timers.push(setTimeout(bump,Math.max(0,(c.until||0)-Date.now())+250));
+  else{read();timers.push(setInterval(()=>{if(!reading.has(id))read()},4000))}
+  const onFocus=()=>{bump();read()},visible=()=>{if(document.visibilityState==='visible')onFocus()};
+  addEventListener('focus',onFocus);document.addEventListener('visibilitychange',visible);
+  return()=>{live=false;timers.forEach(t=>{clearTimeout(t);clearInterval(t)});removeEventListener('focus',onFocus);document.removeEventListener('visibilitychange',visible)};
+ },[key]);// eslint-disable-line react-hooks/exhaustive-deps
+ return c;
+}
+
+/** Server undo window for a dismissal, counted from the operation's own start (attention-actions.ts UNDO_WINDOW_MS). */
+const UNDO_WINDOW_MS=20000;
+/** Undo acknowledgement for a typed dismiss settled by attention-action-state.ts. It lasts until the server operation's start
+ * plus the undo window, capped by the usual 15 seconds; a late or reloaded success past that window offers no Undo, and an
+ * operation with no known start time offers none either. */
+export function ackTypedDismiss(binding:AttentionBinding,operationId:string,result:any,startedAt?:unknown){
+ const start=Date.parse(String(startedAt??'')),left=Number.isFinite(start)?start+UNDO_WINDOW_MS-Date.now():0;
+ if(left<=0)return;
+ if(binding.entityKind==='inbox'&&result?.dismissalId)setAck({itemId:binding.entityId,dismissalId:result.dismissalId,kind:'inbox'},left);
+ if(binding.entityKind==='idea')setAck({itemId:binding.entityId,dismissalId:operationId,kind:'idea',operationId},left);
 }
 /** Idea ignore, snooze, undo and restore, directly on the record. */
 export async function ideaAttentionCall(idea:any,action:'dismiss'|'snooze'|'undo'|'restore',operationId=uid('idea-attention'),until?:string){

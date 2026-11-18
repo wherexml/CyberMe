@@ -8,6 +8,7 @@ import {workCards,taskList,taskStatus,relTime,type WorkModel} from './model';
 import {Md} from './md';
 import {ProposalTaskDetail} from './Proposal';
 import {proposalForTask} from './proposal-state';
+import {FollowUpControls} from './FollowUp';
 
 const tw=(s:any)=>s as React.CSSProperties;
 const ERR:[string,string,string]=['var(--errDot)','var(--errSoft)','var(--errText)'],WARN:[string,string,string]=['var(--warnDot)','var(--warnSoft)','var(--warnText)'],MUTE:[string,string,string]=['var(--text3)','var(--hover)','var(--text2)'];
@@ -141,6 +142,7 @@ export function TaskDetail({ctx,id,discuss}:{ctx:Ctx;id:string;discuss:(id:strin
     const mark:React.CSSProperties={width:16,height:16,borderRadius:'50%',flex:'none',display:'flex',alignItems:'center',justifyContent:'center',boxSizing:'border-box',transition:'all 250ms ease-out',...(done?{background:'var(--accent)',color:'var(--onAccent)'}:cur?{border:`1.5px solid ${ring}`,animation:live?'cmPulse 1.4s ease-in-out infinite':'none'}:{border:'1px solid var(--lineStrong)'})};
     return <div key={i} style={{display:'flex',alignItems:'center',gap:12}}><span style={mark}>{done?<I n="check" style={{fontSize:12}}/>:null}</span><span style={{color:done?'var(--text2)':cur?'var(--text)':'var(--text3)',fontWeight:cur?500:400}}>{label}</span></div>})}
   </div>
+  {(task as any)?.followUp?<FollowUpControls ctx={ctx} taskId={task!.id}/>:null}
   {task?.notes?<div style={{display:'flex',flexDirection:'column',gap:6}}><div style={{fontSize:12,color:'var(--text3)'}}>{zh?'说明':'Notes'}</div><div style={{color:'var(--text2)'}}><Md text={task.notes}/></div></div>:null}
   {auto?<div style={{color:'var(--text2)'}}>{auto.schedule}{auto.nextRun?' · '+(zh?'下次 ':'Next ')+new Date(auto.nextRun).toLocaleString():''}{auto.lastRun?' · '+(zh?'上次 ':'Last ')+relTime(auto.lastRun,zh):''}</div>:null}
   {status==='failed'?<div style={{display:'flex',flexDirection:'column',gap:12}}><div style={{padding:'10px 12px',borderRadius:'var(--r-inner)',background:'var(--errSoft)',color:'var(--errText)',fontSize:12}}>{failMsg}</div>{work?<div style={{display:'flex',gap:6,flexWrap:'wrap'}}><Hv onClick={async()=>{try{await api('POST','/api/chat/work/items/'+enc(work.id)+'/resume',{operationId:uid('resume')});await ctx.refresh()}catch(e:any){ctx.notify(e.message,'error')}}} style={btn('primary')}>{T.retry}</Hv></div>:null}</div>:null}
@@ -154,7 +156,7 @@ export function TaskDetail({ctx,id,discuss}:{ctx:Ctx;id:string;discuss:(id:strin
   {['unknown','partial'].includes(status)?<div style={{padding:'10px 12px',borderRadius:'var(--r-inner)',background:'var(--warnSoft)',color:'var(--warnText)',fontSize:12}}>{status==='partial'?T.partialReply:T.unknownReply}</div>:null}
   {status==='done'&&work?.artifacts?.length?<div style={{display:'flex',flexDirection:'column',gap:6,animation:'cmIn 250ms ease-out both'}}><div style={{fontSize:12,color:'var(--okText)'}}>{T.resultH}</div>{work.artifacts.filter((a:any)=>!a.missing).map((a:any)=><a key={a.id} href={a.url||('/files/'+enc(a.id))} target="_blank" rel="noreferrer" style={{color:'var(--text2)'}}>{a.name}</a>)}</div>:null}
   <div style={{display:'flex',justifyContent:'flex-end',gap:6,flexWrap:'wrap'}}>
-   {task&&!work?<Hv disabled={busy} onClick={()=>void toggleDone()} style={actBtn('sec')} hover={{background:'var(--selected)'}}>{status==='done'?(zh?'重新打开':'Reopen'):(zh?'标记完成':'Mark done')}</Hv>:null}
+   {task&&!work&&!task.followUp?<Hv disabled={busy} onClick={()=>void toggleDone()} style={actBtn('sec')} hover={{background:'var(--selected)'}}>{status==='done'?(zh?'重新打开':'Reopen'):(zh?'标记完成':'Mark done')}</Hv>:null}
    {auto?<Hv disabled={busy} onClick={()=>void runNow()} style={actBtn('sec')} hover={{background:'var(--selected)'}}>{zh?'现在运行一次':'Run once now'}</Hv>:null}
    <Hv onClick={()=>{if(conv&&conv!==ctx.conversationId)ctx.setConversation(conv);ctx.jumpTo(m=>(m as any).chatWork?.workId===id||(m as any).contextIds?.includes?.(id));if(!conv)discuss(task?.id||id)}} style={{height:32,padding:'0 14px',display:'flex',alignItems:'center',gap:6,border:'none',borderRadius:'var(--r-btn)',background:'var(--hover)',color:'var(--text)',font:'inherit',fontSize:14,cursor:'pointer',whiteSpace:'nowrap'}} hover={{background:'var(--selected)'}}><I n="chat-circle" style={{fontSize:16}}/><span>{T.jumpConv}</span></Hv>
   </div>

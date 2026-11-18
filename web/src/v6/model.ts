@@ -1,3 +1,4 @@
+import {readIdeaRecommendation} from '../../../shared/idea-recommendation';
 import {categoryLabel} from '../../../shared/idea-category';
 // Maps canonical records to V6 card models. Status is projected truthfully: a chosen
 // option is only "sent to CyberMe", never "done", and unknown/partial stay visible.
@@ -133,6 +134,13 @@ export function ideaSchedule(idea:Idea,zh:boolean){const i:any=idea,t=inboxTimes
 export function linkedTasksOf(ws:Workspace,id:string):Task[]{return (ws.tasks||[]).filter((t:any)=>t.inboxId===id||t.sourceInboxId===id||t.ideaId===id||(Array.isArray(t.sourceIds)&&t.sourceIds.includes(id)))}
 export interface GalleryModel{id:string;kind:string;icon:string;color:string;when:string;title:string;body:string;act:string;action:string;visual:GalleryVisual|null;idea:Idea;deadline:string;schedule:string;strip:TimeStrip|null}
 const CAT:Record<string,[string,string,string,string]>={productivity:['ph-sun-horizon','#ff9f0a','Focus','专注'],automation:['ph-clock-counter-clockwise','#30b0c7','Routine','例行'],communication:['ph-users-three','#5e5ce6','Relationships','人脉'],insight:['ph-brain','#af52de','Insight','灵感']};
+export function ideaRecommendation(idea:Idea,zh:boolean):{label:string;prompt:string}{
+ const r=readIdeaRecommendation(idea.recommendation);
+ if(r)return r;
+ const legacy=v6Text(v6(idea).act,zh).trim();
+ if(legacy&&legacy.length<=40&&!['创建任务','Create a task','Create task'].includes(legacy))return {label:legacy,prompt:legacy};
+ return {label:zh?'梳理下一步':'Plan next steps',prompt:zh?'请根据这条洞察及其来源，梳理具体可行的下一步，先给我方案。':'Use this insight and its sources to propose concrete next steps for my review.'};
+}
 export function gallery(ws:Workspace,zh:boolean):GalleryModel[]{
  // A snoozed, merged or attached Idea is not a separate card; an independent Idea in the same thread stays one.
  return (ws.ideas||[]).filter(i=>!['executed','dismissed','archived','deferred','merged'].includes(i.status)&&!ideaSourcesClosed(i as any,ws.inbox||[])&&!ideaAttachedDecision(i,ws.inbox||[])).map(idea=>{

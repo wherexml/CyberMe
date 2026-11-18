@@ -15,6 +15,8 @@ import (
 // Fixed product namespace. Import and arbitrary URL/path forwarding are never exposed.
 var productPath = regexp.MustCompile(`^/(api/(health|bootstrap|diagnostics|agent|task-agents|chat|conversations|inbox|inbox-source-rules|ideas|tasks|projects|memories|settings|connections|feishu|wechat|sources|source-message-assets|runs|messages|activities|activity|artifacts|files|voice|calendar|automations|autonomous-dispatches|notifications|workspace|native|pilot|desktop)(/[^\\]*)?|files/[A-Za-z0-9_-]+)$`)
 
+var skillsPath = regexp.MustCompile(`^/api/skills(/skill-[0-9a-f]{24})?$`)
+
 func allowedProduct(method, path string) bool {
 	if strings.HasPrefix(path, "/api/attention/") {
 		return (method == "POST" && (path == "/api/attention/strategy" || path == "/api/attention/actions")) ||
@@ -22,6 +24,15 @@ func allowedProduct(method, path string) bool {
 	}
 	if path == "/api/memory-library/people" {
 		return method == "GET"
+	}
+	// Follow-up listing/status are read-only; tick is local-worker only. Task-bound follow-up
+	// routes (/api/tasks/:id/follow-up...) are covered by the existing tasks namespace.
+	if path == "/api/follow-ups" || path == "/api/follow-ups/status" {
+		return method == "GET"
+	}
+	// Skills catalog is read-only: exact list and skill-<24 hex> detail only (server/src/skill-catalog.ts).
+	if path == "/api/skills" || strings.HasPrefix(path, "/api/skills/") {
+		return method == "GET" && skillsPath.MatchString(path)
 	}
 	if strings.HasPrefix(path, "/api/ideas-console/") {
 		return method == "GET" && regexp.MustCompile(`^/api/ideas-console/(capabilities|intents|runs)(/[A-Za-z0-9_-]+)?$`).MatchString(path)
@@ -81,7 +92,7 @@ func productProxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	req.Header.Set("X-OpsTwins-Pilot", link.Token)
-	client := http.Client{Timeout: 180 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := http.Client{Timeout: requestTimeout(r.Method, r.URL.Path), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(req)
 	if err != nil {
 		http.Error(w, "service_unavailable", 503)
@@ -106,4 +117,13 @@ func productProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(response.StatusCode)
 	_, _ = w.Write(data)
+}
+
+// requestTimeout keeps POST /api/chat inside the server's two bounded phases (shared/chat-budgets.ts:
+// prepare 150s + deep answer 150s + 45s lock/interrupt/settle overhead = 345s). Other routes keep 180s.
+func requestTimeout(method, path string) time.Duration {
+	if method == http.MethodPost && path == "/api/chat" {
+		return 345 * time.Second
+	}
+	return 180 * time.Second
 }

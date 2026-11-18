@@ -1,0 +1,14 @@
+[
+  {"id":"hold-01","q":"做销售数据的时间序列展示，我偏爱哪类图？","scope":"global","expected":["chart"]},
+  {"id":"hold-02","q":"对齐进度时，我偏好开会还是留文字让大家各自处理？","scope":"global","expected":["async"]},
+  {"id":"hold-03","q":"找一个人帮我汇总晨舟的客户意见，应该联系谁？","scope":"dawn","expected":["dawn-owner"]},
+  {"id":"hold-04","q":"我把单据交到哪个系统办理报销？","scope":"global","expected":["expense"]},
+  {"id":"hold-05","q":"我经常用的那台打印设备在哪一层？","scope":"global","expected":["manual-note"]},
+  {"id":"hold-06","q":"海岬定期上线的那一天是星期几？","scope":"cape","expected":["cape-release"]},
+  {"id":"hold-07","q":"我平时用折线图还是饼图展示仓储费用？","scope":"global","expected":[]},
+  {"id":"hold-08","q":"我乘飞机时会选择哪家航空公司的会员计划？","scope":"global","expected":[]},
+  {"id":"hold-09","q":"海岬的客户合同最终由谁签字？","scope":"cape","expected":[]},
+  {"id":"hold-10","q":"周五下午我通常约哪个客户开例会？","scope":"global","expected":[]},
+  {"id":"hold-11","q":"晨舟用的 Redis 缓存部署在哪台机器？","scope":"dawn","expected":[]},
+  {"id":"hold-12","q":"我在海岬报销差旅的审批人是谁？","scope":"cape","expected":[]}
+]

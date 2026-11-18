@@ -1,0 +1,53 @@
+// Start scripts/mem0-project-acceptance.mjs --serve and build .local/mem0-project-web first.
+const task=await taskSpace('CyberMe Mem0 项目隔离 20261109');
+const page=task.page('p1');
+const fs=await import('node:fs/promises');
+const url='http://127.0.0.1:46960/';
+const out='/Users/steve/Projects/cyberme/output/mem0-projects-20261109';
+const select='[data-memory-scope] select',q='谁负责汇集客户的诉求？';
+const checks=[];
+function check(name,result){checks.push({name,passed:!!result});if(!result)throw Error(name);}
+await page.goto(url);await page.waitForSelector(select);
+console.log(await page.snapshot());
+const selected=value=>page.waitForFunction(({selector,value})=>document.querySelector(selector)?.value===value,{selector:select,value});
+const change=async value=>{await page.selectOption(select,value);await selected(value);};
+const ask=async()=>{await page.fill('textarea',q);await page.click('loc=role:button[name="Send"]');};
+const replyCount=()=>page.evaluate(()=>document.querySelectorAll('[data-ai-text]').length);
+const saw=(person,question,after=-1)=>page.waitForFunction(({person,question,after})=>{
+ const replies=[...document.querySelectorAll('[data-ai-text]')];
+ return document.body.innerText.includes(question)&&replies.length>after&&replies.at(-1)?.textContent.includes(person);
+},{person,question,after},{timeout:45000});
+const proof=async projectId=>page.evaluate(async projectId=>{
+ const data=await (await fetch('/api/runs?limit=45')).json();
+ const runs=Array.isArray(data)?data:data.items;
+ return runs.some(run=>run.kind==='chat'&&run.status==='succeeded'&&run.tools?.some(t=>t.name==='load_user_context'&&t.output?.recall?.projectId===projectId&&t.output?.recall?.method==='mem0-validated'&&t.output.memoryIds?.length===1));
+},projectId);
+const visibleText=()=>page.evaluate(()=>document.body.innerText);
+await selected('');
+await change('synthetic-project-a');
+const beforeA=await replyCount();await ask();await saw('林澈',q,beforeA);
+check('project A UI chat has a matching source-bound Mem0 run',await proof('synthetic-project-a'));
+check('project B contact absent from A chat',(await visibleText()).includes('周宁')===false);
+await page.screenshot({path:out+'/project-a.png'});
+await page.fill('textarea','海岬项目专属的未发送草稿');
+await change('synthetic-project-b');
+check('project A draft does not follow project B',await page.evaluate(()=>!document.querySelector('textarea').value.includes('专属的未发送草稿')));
+const beforeB=await replyCount();await ask();await saw('周宁',q,beforeB);
+check('project B UI chat has a matching source-bound Mem0 run',await proof('synthetic-project-b'));
+check('project A chat history does not move into B',(await visibleText()).includes('林澈')===false);
+await page.screenshot({path:out+'/project-b.png'});
+await page.reload();await page.waitForSelector(select);await selected('synthetic-project-b');await saw('周宁',q);
+check('browser reload preserves selected project and its chat',true);
+await page.fill('textarea','海岬实验的客户需求由谁收集？');
+await page.click('loc=role:button[name="Send"]');
+await page.waitForFunction(()=>document.body.innerText.includes('没有发送给模型'),undefined,{timeout:15000});
+check('conflict shows a durable switch-project message without the other contact',!(await visibleText()).includes('林澈'));
+await page.screenshot({path:out+'/project-conflict.png'});
+await change('synthetic-project-a');
+await page.waitForFunction(()=>document.querySelector('textarea').value==='海岬项目专属的未发送草稿');
+check('switching back restores only project A draft',true);
+await change('');await selected('');
+check('global view remains independently selectable',true);
+await fs.writeFile(out+'/browser.json',JSON.stringify({status:'PASS',url,synthetic:true,checks,screenshots:['project-a.png','project-b.png','project-conflict.png']},null,2));
+await task.finish({keep:[]});
+console.log(JSON.stringify({status:'PASS',url,checks}));

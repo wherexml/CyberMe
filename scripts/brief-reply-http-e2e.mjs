@@ -26,7 +26,10 @@ let calls=0;
 const model=createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;const input=JSON.parse(raw);calls++;
  res.writeHead(200,{'content-type':'text/event-stream'});
  const chunk=(delta,finish=null)=>res.write('data: '+JSON.stringify({id:'public',object:'chat.completion.chunk',created:1,model:'public-draft',choices:[{index:0,delta,finish_reason:finish}]})+'\n\n');
- if(!input.messages.some(m=>m.role==='tool')){chunk({role:'assistant',tool_calls:[{index:0,id:'draft-call',type:'function',function:{name:'save_draft',arguments:JSON.stringify({itemId:'request-a',draft:'我先核对演示安排，确认后回复'})}}]});chunk({},'tool_calls')}
+ // Persistent AgentSession: the request carries the whole durable conversation. Only tool results after the
+ // CURRENT user turn mean this turn's save_draft already ran; earlier turns' tool results must not suppress it.
+ const userIndex=input.messages.findLastIndex(m=>m.role==='user');
+ if(!input.messages.slice(userIndex+1).some(m=>m.role==='tool')){chunk({role:'assistant',tool_calls:[{index:0,id:'draft-call',type:'function',function:{name:'save_draft',arguments:JSON.stringify({itemId:'request-a',draft:'我先核对演示安排，确认后回复'})}}]});chunk({},'tool_calls')}
  else{chunk({role:'assistant',content:'草稿已保存，等你确认。'});chunk({},'stop')}
  res.end('data: [DONE]\n\n');
 });await new Promise(r=>model.listen(modelPort,'127.0.0.1',r));
@@ -69,4 +72,4 @@ try{
  check('no outbound ledger',S.db.prepare('SELECT count(*) n FROM send_intents').get().n===0);
  await writeFile(out+'/http-result.json',JSON.stringify({scope:'isolated HTTP + controlled model, no external sending',checks,calls},null,2));console.log(JSON.stringify({pass:true,checks:checks.length,out}));
 }catch(e){console.error(e);process.exitCode=1;await writeFile(out+'/http-result.json',JSON.stringify({checks,error:String(e)},null,2))}
-if(keep&&!process.exitCode)console.log('Browser fixture http://127.0.0.1:'+port);else{server.close();model.close();S.db.close()}
+if(keep&&!process.exitCode)console.log('Browser fixture http://127.0.0.1:'+port);else{server.close();model.close();process.exit(process.exitCode||0)} // supported lifecycle: no S.db.close() while module timers live

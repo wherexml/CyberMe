@@ -1,0 +1,80 @@
+// Run: ego-browser nodejs < scripts/insight-cleanup-mock-browser-e2e.mjs
+// Optional prefix: globalThis.CYBERME_INSIGHT_MOCK_SPACE=existingSpaceId;
+const fs=await import('node:fs/promises'),crypto=await import('node:crypto');
+const root='/Users/steve/Projects/CyberMe',url='http://127.0.0.1:46400/insight-cleanup/index.html';
+const out=root+'/output/insight-cleanup-mock-20261111/'+Date.now();await fs.mkdir(out,{recursive:true});
+const task=await taskSpace(globalThis.CYBERME_INSIGHT_MOCK_SPACE??'CyberMe 洞察入口方案 20261111'),p=task.page('p1'),checks=[];
+const check=(name,pass,detail)=>{checks.push({name,pass:!!pass,...(detail?{detail}:{})});if(!pass)throw Error(name)};
+const shot=name=>p.screenshot({path:out+'/'+name+'.png'});
+try{
+ await p.goto(url);await p.cdp('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
+ await p.waitForFunction(()=>document.querySelector('#product').getBoundingClientRect().right<=innerWidth+1);
+ if(await p.evaluate(()=>document.documentElement.dataset.theme==='dark'))await p.click('#theme-toggle');
+ await p.click('[data-scene="initial"]');
+ check('one folded entry and no old footer labels',await p.evaluate(()=>document.querySelectorAll('#archive-toggle').length===1&&!/再找找|已处理/.test(document.querySelector('#product').innerText)&&document.querySelectorAll('.insight-card').length===2));
+ check('refresh above the first card',await p.evaluate(()=>document.querySelector('#refresh').getBoundingClientRect().bottom<=document.querySelector('.insight-card').getBoundingClientRect().top));
+ await shot('01-initial');
+ await p.click('#archive-toggle');
+ check('mixed records share one expanded list',await p.evaluate(()=>document.querySelectorAll('.archive-row').length===2&&document.querySelector('#archive-toggle').getAttribute('aria-expanded')==='true'));
+ await p.evaluate(()=>{const el=document.querySelector('#feed-scroll');el.scrollTop=el.scrollHeight});await shot('02-expanded');
+ await p.click('[data-action="restore"][data-key="inbox:shared"]');
+ check('restore is bound to kind and ID',await p.evaluate(()=>!!document.querySelector('.insight-card[data-key="inbox:shared"]')&&!document.querySelector('.insight-card[data-key="idea:shared"]')&&document.querySelectorAll('.archive-row').length===1));
+ await p.reload();await p.waitForSelector('.insight-card[data-key="inbox:shared"]');
+ check('restored state survives reload',await p.evaluate(()=>document.querySelectorAll('.insight-card').length===3&&document.querySelectorAll('.archive-row').length===1));
+ await p.click('[data-action="restore"][data-key="idea:shared"]');
+ check('empty folded list disappears and focus remains useful',await p.evaluate(()=>document.querySelector('#archive').hidden&&document.activeElement.id==='refresh'&&document.querySelectorAll('.insight-card').length===4));
+ await p.click('[data-scene="initial"]');
+ await p.click('[data-action="menu"][data-key="inbox:release"]');
+ check('menu supports keyboard focus',await p.evaluate(()=>document.activeElement.dataset.action==='fold'));
+ await p.keyboard.press('Escape');
+ check('Escape returns focus to menu opener',await p.evaluate(()=>document.activeElement.dataset.action==='menu'&&document.activeElement.getAttribute('aria-expanded')==='false'));
+ await p.click('[data-action="menu"][data-key="inbox:release"]');await p.click('[data-action="fold"][data-key="inbox:release"]');
+ check('fold changes visibility without claiming completion',await p.evaluate(()=>!document.querySelector('.insight-card[data-key="inbox:release"]')&&!document.querySelector('#ack').hidden&&!document.querySelector('#product').innerText.includes('已完成')));
+ await shot('03-fold-undo');await p.click('#undo');
+ check('undo restores the exact card',await p.evaluate(()=>!!document.querySelector('.insight-card[data-key="inbox:release"]')&&document.querySelector('#ack').hidden));
+ await p.fill('#draft','保留我的问题。');
+ await p.click('.insight-card[data-key="idea:feedback"] [data-action="ask"]');
+ check('ask prepares a precise local draft without losing input',await p.evaluate(()=>document.querySelector('#draft').value.startsWith('保留我的问题。')&&document.querySelector('#quote-slot').innerText.includes('试用反馈开始集中到同一个问题')));
+ await p.reload();await p.waitForSelector('#remove-quote');
+ check('draft and quote survive reload',await p.evaluate(()=>document.querySelector('#draft').value.includes('保留我的问题。')&&!!document.querySelector('#remove-quote')));
+ await p.click('#remove-quote');
+ check('remove quote preserves draft',await p.evaluate(()=>!document.querySelector('#remove-quote')&&document.querySelector('#draft').value.includes('保留我的问题。')));
+ await p.click('.insight-card[data-key="idea:feedback"] summary');
+ check('source reveals synthetic evidence',await p.evaluate(()=>document.querySelector('.insight-card[data-key="idea:feedback"] details').open));
+ await shot('04-source-draft');
+ await p.click('[data-scene="failure"]');await p.click('#refresh');
+ check('refresh exposes a disabled busy state',await p.evaluate(()=>document.querySelector('#refresh').disabled&&document.querySelector('#refresh').getAttribute('aria-busy')==='true'));
+ await p.waitForFunction(()=>!document.querySelector('#refresh-error').hidden);
+ check('refresh failure preserves current cards and allows retry',await p.evaluate(()=>document.querySelectorAll('.insight-card').length===2&&!document.querySelector('#refresh').disabled&&document.querySelector('#refresh').innerText.includes('重新查找')));
+ await shot('05-refresh-failure');await p.click('#refresh');
+ await p.waitForSelector('.insight-card[data-key="idea:new-observation"]');
+ check('retry adds a new observation once',await p.evaluate(()=>document.querySelectorAll('.insight-card[data-key="idea:new-observation"]').length===1));
+ await p.click('#refresh');await p.waitForFunction(()=>!document.querySelector('#refresh').disabled);
+ check('repeated refresh does not duplicate cards',await p.evaluate(()=>document.querySelectorAll('.insight-card').length===3));
+ await p.click('[data-scene="empty"]');
+ check('empty state has refresh and no useless folded entry',await p.evaluate(()=>!!document.querySelector('.feed-empty')&&!document.querySelector('#refresh').disabled&&document.querySelector('#archive').hidden));
+ await shot('06-empty');
+ await p.click('[data-scene="expanded"]');await p.click('#theme-toggle');
+ check('dark theme applies',await p.evaluate(()=>document.documentElement.dataset.theme==='dark'));await shot('07-dark');
+ for(const width of [900,660,390]){
+  await p.cdp('Emulation.setDeviceMetricsOverride',{width,height:850,deviceScaleFactor:1,mobile:false});
+  await p.waitForFunction(w=>innerWidth===w&&document.querySelector('#product').getBoundingClientRect().right<=innerWidth+1,width);
+  check('no horizontal overflow at '+width,await p.evaluate(()=>{const product=document.querySelector('#product'),rect=product.getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth&&rect.left>=-1&&rect.right<=innerWidth+1&&[...document.querySelectorAll('.insight-card,.archive-row')].every(n=>n.scrollWidth<=n.clientWidth+1)}));
+  await shot('08-narrow-'+width);
+ }
+ await p.cdp('Emulation.clearDeviceMetricsOverride');await p.click('#theme-toggle');await p.click('[data-scene="initial"]');
+ check('mock makes no API or external resource calls',await p.evaluate(()=>performance.getEntriesByType('resource').every(e=>e.name.startsWith(location.origin+'/')&&!e.name.includes('/api/'))));
+ check('network calls are blocked by page policy',await p.evaluate(()=>document.querySelector('meta[http-equiv="Content-Security-Policy"]').content.includes("connect-src 'none'")));
+ await p.click('.back-link');await p.waitForSelector('a[href="insight-cleanup/index.html"]');
+ check('unified Mock navigation links the new proposal',true);
+ await p.click('a[href="insight-cleanup/index.html"]');await p.waitForSelector('#archive-toggle');
+ await shot('09-final');
+ await fs.writeFile(out+'/final-ax.txt',await p.snapshot());
+ const files=['mock/opstwins/insight-cleanup/index.html','mock/opstwins/insight-cleanup/styles.css','mock/opstwins/insight-cleanup/app.js','mock/opstwins/app.js'];
+ const hashes={};for(const file of files)hashes[file]=crypto.createHash('sha256').update(await fs.readFile(root+'/'+file)).digest('hex');
+ await fs.writeFile(out+'/sha256.json',JSON.stringify(hashes,null,2));
+}finally{
+ await fs.writeFile(out+'/result.json',JSON.stringify({url,taskSpaceId:task.spaceId,out,checks,scope:'Static Mock and synthetic local state only; no production UI, installed app, model or execution acceptance.'},null,2));
+ console.log(JSON.stringify({out,passed:checks.filter(c=>c.pass).length,failed:checks.filter(c=>!c.pass).length,checks},null,2));
+}
+// Caller finishes this same TaskSpace after inspecting artifacts; keep p1 for design review.

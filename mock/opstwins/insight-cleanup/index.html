@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>CyberMe · 已弃用的独立拼装稿</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="studio" aria-label="原型预览控制">
+    <a href="../#overview" class="back-link">← 返回导航</a>
+    <span class="studio-title">旧提案 · 已弃用</span>
+    <span class="studio-note">Mock · 合成数据 · 不调用模型</span>
+    <div class="studio-actions">
+      <button type="button" data-scene="initial">初始</button>
+      <button type="button" data-scene="expanded">已展开</button>
+      <button type="button" data-scene="empty">空状态</button>
+      <button type="button" data-scene="failure">刷新失败</button>
+      <button type="button" id="theme-toggle" aria-pressed="false">深色</button>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+    <div class="product-frame" id="product-frame">
+      <div class="product" id="product">
+        <section class="chat" aria-label="对话参考">
+          <header class="chat-head">
+            <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div class="buddy" aria-hidden="true"><span></span><span></span><i></i></div>
+            <span class="chat-name">CyberMe</span>
+          </header>
+          <div class="conversation">
+            <div class="date-line">今天</div>
+            <p class="user-message">帮我看看最近的变化，有哪些值得关注？</p>
+            <div class="assistant-message">
+              <p>发布评审的范围有了新调整，试用反馈也开始集中到同一个问题。</p>
+              <p>我把相关来源放在洞察里了。</p>
+            </div>
+          </div>
+          <div class="composer-area">
+            <div class="composer">
+              <div id="quote-slot"></div>
+              <textarea id="draft" rows="2" aria-label="本地对话草稿" placeholder="继续聊聊…"></textarea>
+            </div>
+          </div>
+        </section>
+        <section class="insights" aria-label="洞察">
+          <nav class="panel-nav" aria-label="工作区导航">
+            <div class="tabs">
+              <a href="#" aria-current="page">洞察</a>
+              <a href="../#tasks">工作</a>
+              <a href="../#memory">记忆</a>
+              <a href="../#settings/general">设置</a>
+            </div>
+          </nav>
+          <div class="feed-toolbar">
+            <div class="refresh-error" id="refresh-error" role="alert" hidden></div>
+            <button type="button" id="refresh" class="refresh-button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7.5A7 7 0 0 1 18 6l2 2M4 16l2 2a7 7 0 0 0 11.9-1.5"/></svg><span>刷新洞察</span></button>
+          </div>
+          <div class="feed-scroll" id="feed-scroll" tabindex="-1">
+            <div class="feed" id="feed"></div>
+            <section class="archive" id="archive" hidden>
+              <button type="button" id="archive-toggle" class="archive-toggle" aria-expanded="false" aria-controls="archive-list">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="4" rx="1.5"/><path d="M5.5 8v10.5a1.5 1.5 0 0 0 1.5 1.5h10a1.5 1.5 0 0 0 1.5-1.5V8M10 12h4"/></svg>
+                <span>已收起</span>
+                <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+              </button>
+              <div id="archive-list" class="archive-list" hidden></div>
+            </section>
+          </div>
+          <div class="ack" id="ack" role="status" hidden><span>已收起</span><button type="button" id="undo">撤销</button></div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <div class="storage-note" id="storage-note" role="status" hidden>浏览器未能保存，当前预览仍可继续。</div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

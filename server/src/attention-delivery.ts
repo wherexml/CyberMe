@@ -18,8 +18,8 @@ export function planDelivery(tier:Tier,strategy:unknown,m:Modes):Plan{
  if(strategy==='quiet')return 'none';
  if(strategy==='immediate')return 'chat';
  if(strategy==='digest')return 'hold';
- if(m.blocked)return tier==='suggestion'?'none':'hold';
- if(tier==='suggestion')return m.mode==='every'?'chat':'none';
+ if(m.blocked)return 'hold';
+ if(tier==='suggestion')return m.mode==='every'?'chat':'hold';
  if(tier==='urgent')return m.mode==='digest'?'hold':'chat';
  return m.mode==='every'?'chat':'hold';
 }

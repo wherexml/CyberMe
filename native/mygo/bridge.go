@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
-	"time"
 )
 
 // workspaceRoot is set by the build script; no arbitrary path is accepted from a page.
@@ -201,7 +200,7 @@ func (b *Bridge) Request(ctx context.Context, method, path string, body json.Raw
 	}
 	req.Header.Set("X-OpsTwins-Pilot", link.Token)
 	req.Header.Set("Content-Type", "application/json")
-	client := http.Client{Timeout: 180 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := http.Client{Timeout: requestTimeout(method, route), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	r, err := client.Do(req)
 	if err != nil {
 		return response, errors.New("service_unavailable")

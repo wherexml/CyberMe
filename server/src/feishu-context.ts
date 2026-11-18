@@ -123,6 +123,31 @@ export async function queryFeishuContext(input:any){
  guard();return response(target,items,{source:'live',start,end,stale:false,limited,gaps:[...new Set(gaps)],missingParents:parents.filter(x=>!ids.has(x)).length,crossGroupCoverage:target.mode==='p2p'?'visible_allowed_groups; search_index_may_lag':'selected_group'});
 }
 
+/** Follow-up check: live read of ONE bound chat from the request anchor onward. A whole-sync success or
+ * cached syncedAt is not per-thread proof; coverage is complete only when every page was read, every
+ * sender is an open_id and every message time is exact (missing times are recovered from the raw message
+ * by exact id, like queryFeishuContext). The connection's current scope and source filter apply.
+ * Deleted/recalled messages are absent. Returns the authenticated owner so the caller can pin the account. */
+export async function readFeishuThread(target:{id:string;name?:string;mode?:string},sinceIso:string){
+ const guard=configGuard(),chatId=target.id;if(typeof chatId!=='string'||!chatId||chatId.length>200)throw new ApiError(400,'invalid_target','无效会话');
+ const scoped={chat_id:chatId,name:target.name||'',chat_mode:target.mode||''};const cfg=feishuConnection()?.config||{};
+ if(!selectedChatScope(scoped,[scoped],cfg))throw new ApiError(403,'feishu_scope_revoked','该会话已不在读取范围内');
+ const live=await liveReader(guard);const c:Chat={id:chatId,name:target.name||'',mode:target.mode||'',personId:''};const cliTime=(value:string)=>value.replace(/\.\d{3}Z$/,'+00:00');
+ const p=await live.pages(['im','+chat-messages-list','--chat-id',chatId,'--order','desc','--start',cliTime(sinceIso),'--end',cliTime(now()),'--page-size','50','--no-reactions'],5);
+ const gaps:string[]=[];if(p.limited)gaps.push('page_limit');const messages:Message[]=[];
+ for(const v of p.rows){if((v.chat_id||v.chatId)&&(v.chat_id||v.chatId)!==chatId){gaps.push('chat_identity_mismatch');continue;}if(v.sender?.id_type&&v.sender.id_type!=='open_id')gaps.push('sender_identity_unknown');const m=message(v,c,live.owner);if(!m||!matchesConnectionFilter(c,m,cfg.filter))continue;if(m.truncated)gaps.push('content_truncated');messages.push(m);}
+ let rawReads=0;
+ for(const m of messages){
+  if(m.sentAt)continue;if(rawReads++>=20){gaps.push('timestamp_read_limit');continue;}
+  try{const raw=page(await live.call(['api','GET','/open-apis/im/v1/messages/'+encodeURIComponent(m.id)])).rows.find((v:any)=>v.message_id===m.id&&v.chat_id===chatId);
+   if(!raw){gaps.push('timestamp_identity_mismatch');continue;}
+   if(raw.deleted||raw.is_deleted||raw.recalled||raw.is_recalled){m.text='';(m as any).recalled=true;continue;}
+   const t=stamp(raw.create_time);if(t)m.sentAt=t;else gaps.push('timestamp_missing');
+  }catch(e){guard();gaps.push('timestamp_read:'+(e instanceof ApiError?e.code:'failed'));}
+ }
+ guard();return {complete:!gaps.length,gaps:[...new Set(gaps)],owner:live.owner,messages:messages.filter(m=>!(m as any).recalled)};
+}
+
 /** Same-item context for automatic judgment/draft; never grants cross-person reads. */
 export function inboxCommunicationContext(item:any){
  const conversation=communicationMessages(item.messages);

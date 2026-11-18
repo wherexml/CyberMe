@@ -1,44 +1,9 @@
-import React,{useEffect,useState} from 'react';
-import {api} from './store';
+import React from 'react';
 import {validateInsightGraph} from '../../../shared/insight-visual';
 import type {InsightGraph,GraphMode} from '../../../shared/insight-visual-compiler';
 
-// Read-only: GET never triggers generation.
-// Every workspace revision clears what was shown and invalidates older responses, so a revoked source never flashes an old visual.
-// While items are still pending (generation finishes without a workspace change), the projection is polled, bounded.
-export type VisualEntry={state:'ready'|'pending'|'fallback'|'unavailable';spec?:InsightGraph;mode?:GraphMode|null;informative?:boolean};
-const POLL_MS=6000,POLL_MAX=40;
-let items:Record<string,VisualEntry>={},shownRevision:unknown,generation=0,inflight=false,again=false,polls=0,timer:ReturnType<typeof setTimeout>|undefined;
-const listeners=new Set<()=>void>();
-const emit=()=>listeners.forEach(f=>f());
-
-async function load(){
- if(inflight){again=true;return}
- inflight=true;const mine=generation;
- try{
-  const r=await api<{items:Record<string,VisualEntry>}>('GET','/api/ideas/visuals',undefined,AbortSignal.timeout(15000));
-  if(mine===generation){items=r?.items||{};emit()}
- }catch{if(mine===generation){items={};emit()}}
- finally{inflight=false}
- if(again){again=false;return load()}
- schedule();
-}
-function schedule(){
- clearTimeout(timer);
- if(!listeners.size||polls>=POLL_MAX||!Object.values(items).some(x=>x.state==='pending'))return;
- timer=setTimeout(()=>{polls++;void load()},POLL_MS);
-}
-function onRevision(revision:unknown){
- // Remount with the same revision resumes pending polling instead of stalling.
- if(revision===shownRevision){if(!inflight)schedule();return}
- shownRevision=revision;generation++;polls=0;items={};emit();void load();
-}
-export function useInsightVisuals(revision:unknown){
- const [,tick]=useState(0);
- useEffect(()=>{const f=()=>tick(x=>x+1);listeners.add(f);onRevision(revision);return()=>{listeners.delete(f);if(!listeners.size)clearTimeout(timer)}},[revision]);
- // Before the effect runs for a new revision, nothing from the old revision may render (no stale frame).
- return revision===shownRevision?items:{};
-}
+// publication: present only when a new insight is withheld because its visual failed (cause code only).
+export type VisualEntry={state:'ready'|'pending'|'fallback'|'unavailable';spec?:InsightGraph;mode?:GraphMode|null;informative?:boolean;publication?:{status:string;cause:string|null;retryable:boolean;running?:boolean}};
 /** The client re-checks the spec against the record's own saved text before drawing anything; never throws. */
 export function readyVisual(entry:VisualEntry|undefined,idea:{title?:string;description?:string;evidence?:any[]}):InsightGraph|null{
  try{

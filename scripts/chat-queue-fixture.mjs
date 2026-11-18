@@ -1,0 +1,40 @@
+// Isolated production API/SDK + controlled SSE provider + built V6. Synthetic data only.
+// Build: npx vite build --config web/mygo.vite.config.ts --outDir ../.local/chat-queue-web
+// Run: node --import tsx scripts/chat-queue-fixture.mjs
+import {mkdir,writeFile,readFile} from 'node:fs/promises';
+import {resolve,extname} from 'node:path';
+import {createServer} from 'node:http';
+import {randomUUID} from 'node:crypto';
+import {serve} from '@hono/node-server';
+import {Hono} from 'hono';
+const scope=resolve(process.env.CHAT_QUEUE_SCOPE||('.local/acceptance/chat-queue-'+randomUUID())),root=resolve('.local/chat-queue-web');
+await mkdir(scope,{recursive:true,mode:0o700});
+await writeFile(scope+'/config.json',JSON.stringify({llm:{baseUrl:'http://127.0.0.1:46832/v1',apiKey:'public-fixture-key',api:'openai-completions',model:'public-queue'}}),{mode:0o600});
+Object.assign(process.env,{OPSTWIN_DATA_DIR:scope,OPSTWIN_PRIVATE_DIR:scope,OPSTWIN_API_PORT:'46831',OPSTWIN_NO_BACKGROUND:'1',OPSTWIN_NO_LISTEN:'1',OPSTWIN_MEMORY_BACKGROUND:'0',OPSTWIN_NOTIFICATION_DELIVERY:'off',OPSTWIN_AUTONOMOUS_DELIVERY:'off'});
+const S=await import('../server/src/store.ts');S.setMeta('initialized',true);
+S.patchSettings({identity:{name:'公开排队验收',language:'zh-CN'},autonomy:{holdSending:true}});
+if(!S.get('conversations','queue-primary'))S.put('conversations',{id:'queue-primary',title:'连续消息验收',status:'active'});
+S.setMeta('primaryConversationId','queue-primary');
+const seen=[],held=new Map();let failReads=0,posts=0;
+const text=m=>typeof m?.content==='string'?m.content:(m?.content||[]).map(p=>p.text||'').join('');
+const model=createServer(async(req,res)=>{let raw='';for await(const b of req)raw+=b;const body=JSON.parse(raw),messages=body.messages||[],last=text([...messages].reverse().find(m=>m.role==='user'));
+ const tag=last.match(/QUEUE-[A-Z0-9-]+/)?.[0]||'QUEUE-OTHER';
+ seen.push({tag,roles:messages.map(m=>m.role),all:messages.map(text).join('\n')});
+ res.writeHead(200,{'content-type':'text/event-stream'});
+ const chunk=(delta,finish_reason=null)=>res.write('data: '+JSON.stringify({id:tag,object:'chat.completion.chunk',created:1,model:body.model,choices:[{index:0,delta,finish_reason}]})+'\n\n');
+ chunk({role:'assistant',content:''});
+ const done=()=>{if(res.destroyed)return;chunk({content:tag+' 已完成。'});chunk({},'stop');res.end('data: [DONE]\n\n');held.delete(tag)};
+ if(tag.includes('HOLD'))held.set(tag,done);else done();
+ res.on('close',()=>held.delete(tag));
+});
+await new Promise(r=>model.listen(46832,'127.0.0.1',r));
+const {app}=await import('../server/src/index.ts');const gate=new Hono();
+gate.get('/fixture/state',c=>c.json({seen,held:[...held.keys()],posts,requests:S.db.prepare('SELECT id,state FROM chat_requests ORDER BY rowid').all(),works:S.list('chat_work_items').map(w=>({id:w.id,status:w.status}))}));
+gate.post('/fixture/release',async c=>{const {tag}=await c.req.json();held.get(tag)?.();return c.json({released:tag})});
+gate.post('/fixture/fail-reads',async c=>{failReads=(await c.req.json()).count||0;return c.json({failReads})});
+gate.post('/fixture/work',async c=>{const x=await c.req.json();S.put('chat_work_items',{id:'queue-existing-work',conversationId:'queue-primary',...x});return c.json({ok:true})});
+gate.all('/api/*',c=>{if(c.req.method==='POST'&&c.req.path==='/api/chat')posts++;if(c.req.method==='GET'&&c.req.path.startsWith('/api/chat/requests/')&&failReads>0){failReads--;return c.json({error:'synthetic_temporary_read_failure'},503)}return app.fetch(c.req.raw)});
+gate.get('*',async c=>{const p=resolve(root,c.req.path==='/'?'cyberme.html':c.req.path.slice(1));if(!p.startsWith(root+'/'))return c.notFound();try{c.header('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2','.svg':'image/svg+xml','.png':'image/png'})[extname(p)]||'application/octet-stream');return c.body(await readFile(p))}catch{return c.notFound()}});
+const server=serve({fetch:gate.fetch,hostname:'127.0.0.1',port:46831});
+console.log('Synthetic queue fixture http://127.0.0.1:46831');
+process.on('SIGTERM',()=>{server.closeAllConnections();server.close();model.closeAllConnections();model.close();S.db.close();process.exit(0)});

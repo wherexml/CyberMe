@@ -8,24 +8,20 @@ export const desktopNotifications={
  status:()=>host()!.call('DesktopNotifications.Status'),
  configure:(enabled:boolean,version:string)=>host()!.call('DesktopNotifications.Configure',enabled,version),
  test:()=>host()!.call('DesktopNotifications.Test'),
+ takeOpen:()=>host()!.call('DesktopNotifications.TakeOpen') as Promise<string>,
 };
 export function installWindowChrome(closeFront:()=>boolean){
  window.OpsTwinsWindowChrome={closeFrontSurface:closeFront};
  if(!host())return()=>{};
- const region=(e:Event)=>{const t=e.target;if(!(t instanceof Element)||t.closest(interactive))return null;return t.closest('[data-drag-region]') as HTMLElement|null;};
- const dbl=(e:MouseEvent)=>{if(e.button===0&&region(e)){e.preventDefault();void host()?.window?.toggleMaximize()}};
- const down=(e:PointerEvent)=>{
-  if(e.button!==0)return;const el=region(e);if(!el)return;e.preventDefault();
-  const pointer=e.pointerId,start={x:e.screenX,y:e.screenY};let active=true,pending:{x:number;y:number}|null=null,moving=false,origin:{x:number;y:number}|null=null;
-  el.setPointerCapture(pointer);
-  const flush=async()=>{if(moving||!origin||!active)return;moving=true;try{while(active&&pending){const p=pending;pending=null;await host()!.call('WindowChrome.Move',Math.round(origin.x+p.x-start.x),Math.round(origin.y+p.y-start.y))}}catch{}finally{moving=false}};
-  const move=(ev:PointerEvent)=>{if(!active||ev.pointerId!==pointer)return;pending={x:ev.screenX,y:ev.screenY};void flush()};
-  const end=(ev:PointerEvent|{pointerId:number})=>{if(ev.pointerId!==pointer)return;active=false;pending=null;el.removeEventListener('pointermove',move);el.removeEventListener('pointerup',end as any);el.removeEventListener('pointercancel',end as any);el.removeEventListener('lostpointercapture',end as any);if(el.hasPointerCapture(pointer))el.releasePointerCapture(pointer)};
-  el.addEventListener('pointermove',move);el.addEventListener('pointerup',end as any);el.addEventListener('pointercancel',end as any);el.addEventListener('lostpointercapture',end as any);
-  host()!.call('WindowChrome.Position').then((v:any)=>{if(!active)return;origin=v;void flush()}).catch(()=>end({pointerId:pointer}));
- };
- document.addEventListener('dblclick',dbl);document.addEventListener('pointerdown',down);
- return()=>{document.removeEventListener('dblclick',dbl);document.removeEventListener('pointerdown',down)};
+ // MyGO forwards these regions to AppKit's performWindowDragWithEvent:.
+ // One native drag owns the gesture, including display origins/scales and release.
+ // Its mousedown handler also owns double-click zoom; do not toggle a second time.
+ const style=document.createElement('style');
+ style.dataset.windowChrome='native';
+ style.textContent=`[data-drag-region]{--app-region:drag;user-select:none}
+ [data-drag-region] :is(${interactive}),[data-drag-region] :is(${interactive}) *{--app-region:no-drag}`;
+ document.head.append(style);
+ return()=>style.remove();
 }
 // Signed update flow. The native side owns source, signature and install checks.
 export const update={

@@ -1,3 +1,4 @@
+import {preciseMessageTime} from './communication-context';
 import {existsSync, mkdirSync, readFileSync, realpathSync, statSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {DATA, ROOT, db, get, put, list, hash, now, meta, setMeta} from './store';
@@ -6,6 +7,19 @@ import {selectedChatScope, unresolvedScopes, matchesConnectionFilter} from './co
 import {extractMessageText} from './feishu-visible-text';
 import {profileAvatar} from './message-presentation';
 import {meetingNoteLinksFromMessage, parseMeetingNote, normalizeMeetingTranscript} from './feishu-meeting-note';
+
+// Repair only missing event metadata from the exact already-indexed source. Never use sync time.
+export function backfillMeetingTimes(){
+ let updated=0;
+ const records=new Map(list('feishu_records').filter(r=>r.kind==='minutes').map(r=>[r.sourceId,r]));
+ for(const m of list('memories')){
+  if(m.category!=='meeting'||m.sourceSystem!=='feishu-cli'||!m.sourceManaged||m.eventAt)continue;
+  const record=records.get(m.sourceId),eventAt=preciseMessageTime(record?.payload?.createdAt);
+  if(!eventAt)continue;
+  put('memories',{...m,eventAt});updated++;
+ }
+ return {updated};
+}
 
 export type SyncScope='all'|'chats'|'minutes'|'mail';
 export const syncScopes:SyncScope[]=['all','chats','minutes','mail'];
@@ -162,7 +176,10 @@ export async function collectFeishu(scope:SyncScope='chats',progress:(patch:any)
    const fetchDoc=async(id:string)=>{const e=await call(['docs','+fetch','--doc',id,'--doc-format','markdown','--detail','simple','--scope','full'],90000);const d=e.data?.document??e.data;const content=d?.content??d?.markdown;if(typeof content!=='string'||!content.trim())throw new ApiError(502,'empty_document','文档正文为空');return content;};
    const markdown=await fetchDoc(link.documentId),parsed=parseMeetingNote(markdown,link.documentId);const transcript=parsed.transcriptDocumentId?normalizeMeetingTranscript(await fetchDoc(parsed.transcriptDocumentId)):'';
    const payload={...parsed,...link,markdown,transcript};if(record('minutes',link.documentId,payload))result.changed++;result.counts.minutes++;
-   const id='feishu-minute-'+link.documentId,prior=get('memories',id);const content=markdown+(transcript?'\n\n'+transcript:'');if((!prior||prior.sourceManaged===true&&prior.sourceContentHash&&hash(prior.content)===prior.sourceContentHash)&&(!prior||prior.title!==parsed.title||prior.content!==content))put('memories',{...prior,id,title:parsed.title,content,sourceContentHash:hash(content),category:'meeting',sourceManaged:true,sourceSystem:'feishu-cli',sourceId:link.documentId});
+   const id='feishu-minute-'+link.documentId,prior=get('memories',id),eventAt=preciseMessageTime(parsed.createdAt);const content=markdown+(transcript?'\n\n'+transcript:'');
+   const canUpdate=!prior||prior.sourceManaged===true&&prior.sourceContentHash&&hash(prior.content)===prior.sourceContentHash;
+   if(canUpdate&&(!prior||prior.title!==parsed.title||prior.content!==content||eventAt&&eventAt!==prior.eventAt))put('memories',{...prior,id,title:parsed.title,content,sourceContentHash:hash(content),category:'meeting',sourceManaged:true,sourceSystem:'feishu-cli',sourceId:link.documentId,...(eventAt?{eventAt}:{})});
+   else if(prior?.sourceManaged===true&&!prior.eventAt&&eventAt)put('memories',{...prior,eventAt});
   }catch(e){fail('meeting_document',e,link.documentId);}
  }catch(e){fail('minutes',e);}
  if(scope==='all'||scope==='mail')try{

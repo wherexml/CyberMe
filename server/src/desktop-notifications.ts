@@ -1,25 +1,41 @@
 import type {Hono} from 'hono';
-import {get,list,meta,setMeta,now,uid} from './store';
+import {db,get,list,meta,setMeta,now,uid} from './store';
 import {ApiError} from './integrations';
-import {currentIdeaReminder} from './ideas-chat';
+import {currentIdeaReminder,ideaReminderValidator} from './ideas-chat';
+import {DIGEST_GAP_MS} from './attention-delivery';
 import {notificationPreview} from './notifications';
 
 const KEY='desktop-notifications-v1';
 type Receipt={status:'submitted'|'accepted'|'denied'|'failed'|'suppressed';at:string};
-type State={enabled:boolean;enabledAt?:string;version:string;receipts:Record<string,Receipt>};
+type State={enabled:boolean;enabledAt?:string;digestStartedAt?:string;version:string;receipts:Record<string,Receipt>};
 const state=()=>meta<State>(KEY,{enabled:false,version:'initial',receipts:{}});
-// Native routing and copy only cover idea reminders, so requests and send recovery stay in-app until that is verified.
-// Quiet hours block everything here, including what the settings logic would call urgent.
+// Include tombstones when choosing the latest digest so withdrawal never promotes an older one.
+const latestDigest=db.prepare(`SELECT id,deleted,data FROM entities
+ WHERE type='messages' AND id GLOB 'inbox-digest-*' AND json_extract(data,'$.conversationId')=?
+ ORDER BY json_extract(data,'$.createdAt') DESC,rowid DESC LIMIT 1`);
 function eligible(s:State,claimedId?:string){
  if(!s.enabled||!s.enabledAt)return [];
- const policy:any=notificationPreview();if(policy.action==='blocked'||policy.quiet||policy.action!=='immediate')return [];
+ const policy=notificationPreview();if(policy.action==='blocked'||policy.quiet)return [];
  const primary=get('conversations',meta('primaryConversationId',''));if(!primary||primary.sideChat||primary.archived)return [];
- return list('messages').filter(m=>m.conversationId===primary.id&&Date.parse(m.createdAt)>Date.parse(s.enabledAt!)&&Date.now()-Date.parse(m.createdAt)<86400000&&(!s.receipts[m.id]||m.id===claimedId)&&currentIdeaReminder(m)).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).slice(0,25);
+ const enabledAt=Date.parse(s.enabledAt),at=Date.now();
+ const unclaimed=(id:string)=>!s.receipts[id]||id===claimedId;
+ if(policy.mode==='every')return list('messages').filter(m=>m.conversationId===primary.id&&Date.parse(m.createdAt)>enabledAt&&at-Date.parse(m.createdAt)<86400000&&unclaimed(m.id)&&currentIdeaReminder(m)).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)).slice(0,25);
+ if(!s.digestStartedAt||!['urgent_digest','digest'].includes(policy.mode||''))return [];
+ const row=latestDigest.get(primary.id) as {id:string;deleted:number;data:string}|undefined;
+ if(!row||row.deleted||!unclaimed(row.id))return [];
+ const digest=JSON.parse(row.data),created=Date.parse(digest.createdAt),a=digest.inboxAnalysis;
+ if(!(created>Math.max(enabledAt,Date.parse(s.digestStartedAt))&&at-created<DIGEST_GAP_MS)||a?.kind!=='inbox-analysis-v1'||a.digest!==true||!Array.isArray(a.entries))return [];
+ const ideas=a.entries.filter((e:any)=>e?.kind==='idea'&&typeof e.entityId==='string'&&typeof e.revision==='string'&&typeof e.visualFingerprint==='string');
+ if(!ideas.length)return [];
+ const valid=ideaReminderValidator();
+ return ideas.some((e:any)=>valid(e.entityId,e.revision,e.visualFingerprint))?[digest]:[];
 }
 /** A restored reminder was already seen: it must not become eligible just because it has no receipt. */
 export function suppressDesktopNotification(id:string){const s=state();if(!s.receipts[id])setMeta(KEY,{...s,receipts:{...s.receipts,[id]:{status:'suppressed',at:now()}}});}
 function overview(){const s=state();return {enabled:s.enabled,enabledAt:s.enabledAt,version:s.version,pending:eligible(s).map(m=>({id:m.id})),lastReceipt:Object.values(s.receipts).filter(r=>r.status!=='suppressed').sort((a,b)=>b.at.localeCompare(a.at))[0]||null};}
 export function mountDesktopNotifications(app:Hono){
+ const initial=state();
+ if(!initial.digestStartedAt)setMeta(KEY,{...initial,digestStartedAt:now()});
  app.get('/api/native/notifications',c=>{c.header('Cache-Control','no-store');return c.json(overview());});
  app.patch('/api/native/notifications',async c=>{
   const b=await c.req.json(),s=state();if(typeof b.enabled!=='boolean')throw new ApiError(400,'invalid_enabled','通知开关无效');

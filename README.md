@@ -4,7 +4,7 @@
 
 个人 AI 工作区，连接对话、收件箱、灵感、任务与记忆。macOS 客户端基于 MyGO，业务状态保存在本机 SQLite；外部服务的使用取决于用户配置和授权。
 
-[下载 CyberMe](https://github.com/wherexml/CyberMe-updates/releases/latest) · [公开规格](docs/public/README.md)
+[官网](https://cyberme.pages.dev/) · [下载 CyberMe](https://github.com/wherexml/CyberMe-updates/releases/latest) · [公开规格](docs/public/README.md)
 
 ## 本地开发
 
@@ -40,4 +40,4 @@ node node_modules/vite/bin/vite.js build --config web/mygo.vite.config.ts
 
 资源输出到 `.local/mygo-web/`。单独托管这些静态文件不会自动接通 `/api`；需配套同源后端或原生桥。默认 `npm run dev` 仍启动原 Web 入口，不能用于证明 V6 原生安装完成。
 
-界面与能力边界见 [V6 规格](docs/public/cyberme-v6.md)，接口规则见 [V6 数据契约](docs/public/v6-data-contract.md)，本次变更见 [中文提交说明](docs/public/changes/2026-11-05-v6.md)。
+界面见 [V6 规格](docs/public/cyberme-v6.md)，接口见 [V6 数据契约](docs/public/v6-data-contract.md)，近期变更见 [2026-11-18 提交说明](docs/public/changes/2026-11-18-v6.md)。静态官网的源码、复验和发布入口见 [官网规格](website/README.md)。

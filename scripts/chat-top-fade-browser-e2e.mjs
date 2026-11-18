@@ -14,12 +14,12 @@ try{
   await page.waitForFunction(()=>{const e=document.querySelector('.cm-chat-scroll');return e.scrollTop>0});
   await page.evaluate(()=>{const e=document.querySelector('.cm-chat-scroll');e.dispatchEvent(new Event('wheel',{bubbles:true}));e.scrollTop=0});await settle();
   const top=await page.evaluate(()=>{const e=document.querySelector('.cm-chat-scroll'),r=e.getBoundingClientRect(),m=e.querySelector('[data-mid]').getBoundingClientRect();return {gap:m.top-r.top,mask:getComputedStyle(e).maskImage,overflow:e.scrollWidth-e.clientWidth,headerMask:getComputedStyle(e.previousElementSibling).maskImage,composerMask:getComputedStyle(document.querySelector('textarea')).maskImage}});
-  check(theme+width+' first message fully visible',top.gap>=32);check(theme+width+' gradient scoped without horizontal overflow',top.mask.includes('32px')&&top.overflow<=1&&top.headerMask==='none'&&top.composerMask==='none');
+  check(theme+width+' first message fully visible',top.gap>=96);check(theme+width+' gradient scoped without horizontal overflow',top.mask.includes('96px')&&top.overflow<=1&&top.headerMask==='none'&&top.composerMask==='none');
   await page.evaluate(()=>document.querySelector('.cm-chat-scroll').scrollTop=220);await settle();
   measurements.push({theme,width,...top,viewport:await page.evaluate(()=>{const r=document.querySelector('.cm-chat-scroll').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})});
   await page.screenshot({path:out+'/'+theme+'-'+width+'.png'});
   await page.evaluate(()=>{const e=document.querySelector('.cm-chat-scroll');e.scrollTop=e.scrollHeight});await settle();
-  check(theme+width+' last message fully visible',await page.evaluate(()=>{const e=document.querySelector('.cm-chat-scroll'),r=e.getBoundingClientRect(),m=e.querySelector('[data-mid="fade-message-5"]').getBoundingClientRect();return m.bottom<=r.bottom&&m.top>=r.top+32}));
+  check(theme+width+' last message fully visible',await page.evaluate(()=>{const e=document.querySelector('.cm-chat-scroll'),r=e.getBoundingClientRect(),m=e.querySelector('[data-mid="fade-message-5"]').getBoundingClientRect();return m.bottom<=r.bottom&&m.top>=r.top+96}));
  }
  await page.cdp('Emulation.clearDeviceMetricsOverride');
  await page.evaluate(()=>document.querySelector('.cm-chat-scroll').scrollTop=220);await settle();

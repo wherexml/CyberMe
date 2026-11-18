@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Sign nested Mach-O code before sealing the app; no secret export."""
-import subprocess,json,hashlib,os,argparse,re
+import subprocess,json,hashlib,os,argparse,re,plistlib
 from pathlib import Path
 parser=argparse.ArgumentParser()
 parser.add_argument('--evidence-tag',default='20261016')
@@ -14,7 +14,11 @@ identity='F3C065FE2C81D5863813D53ED81B3FF41540D901'
 private=root/('.local/signing/standalone-'+args.evidence_tag);private.mkdir(parents=True,exist_ok=True)
 node_ent=private/'node-entitlements.plist';node_ent.write_text('<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/><key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>')
 app_ent=private/'app-entitlements.plist'
-app_ent.write_text('<?xml version="1.0"?><plist version="1.0"><dict></dict></plist>')
+info=plistlib.loads((app/'Contents/Info.plist').read_bytes())
+app_ent.write_bytes(plistlib.dumps(
+ {'com.apple.security.personal-information.calendars':True}
+ if info.get('NSCalendarsFullAccessUsageDescription') else {}
+))
 magic={bytes.fromhex(x) for x in ['feedface','feedfacf','cefaedfe','cffaedfe','cafebabe','bebafeca','cafebabf','bfbafeca']}
 paths=[]
 for p in app.rglob('*'):

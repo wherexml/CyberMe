@@ -49,6 +49,7 @@ export function snoozeActive(item:any,at=Date.now()):boolean{
 }
 /** Only exact evidence attaches an idea to a live decision. Same thread, sources, sender or title never does. */
 export function ideaAttachedDecision(idea:any,inbox:any[]):any|undefined{
+ if(['information','delegation'].includes(idea?.intent))return;
  // A message can contain several independent matters. Only an explicit relationship may attach an idea.
  const binding=idea?.requestBinding;if(!binding)return;
  for(const e of Array.isArray(idea?.evidence)?idea.evidence:[]){
@@ -124,7 +125,8 @@ function matterQuiet(id:string,inbox:any[]){
  try{const a=inboxAttention(row);return a.state==='quiet'&&a.surface==='none'}catch{return false}
 }
 /** Display suppression only: every exact link is a quiet, resolved matter. It never marks the idea done. */
-export function ideaSourcesClosed(idea:{sourceIds?:string[]},inbox:any[]){
+export function ideaSourcesClosed(idea:{sourceIds?:string[];intent?:string},inbox:any[]){
+ if(['information','delegation'].includes(idea.intent||''))return false;
  const ids=Array.isArray(idea.sourceIds)?idea.sourceIds:[];
  return ids.length>0&&ids.every(id=>matterQuiet(id,inbox));
 }

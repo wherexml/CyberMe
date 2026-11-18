@@ -19,7 +19,7 @@ export function memoryEntries(folders:MemoryFolder[]):MemoryEntry[]{
   return parts.filter(p=>p.trim()).map((text,i)=>({key:`${f.idx}:${i}`,title:f.title,text:excerpt(text),category:memoryCategory(f.idx===-1?'':f.title,text),view:`section:${f.idx}` as MemoryView}));
  });
 }
-export function MemoryHome({zh,people,folders,entries,automatic,onOpen}:{zh:boolean;people?:PeopleLibrary;folders:MemoryFolder[];entries:MemoryEntry[];automatic:any[];onOpen:(view:MemoryView)=>void}){
+export function MemoryHome({zh,people,entries,automatic,onOpen}:{zh:boolean;people?:PeopleLibrary;entries:MemoryEntry[];automatic:any[];onOpen:(view:MemoryView)=>void}){
  const owner=people?.owner,self=people?.people.find(p=>p.aliases.some(a=>owner?.aliases.includes(a)));
  const name=owner?.name||'',role=self?.role||owner?.role;
  const tile=(title:string,icon:string,view:MemoryView,preview?:string)=><button type="button" key={view} className="mem-folder" data-memory-folder={view} onClick={()=>onOpen(view)}>
@@ -36,11 +36,11 @@ export function MemoryHome({zh,people,folders,entries,automatic,onOpen}:{zh:bool
   <div className="mem-section-heading">{zh?'记忆资料':'Your memories'}</div>
   <div className="mem-folder-grid">
    {memoryCategories.filter(c=>c.id!=='identity').map(c=>tile(zh?c.zh:c.en,c.icon,`category:${c.id}`,entries.find(e=>e.category===c.id)?.text||automatic.find(m=>memoryCategory('',m.content,m.category)===c.id)?.content))}
+   {entries.some(e=>e.category==='notes')?tile(zh?'其他记忆':'Other memories','knowledge','category:notes',entries.find(e=>e.category==='notes')?.text):null}
    {tile(zh?'人物档案':'People','team','people',people?.people.map(p=>p.name).slice(0,4).join('、'))}
    {tile(zh?'自动记住':'Learned automatically','knowledge','automatic',automatic[0]?.content)}
   </div>
-  {folders.length?<><div className="mem-section-heading">{zh?'原始笔记':'Source notes'}</div><div className="mem-source-list">{folders.map(f=><button key={f.idx} className="mem-settings-entry" data-memory-folder={`section:${f.idx}`} onClick={()=>onOpen(`section:${f.idx}`)}><ContentArtwork title={f.title} size={28}/><span className="mem-folder-title">{f.title}</span><I n="caret-right"/></button>)}</div></>:null}
-  <button className="mem-settings-entry" data-memory-folder="soul" onClick={()=>onOpen('soul')}><ContentArtwork iconKey="workflow" size={32}/><span>{zh?'身份与 Agent 设定':'Identity & agent settings'}</span><I n="caret-right"/></button>
+
  </>;
 }
 export function MemoryCategoryDetail({zh,id,entries,people,onOpen,onAdd,disabled}:{zh:boolean;id:string;entries:MemoryEntry[];people?:PeopleLibrary;onOpen:(view:MemoryView)=>void;onAdd:()=>void;disabled:boolean}){
@@ -54,13 +54,15 @@ export function MemoryCategoryDetail({zh,id,entries,people,onOpen,onAdd,disabled
 export function MemoryPeople({zh,library,personId,onOpen}:{zh:boolean;library:PeopleLibrary;personId?:string;onOpen:(view:MemoryView)=>void}){
  const [q,setQ]=useState('');
  const person=library.people.find(p=>p.id===personId);
+ const statusLabel=(s:'active'|'left')=>s==='left'?(zh?'已离职':'Left'):(zh?'在岗':'Active');
  const eventTime=(v:string|null)=>{if(!v||!Number.isFinite(Date.parse(v)))return zh?'时间待确认':'Time unconfirmed';return new Date(v).toLocaleString(zh?'zh-CN':'en-GB',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})};
  const kind=(v:string)=>({delegation:zh?'交办':'Delegation',commitment:zh?'承诺':'Commitment',progress:zh?'进展':'Progress',decision:zh?'决策':'Decision',information:zh?'信息':'Information'}[v]||v);
  if(personId&&!person)return <p className="mem-empty" role="status">{zh?'该人物档案已不可用':'This profile is no longer available'}</p>;
  if(person)return <div data-person-profile={person.id} className="mem-person-detail">
   <header className="mem-person-heading"><span className="mem-person-avatar">{person.name.slice(0,1)}</span><div><h2>{person.name}</h2><p>{person.role}</p></div></header>
-  <div className="mem-person-facts">{person.relationship?<div><span>{zh?'与你的关系':'Relationship to you'}</span><strong>{person.relationship}</strong></div>:null}{person.reviewedAt?<div><span>{zh?'资料更新':'Profile updated'}</span><span>{person.reviewedAt}</span></div>:null}</div>
-  <details className="mem-source" open><summary>{zh?'原始档案':'Source profile'}</summary><div className="mem-source-body"><Md text={person.markdown}/></div>{person.truncated?<p className="mem-empty">{zh?'档案较长，此处显示前 12,000 字符':'Showing the first 12,000 characters'}</p>:null}</details>
+  <div className="mem-person-facts">{person.chatStatus?<div data-person-status><span>{zh?'状态':'Status'}</span><strong>{statusLabel(person.chatStatus.status)}</strong></div>:null}{person.relationship?<div><span>{zh?'与你的关系':'Relationship to you'}</span><strong>{person.relationship}</strong></div>:null}{person.reviewedAt?<div><span>{zh?'档案日期':'Profile date'}</span><span>{person.reviewedAt}</span></div>:null}</div>
+  {person.chatStatus?<details className="mem-source"><summary>{zh?'聊天来源':'Chat source'} · {eventTime(person.chatStatus.reportedAt)}</summary><div className="mem-source-body"><blockquote>{person.chatStatus.content}</blockquote></div></details>:null}
+  <details key={person.chatStatus?'archive':'profile'} className="mem-source" open={!person.chatStatus}><summary>{zh?'原始档案':'Source profile'}</summary><div className="mem-source-body"><Md text={person.markdown}/></div>{person.truncated?<p className="mem-empty">{zh?'档案较长，此处显示前 12,000 字符':'Showing the first 12,000 characters'}</p>:null}</details>
   <h3 className="mem-section-heading">{zh?'跟踪记录':'Tracking history'}</h3>
   {person.observations.length?person.observations.slice().reverse().map((o,i)=><article className="mem-observation" key={o.key||i}><div className="mem-observation-meta"><span>{kind(o.kind)}</span><time dateTime={o.eventAt||undefined}>{eventTime(o.eventAt)}</time></div><p>{o.summary}</p><details><summary>{zh?'来源':'Sources'}</summary>{o.evidence.map((e,j)=><div className="mem-evidence" key={j}><span>{e.actor==='owner'?(zh?'本人发言':'Your message'):e.actor==='other'?(zh?'对方发言':'Other speaker'):(zh?'发言方向待确认':'Speaker direction unconfirmed')}</span><blockquote>{e.quote}</blockquote><span>{e.sourceId}{e.messageId?' / '+e.messageId:''}</span><time>{eventTime(e.eventAt)}</time></div>)}</details></article>):<p className="mem-empty">{zh?'暂无跟踪记录':'No tracking records yet'}</p>}
  </div>;
@@ -68,7 +70,7 @@ export function MemoryPeople({zh,library,personId,onOpen}:{zh:boolean;library:Pe
  return <div className="mem-people" data-memory-people>
   {library.incomplete?<p className="mem-empty" role="status">{zh?'部分资料目录暂不可读':'Some profile folders are unavailable'}</p>:null}
   {library.people.length?<label className="mem-search"><I n="magnifying-glass"/><input value={q} onChange={e=>setQ(e.target.value)} placeholder={zh?'搜索人物':'Search people'} aria-label={zh?'搜索人物':'Search people'}/></label>:null}
-  <div className="mem-people-list">{people.map(p=><button className="mem-person-row" key={p.id} onClick={()=>onOpen(`person:${p.id}`)}><span className="mem-person-avatar">{p.name.slice(0,1)}</span><span className="mem-person-label"><strong>{p.name}</strong><span>{p.role||p.relationship}</span></span><I n="caret-right"/></button>)}</div>
+  <div className="mem-people-list">{people.map(p=><button className="mem-person-row" key={p.id} onClick={()=>onOpen(`person:${p.id}`)}><span className="mem-person-avatar">{p.name.slice(0,1)}</span><span className="mem-person-label"><strong>{p.name}</strong><span>{p.chatStatus?.status==='left'?statusLabel('left'):p.role||p.relationship}</span></span><I n="caret-right"/></button>)}</div>
   {!people.length?<p className="mem-empty">{q?(zh?'没有匹配的人物':'No matching people'):(zh?'暂无人物档案':'No people profiles yet')}</p>:null}
  </div>;
 }

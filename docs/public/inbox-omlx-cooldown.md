@@ -29,3 +29,30 @@
 - 复验：`scripts/acknowledgement-http-e2e.mjs`（隔离 HTTP 46897、受控矛盾结果）、`scripts/acknowledgement-real-http-e2e.mjs`（HTTP 46896、实际本地 oMLX、公开合成消息）。产物保存在本机忽略目录 `output/acknowledgement-filter-20261106/`。
 
 本轮结果：39项专项HTTP、冻结候选同旅程39项、重复卡片回归25项、注意力回归129项、冷却/草稿回归27项及类型检查通过。实际本地模型17组会话的19项行为断言通过；其中一条承诺重算的矛盾输出由失败保护拒绝，不能当作模型判断成功。已安装签名构建 `1793964205267`，27项安装版检查通过，原生退出重开完成。239条既有记录的草稿、回执、状态和发送键保持；1个无关来源会话在安装前正常同步，单独记录而不回滚。私有报告见忽略目录 `output/acknowledgement-filter-20261106/REPORT.md`，本次未公证或公开发布。
+
+## 2026-11-12 洞察卡「起草回复」的冷却等待（界面）
+
+服务端冷却保护不变：`copilotGate` 冷却中时分析返回 `409 inbox_cooling`（`detail.notBefore` 为持久截止时间），已有请求的草稿返回 `reply_not_ready`。本节只改界面如何呈现这一正常等待。
+
+实现前失败场景：
+
+- 安装版在有效飞书冷却期内仍可提交 `draft_reply`，并把正常等待显示成红色失败（已确认一条 attention_op 以 `inbox_cooling` 失败）。
+- 过期草稿（`draftStale`）不能冒充当前可审阅草稿，也不能在来源稳定前被覆盖。
+- 看似可起草的卡片可能与较新的来源更新竞争：原请求必须保持被拒绝，不盲目重放，不自动启动模型。
+- 新消息会延长截止时间；旧计时器不能解锁新版本。
+- 等待必须在不重载、不切换标签、后台计时器节流或残留错误的情况下到期；到期不表示已完成分析或草稿。
+- 等待只锁起草：不锁转任务、推迟/忽略、其他卡片或输入框，也不阻止查看当前有效的已保存草稿。
+- 已回复/未知来源的 `reply_not_ready`、权限/过期/来源变化、真实模型失败和未知结果仍按原失败或恢复语义如实显示。
+- 渲染、计时器、聚焦、冷却中的点击和回读都不调用任务、发送或模型；就绪后点击只发出一次明确请求。
+- （复核补充）到期时若只按时间过滤，首次到期渲染会在核对完成前解锁；`ctx.refresh` 吞掉读取错误，不能证明已成功读取规范数据。核对读取被挂起或失败时不得解锁。
+- （复核补充）共享的 `useEntityAction` 屏蔽了冷却错误，而消息下方的类型化动作（`MessageActions.tsx`）不显示等待，点击后静默无反应。
+
+界面规则（`web/src/v6/attention.ts` `useDraftCooling`，`web/src/v6/Brief.tsx`）：
+
+- 已知冷却：飞书来源（`channel` 为 feishu 且非 `virtual-im`）、`copilot.state==='pending'` 且 `copilot.notBefore` 在未来。起草按钮禁用，文案「等待消息稳定」/ “Waiting for messages to settle”，不加横幅或倒计时。当前有效草稿（有草稿且非 `draftStale`）仍显示「查看草稿」并可打开。
+- 竞争：起草请求返回 `inbox_cooling` 时按返回的 `detail.notBefore` 进入同样的中性等待；回读到操作以 `inbox_cooling` 失败但没有截止时间时，直接进入等待并由一次精确读取决定。不显示红色错误或残留提示，不排队，不重放。
+- 截止时间取规范 `copilot.notBefore` 与竞争返回时间中较晚者，以“记录 ID + 来源签名 + 截止时间”标识。本会话中看到过的未来截止时间（模块级，重挂载保留）或竞争时间到期后，只有对该记录的精确只读 `GET /api/inbox/:id` 成功、且读到的同一来源版本已无未来截止时间，才恢复按钮；读到延长则继续等待。每条记录同时只有一次读取，只有最新一代结果生效；读取挂起或失败时保持等待，每 4 秒及聚焦、可见时重试。首次看到时已过期的截止时间不需要读取（服务端仍会拒绝更新的来源版本）。
+- 消息下方的类型化动作（`MessageActions.tsx`）使用同一等待：只有「起草回复」显示「等待消息稳定」并禁用，其他动作照常。
+- 其他错误码保持原有失败或恢复呈现：拒绝（如 `reply_not_ready`）仍为卡片内红色错误；真实模型失败由既有执行恢复卡片呈现（「草稿生成失败」，可忽略或查看详情），均不显示冷却等待。
+
+验收（协调方执行）：`scripts/insight-cooling-fixture.mjs`（端口 46905，受控本地模型 46906，隔离 SQLite，合成飞书数据），`scripts/insight-cooling-http-e2e.mjs`，`scripts/insight-cooling-browser-e2e.mjs`（TaskSpace 由协调方注入的全局 `INSIGHT_COOLING_TASK` 提供，脚本不结束它）。构建输出 `.local/insight-cooling-web`，结果 `output/insight-cooling-20261112/<timestamp>/`。`scripts/brief-action-feedback-browser-e2e.mjs` 中冷却卡显示红色拒绝的旧期望由本节取代。

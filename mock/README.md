@@ -1,6 +1,22 @@
-# OpsTwins 产品 Mock
+# CyberMe 产品 Mock
 
 统一入口：**http://127.0.0.1:46400/**。
+
+## 当前版本（2026-11-11）
+
+统一入口默认展示当前 V6 稿件；经典工作区目录位于 [旧版归档](http://127.0.0.1:46400/#overview-legacy)，原 `#chat` / `#inbox` 等深链继续可用并标明旧版。
+
+- [洞察入口迭代](http://127.0.0.1:46781/insights-current.html?v=20261111-footer)：基于现有 V6 原稿，洞察流末尾一行「刷新洞察 · 忽略与推迟」，记录在原位下方展开；预览台外有恢复/刷新结果的演示控件，不重画界面。
+- [V6 当前 Mock](http://127.0.0.1:46781/v6.1-concept.html?original-v6&v=20261111-footer)：常用入口同步当前四标签与合并洞察流；早期分类稿仅留在旧版归档。
+- [11 月 6 日洞察四态对照](http://127.0.0.1:46781/insights-20261106/index.html)。
+
+生成本轮修订：`node scripts/build-insight-mock-revision.mjs`。冻结原稿保存在本机 `.local/design-preview/v6-baseline-20261111.html`。生成器核对原稿摘要和锚点，输出修订稿并同步常用 `v6.1-concept.html` 入口。静态稿服务：`python3 -m http.server 46781 --bind 127.0.0.1 --directory .local/design-preview`；已有服务则复用。
+
+页脚交互与异常状态见[公开规格](../docs/public/insight-footer.md)。底部入口用 `scripts/insight-footer-mock-browser-e2e.mjs` 复验，常用入口、中英文和归档用 `scripts/insight-mock-entry-browser-e2e.mjs` 复验。两者使用 ego-browser、本机已生成稿和合成数据。交互状态在内存，刷新即重置。旧右上角菜单的检查保留在 `scripts/insight-v6-revision-browser-e2e.mjs`。
+
+## 经典工作区（归档）
+
+以下说明及历史验收属于原经典 Mock。
 
 对话保留主会话、产品评审准备、工作流探索三组公开多轮示例。新发送及引用追问已接入真实模型，结合当前会话历史与精确选文回答；没有外部消息运输。旧默认示例精确升级，人工历史和草稿保留；预置内容在`demo-conversations.js`，最新规格见[真实模型追问](../docs/design/mock-real-chat.md)。
 
@@ -101,3 +117,7 @@ Inbox紧凑调整：Jev以42px单行保留三项判断，右侧草稿入口明�
 ## 对话对齐 Mock v2（2026-10-25）
 
 独立预览：**http://127.0.0.1:46424/**，入口 `mock/cyberme-chat-alignment-v2/index.html`。助手气泡左边缘、用户气泡右边缘分别与输入框两端对齐，单行输入框46px，多行自动增高。运行 `node scripts/cyberme-chat-alignment-mock.mjs`；只在内存演示输入与附件名称，无真实模型、外发或上传。原产品Mock与正式客户端保持原样。
+
+### 已弃用的独立拼装稿（2026-11-11）
+
+`insight-cleanup/index.html` 保留供追溯，已从当前目录移入旧版归档。用户要求基于已有 V6 原稿继续，本稿及其 26 项历史检查不作为新方案的设计依据。

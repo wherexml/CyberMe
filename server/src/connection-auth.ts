@@ -40,9 +40,9 @@ export function validateConnectionConfig(data:any,old:any={}) {
  const current={...data,config};const auth=connectionAuth(current,old.id?old:undefined);
  data.config=auth.publicConfig;
  // Capabilities and evidence are always server-owned, even when status is unchanged.
- for(const key of ['capabilities','identity','lastTestAt','message','evidence']){delete data[key];if(old[key]!==undefined)data[key]=old[key];}
+ for(const key of ['capabilities','identity','lastTestAt','message','evidence','localRead']){delete data[key];if(old[key]!==undefined)data[key]=old[key];}
  const changed=old.id&&(!sameTarget(credentialTarget(old),credentialTarget(data))||String(old.config?.authMethod||'')!==String(config.authMethod||''));
- if(changed){data.status='setup_required';data.capabilities=[];delete data.identity;delete data.lastTestAt;delete data.evidence;data.message='连接配置已变更，请重新检测';}
+ if(changed){data.status='setup_required';data.capabilities=[];delete data.identity;delete data.lastTestAt;delete data.evidence;delete data.localRead;data.message='连接配置已变更，请重新检测';}
  return data;
 }
 export function putConnection(data:any,old?:any,privateConfig?:any) {

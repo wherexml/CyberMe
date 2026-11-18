@@ -74,7 +74,8 @@ export function mountNativeApi(app:Hono){
   // without dropping older human messages outside this page.
   const inboxAnalysisIds=(db.prepare("SELECT id FROM entities WHERE type='messages' AND deleted=0 AND json_extract(data,'$.conversationId')=? AND json_extract(data,'$.inboxAnalysis.kind')='inbox-analysis-v1' ORDER BY id").all(conversationId) as {id:string}[]).map(row=>row.id);
   const ideaAnalysisIds=(db.prepare("SELECT id FROM entities WHERE type='messages' AND deleted=0 AND json_extract(data,'$.conversationId')=? AND json_extract(data,'$.ideaAnalysis.kind')='idea-insight-v1' ORDER BY id").all(conversationId) as {id:string}[]).map(row=>row.id);
-  return json(c,{items,hasMore,nextBefore:hasMore&&items.length?items[0].id:null,inboxAnalysisIds,ideaAnalysisIds});
+  const followUpReminderIds=(db.prepare("SELECT id FROM entities WHERE type='messages' AND deleted=0 AND json_extract(data,'$.conversationId')=? AND json_extract(data,'$.derivedKind')='follow-up-v1' ORDER BY id").all(conversationId) as {id:string}[]).map(row=>row.id);
+  return json(c,{items,hasMore,nextBefore:hasMore&&items.length?items[0].id:null,inboxAnalysisIds,ideaAnalysisIds,followUpReminderIds});
  });
 
  app.get('/api/native/events',c=>{

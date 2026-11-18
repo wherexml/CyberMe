@@ -205,7 +205,7 @@ try{
  pump=setInterval(()=>held.splice(0).forEach(f=>f()),20);const q3=early||await q3p;
  check('global queue is bounded and dedupes ids across requests',qs.queued<=qs.queueMax&&qs.queueMax===12&&qs.queued===10,{queued:qs.queued});
  check('overflowing request rejected atomically (nothing queued)',q3.http===429&&!row('q11')&&!row('q12'),{http:q3.http});
- await Promise.all([q1,q2]);clearInterval(pump);
+ await Promise.all([q1,q2]);clearInterval(pump);mode['样例队列'].hold=false;
  check('q0 generated once despite being requested twice',row('q0').calls===2&&row('q0').status==='ready');
  // V13 quota: no repair, status records it, background pauses
  idea('quo','样例额度：两份折扣说法不一致','公告与群消息的折扣对不上，值班人没有写明。',['甜点最多打 8 折','群里说打 9 折']);mode['样例额度']={status:429};
@@ -253,9 +253,59 @@ try{
  const pendingBefore=Object.values((await call('GET','/api/ideas/visuals')).items).filter(x=>x.state==='pending').length;
  delete process.env.CYBERME_INSIGHT_VISUALS;const cOff=calls;let tm=V.startInsightVisuals({pollMs:40});await new Promise(r=>setTimeout(r,400));clearInterval(tm);
  check('background backfill is OFF by default (no calls with pending items)',pendingBefore>0&&calls===cOff,{pendingBefore,calls:calls-cOff});
- process.env.CYBERME_INSIGHT_VISUALS='1';const cOn=calls;tm=V.startInsightVisuals({pollMs:40});for(let i=0;i<100&&calls===cOn;i++)await new Promise(r=>setTimeout(r,40));await new Promise(r=>setTimeout(r,400));clearInterval(tm);delete process.env.CYBERME_INSIGHT_VISUALS;
- check('CYBERME_INSIGHT_VISUALS=1 enables bounded background batches (≤2 records per tick)',calls>cOn&&calls-cOn<=10*3,{calls:calls-cOn});
- const max=V.visualStatus().budget.limit;S.setMeta('insight-visuals-budget-v1',{day:new Date().toISOString().slice(0,10),calls:max});const cb=calls;const exhausted=await call('POST','/api/ideas/visuals/generate',{ids:['bulk8']});check('daily budget blocks further model calls',exhausted.http===429&&calls===cb);
+ const waitFor=async(predicate)=>{for(let i=0;i<250;i++){if(predicate())return true;await new Promise(r=>setTimeout(r,20))}return false};
+ process.env.CYBERME_INSIGHT_VISUALS='1';const cOn=calls;tm=V.startInsightVisuals({pollMs:40});await waitFor(()=>calls>cOn);clearInterval(tm);delete process.env.CYBERME_INSIGHT_VISUALS;
+ check('CYBERME_INSIGHT_VISUALS=1 enables bounded background generation',await waitFor(()=>!V.visualStatus().running)&&calls>cOn&&calls-cOn<=10,{calls:calls-cOn});
+ // A late arrival can overtake old backfill without interrupting its in-flight review.
+ const readyFingerprint=row('cmp').fingerprint;
+ for(const existing of S.list('ideas'))S.put('ideas',{...existing,status:'archived'});
+ S.setMeta('insight-visuals-budget-v1',{day:new Date().toISOString().slice(0,10),calls:999});
+ const day=86400000,at=offset=>new Date(Date.now()+offset).toISOString();
+ function schedulingIdea(id,patch={},model={},evidenceAt=at(-5*day)){
+  const key='调度样例 '+id+'。';
+  const base=idea(id,key,'公告与群消息的折扣对不上，值班人没有写明。',['甜点最多打 8 折','群里说打 9 折']);
+  const src=S.get('inbox',base.sourceIds[0]);
+  S.put('inbox',{...src,messages:src.messages.map(m=>({...m,sentAt:evidenceAt}))});
+  mode[key]={first:good['样例比较'],...model};
+  return S.put('ideas',{...base,createdAt:at(-5*day),occurredAt:at(-5*day),refreshedAt:at(-5*day),...patch,evidence:base.evidence.map(e=>({...e,messageId:src.messages[0].id,occurredAt:evidenceAt}))});
+ }
+ schedulingIdea('history-inflight',{createdAt:at(-2*day),refreshedAt:at(-2*day)},{hold:true});
+ schedulingIdea('history-waiting',{occurredAt:at(day)});
+ const sequenceStart=seen.length;
+ process.env.CYBERME_INSIGHT_VISUALS='1';tm=V.startInsightVisuals({pollMs:40});
+ try{
+  check('worker starts old backfill despite an exhausted legacy counter',await waitFor(()=>held.length===1&&row('history-inflight')?.status==='running'));
+  S.put('ideas',{...S.get('ideas','history-waiting'),refreshedAt:at(0)});
+  schedulingIdea('fresh-late',{createdAt:at(-3600000),occurredAt:undefined});
+  schedulingIdea('old-with-recent-evidence',{occurredAt:undefined},{},at(-120000));
+  mode['调度样例 history-inflight。'].hold=false;
+  held.splice(0).forEach(release=>release());
+  check('late arrivals and remaining backfill all reach ready',await waitFor(()=>['history-inflight','fresh-late','old-with-recent-evidence','history-waiting'].every(id=>row(id)?.status==='ready')));
+  const order=seen.slice(sequenceStart).map(x=>x.key);
+  check('recent creation and cited event overtake cosmetic refresh and future dates',order.indexOf('调度样例 fresh-late。')>=2&&order.indexOf('调度样例 old-with-recent-evidence。')>=2&&order.indexOf('调度样例 history-waiting。')>=6,order);
+  for(const [id,status,error,repairError,model] of [
+   ['legacy-budget-failed','failed','budget',undefined,{}],
+   ['legacy-budget-rejected','rejected',undefined,'budget',{}],
+   ['legacy-budget-retry-once','failed','budget',undefined,{status:500}],
+   ['ordinary-timeout','failed','timeout',undefined,{}],
+   ['ordinary-rejected','rejected',undefined,undefined,{}]
+  ]){
+   const i=schedulingIdea(id,{},model),fingerprint=V.visualFingerprint(i);
+   S.db.prepare('INSERT INTO insight_visuals(idea_id,fingerprint,status,data,updated_at) VALUES(?,?,?,?,?)').run(id,fingerprint,status,JSON.stringify({ideaId:id,fingerprint,status,attempts:2,calls:1,error,repairError,updatedAt:at(0)}),at(0));
+  }
+  check('legacy budget failures recover at the old attempt limit',await waitFor(()=>row('legacy-budget-failed')?.status==='ready'&&row('legacy-budget-rejected')?.status==='ready'&&row('legacy-budget-retry-once')?.status==='failed'&&row('legacy-budget-retry-once')?.cause==='provider_unavailable'));
+  // Several 40ms scheduler polls: a second budget recovery or an early transient retry would add calls here.
+  await new Promise(r=>setTimeout(r,400));
+  // The transport itself may retry a 500; count scheduler attempts, not wire requests. Current contract (insight-visuals.md
+  // recovery): a provider 5xx is the transient cause provider_unavailable; it does not consume the attempt (2 legacy + 1 - 1
+  // refund = 2), is counted in transientFailures and backs off 5 min. The row no longer carries the legacy `budget` stop
+  // and a scheduling idea is not a new cohort, so the one-time recovery can never repeat.
+  const once=row('legacy-budget-retry-once'),backoffMs=Date.parse(once.retryAfter||'')-Date.now();
+  check('budget recovery is one-time and leaves unrelated terminal rows alone',once.status==='failed'&&once.error==='provider_unavailable'&&once.attempts===2&&once.transientFailures===1&&backoffMs>4*60000&&backoffMs<=5*60000&&once.calls===2&&once.requests?.length===1&&row('ordinary-timeout').calls===1&&row('ordinary-timeout').status==='failed'&&row('ordinary-rejected').calls===1&&row('ordinary-rejected').status==='rejected',{status:once.status,cause:once.cause,attempts:once.attempts,transientFailures:once.transientFailures,backoffMs,calls:once.calls,logicalRequests:once.requests?.length});
+ }finally{clearInterval(tm);delete process.env.CYBERME_INSIGHT_VISUALS;held.splice(0).forEach(release=>release())}
+ S.put('ideas',{...S.get('ideas','cmp'),status:'new'});
+ const cb=calls;
+ check('approved visual remains readable at its original fingerprint with no calls',(await item('cmp')).state==='ready'&&row('cmp').fingerprint===readyFingerprint&&calls===cb);
  // V13 unconfigured
  await writeFile(scope+'/config.json','{}');const un=await call('POST','/api/ideas/visuals/generate',{ids:['cmp']});
  check('unconfigured model: 503 and readable fallback',un.http===503&&(await item('cmp')).state!=='ready');

@@ -1,11 +1,25 @@
 export type Json = null | boolean | number | string | Json[] | {[key:string]:Json};
 export interface Entity {id:string;title?:string;createdAt?:string;updatedAt?:string;[key:string]:any}
-export interface Task extends Entity {title:string;status:string;projectId?:string;notes?:string;dueDate?:string}
+// Continuous follow-up (docs/public/follow-up.md). Server-managed: generic CRUD cannot write these fields.
+export type FollowUpState='waiting'|'checking'|'needs_judgment'|'completed'|'cancelled';
+export interface FollowUpEvidence {checkId:string;messageId:string;senderId:string;sentAt:string;replyTo?:string;textHash:string;identity:string;hint?:string;status?:'valid'|'invalid';invalidReason?:string;verifiedAt?:string;invalidatedAt?:string}
+export interface FollowUp {id:string;state:FollowUpState;revision:number;conversationId:string;
+ authority:{messageId:string;requestId?:string;runId?:string;evidence:string;operationId:string;via:'chat'|'http';contentHash?:string};
+ predicate:{kind:'reply_from_person';objective:true}|{kind:'judgment';objective:false;criterion:string};
+ binding:{adapter:'virtual-im'|'feishu'|'wechat';connectionId:string;connectionVersion:string;itemId:string;sourceId?:string;threadKey:string;group:boolean;personId:string;personName?:string;requestMessageId?:string;requestSentAt:string;anchorIdentity?:string;anchorVersion?:string};
+ schedule:{checkAt:string;cadenceMinutes:number;snoozedUntil?:string;nextCheckAt?:string;missedCatchUp:'once'};
+ candidate?:FollowUpEvidence;evidence?:FollowUpEvidence;outcome?:{at:string;by:'objective'|'user';checkId?:string;operationId?:string};
+ reviewedMessageIds?:string[];cancelReason?:string;createdAt?:string;history?:{at:string;event:string;revision:number;[key:string]:any}[]}
+/** One current derived reminder per task in its owning conversation; never memory, summary or authority. */
+export interface FollowUpReminderFields {derivedKind?:'follow-up-v1';taskId?:string;followUpId?:string;followUpRevision?:number;checkId?:string;reminderKind?:'candidate'|'completed'|'evidence_invalid'|'source_unavailable'}
+/** GET /api/conversations/:id/messages: live derived-projection ids let clients drop withdrawn cached cards. */
+export interface MessagePage {items:Message[];hasMore:boolean;nextBefore:string|null;inboxAnalysisIds?:string[];ideaAnalysisIds?:string[];followUpReminderIds?:string[]}
+export interface Task extends Entity {title:string;status:string;projectId?:string;notes?:string;dueDate?:string;followUp?:FollowUp;followUpCreated?:boolean}
 export interface InboxTriage {priority?:'high'|'medium'|'low'|'unknown';priorityReason?:string;actionType?:'reply'|'decision'|'none'|'unknown';resolution?:'open'|'replied'|'none'|'unknown';requestMessageId?:string;replyMessageId?:string;method?:'rule'|'jev'|'omlx';status:'running'|'succeeded'|'failed';route?:'no_reply'|'quick_reply'|'deep_reply'|'review';needsReply?:number;needsOwner?:number;needsDeepThink?:number;missingContext?:number;risk?:number;reason?:string;reasonConfidence?:number;model?:string;sourceVersion:string;policyVersion:string;completedAt?:string;error?:string;answers?:Record<string,any>;elapsedMs?:number;usage?:Record<string,number>}
-export interface InboxItem extends Entity {attention?:import('./inbox-attention').InboxAttention;attentionDismissal?:import('./inbox-attention').AttentionDismissal;sourceRule?:{id:string;name:string;active:boolean};title:string;sender:string;channel:string;body:string;origin:'human'|'ai';status:string;draft?:string;sourceId?:string;recipientId?:string;sensitive?:boolean;category?:string;attachments?:string[];sourceAttachments?:{id?:string;filename?:string;[key:string]:any}[];context?:string[]}
-export interface Idea extends Entity {title:string;description:string;category:string;status:string;action?:string;iconKey?:string;contentCategory?:{version?:number;label:string;inputHash:string;generatedAt:string;runId?:string}}
+export interface InboxItem extends Entity {attention?:import('./inbox-attention').InboxAttention;attentionDismissal?:import('./inbox-attention').AttentionDismissal;sourceRule?:{id:string;name:string;active:boolean;mode?:'all'|'mentions'|'exclude';mentionGate?:'mentioned'|'not_mentioned'|'unknown';reason?:string};title:string;sender:string;channel:string;body:string;origin:'human'|'ai';status:string;draft?:string;sourceId?:string;recipientId?:string;sensitive?:boolean;category?:string;attachments?:string[];sourceAttachments?:{id?:string;filename?:string;[key:string]:any}[];context?:string[]}
+export interface Idea extends Entity {title:string;description:string;category:string;status:string;action?:string;recommendation?:{label:string;prompt:string};iconKey?:string;contentCategory?:{version?:number;label:string;inputHash:string;generatedAt:string;runId?:string}}
 export interface Activity extends Entity {title:string;kind:string;status:string;detail?:string;entityId?:string;receipt?:any}
-export interface Message extends Entity {conversationId:string;role:'user'|'assistant'|'system';content:string;attachments?:string[];runId?:string}
+export interface Message extends Entity, FollowUpReminderFields {conversationId:string;role:'user'|'assistant'|'system';content:string;attachments?:string[];runId?:string}
 export interface Artifact extends Entity {name:string;mime:string;url:string;size:number;sourceIds?:string[];conversationId?:string}
 export interface Connection extends Entity {name:string;provider:string;type:string;status:string;endpoint?:string;permissions?:string[];config?:Record<string,any>}
 export interface Automation extends Entity {title:string;prompt:string;schedule:string;enabled:boolean;nextRun?:string;lastRun?:string;status?:string}

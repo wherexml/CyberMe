@@ -19,9 +19,11 @@ const exists=async p=>{try{await fs.lstat(p);return true}catch(e){if(e.code==='E
 async function inspect(){const installed=await info(current);if(!await exists(sourceRoot))return {status:'none',current:installed};await exact(sourceRoot);const candidate=path.join(sourceRoot,'CyberMe.app');if(!await exists(candidate))return {status:'none',current:installed};const available=await info(candidate);signature(candidate);if(available.dataEpoch!==installed.dataEpoch)fail('incompatible_data');let lastFailure=false;try{lastFailure=JSON.parse(await fs.readFile(sourceRoot+'/last-result.json','utf8')).status==='failed'}catch{}return {status:newer(available,installed)?'available':'current',current:installed,available,lastFailure}}
 const processList=()=>run('/bin/ps',['-ww','-axo','pid=,ppid=,command=']).split('\n').map(s=>s.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/)).filter(Boolean).map(m=>({pid:Number(m[1]),ppid:Number(m[2]),command:m[3]}));
 function sameProcess(p){return processList().some(x=>x.pid===p.pid&&x.command===p.command)}
-function ownedServices(app){const prefix=app+'/Contents/Resources/runtime/',all=processList();const owned=all.filter(p=>p.pid!==process.pid&&p.command.startsWith(prefix));for(const p of owned)if(![prefix+'bin/node --import tsx server/src/index.ts',prefix+'bin/node scripts/mygo-workspace-gateway.mjs'].includes(p.command)&&!p.command.startsWith(prefix+'node_modules/@esbuild/darwin-arm64/bin/esbuild --service='))fail('runtime_process_busy');const ids=new Set(owned.map(p=>p.pid));if(all.some(p=>ids.has(p.ppid)&&!ids.has(p.pid)&&p.command!=='<defunct>'))fail('runtime_child_busy');return owned}
+function ownedServices(app){const prefix=app+'/Contents/Resources/runtime/',all=processList();const owned=all.filter(p=>p.pid!==process.pid&&p.command.startsWith(prefix));for(const p of owned)if(![prefix+'bin/node --import tsx server/src/index.ts',prefix+'bin/node scripts/mygo-workspace-gateway.mjs'].includes(p.command)&&!p.command.startsWith(prefix+'node_modules/@esbuild/darwin-arm64/bin/esbuild --service='))fail('runtime_process_busy');return owned}
 function listeners(port){try{return run('/usr/sbin/lsof',['-nP','-t','-iTCP:'+port,'-sTCP:LISTEN']).split('\n').filter(Boolean).map(Number)}catch(e){if(e.status===1)return [];throw e}}
-async function idle(app){const owned=ownedServices(app),ids=new Set(owned.map(p=>p.pid));for(const port of [46110,46312])if(listeners(port).some(pid=>!ids.has(pid)))fail('foreign_runtime');if(listeners(46110).length){let r;try{r=await fetch('http://127.0.0.1:46110/api/runs?status=running&limit=1',{signal:AbortSignal.timeout(5000)})}catch{fail('runtime_unavailable')}if(!r.ok)fail('runtime_unavailable');const rows=await r.json();if((Array.isArray(rows)?rows:rows.items||[]).length)fail('runtime_busy')}return owned}
+// Background readers create short-lived children continuously. Agent activity is checked here;
+// children are drained after the native app exits, before any bundle is replaced.
+export async function idle(app,{ports=[46110,46312]}={}){const owned=ownedServices(app),ids=new Set(owned.map(p=>p.pid));for(const port of ports)if(listeners(port).some(pid=>!ids.has(pid)))fail('foreign_runtime');if(listeners(ports[0]).length){let r;try{r=await fetch('http://127.0.0.1:'+ports[0]+'/api/runs?status=running&limit=1',{signal:AbortSignal.timeout(5000)})}catch{fail('runtime_unavailable')}if(!r.ok)fail('runtime_unavailable');const rows=await r.json();if((Array.isArray(rows)?rows:rows.items||[]).length)fail('runtime_busy')}return owned}
 async function writeReceipt(tx,data){const raw=JSON.stringify({...data,at:new Date().toISOString()},null,2);await fs.writeFile(tx+'/receipt.json',raw,{mode:0o600});if(data.status!=='prepared'){const base=path.dirname(path.dirname(tx)),temp=base+'/.result-'+randomUUID();await fs.writeFile(temp,raw,{mode:0o600,flag:'wx'});await fs.rename(temp,base+'/last-result.json')}}
 export async function saveLock(lock,fields){const prior=JSON.parse(await fs.readFile(lock+'/owner.json','utf8'));const temp=lock+'/owner-'+randomUUID();await fs.writeFile(temp,JSON.stringify({...prior,...fields}),{mode:0o600,flag:'wx'});await fs.rename(temp,lock+'/owner.json')}
 export async function releaseLock(lock){await fs.unlink(lock+'/owner.json');await fs.rmdir(lock)}
@@ -92,7 +94,22 @@ async function prepare(){
  }catch(e){if(staged&&await exists(staged))await fs.rm(staged,{recursive:true});await releaseLock(lock);throw e}
 }
 async function healthy(){try{const r=await fetch('http://127.0.0.1:46110/api/health',{signal:AbortSignal.timeout(1500)}),b=await r.json();return r.ok&&b.ok&&b.runtimeMode==='standalone'&&listeners(46312).length>0}catch{return false}}
-async function stopServices(app){const services=await idle(app);for(const p of services)if(sameProcess(p))process.kill(p.pid,'SIGTERM');for(let n=0;n<100;n++){if(!services.some(sameProcess))return;await wait(100)}fail('runtime_exit_timeout')}
+export async function stopServices(app,{ports=[46110,46312],drainMs=10000}={}){
+ const services=await idle(app,{ports}),tracked=new Map(services.map(p=>[p.pid,p]));
+ const collect=rows=>{const ids=new Set(tracked.keys());for(let n=0;n<10;n++)for(const p of rows)if(ids.has(p.ppid)&&p.pid!==process.pid){ids.add(p.pid);if(!tracked.has(p.pid))tracked.set(p.pid,p)}};
+ collect(processList());
+ // Only the verified service processes receive normal shutdown. Never force-kill their children.
+ for(const p of services)if(sameProcess(p))process.kill(p.pid,'SIGTERM');
+ const deadline=Date.now()+drainMs;
+ do{
+  const rows=processList();collect(rows);
+  // Children may change their process title while exiting. Waiting by PID is conservative here:
+  // it never signals a child, and a reused PID can only delay/fail the update, never be killed.
+  if(!rows.some(p=>p.command!=='<defunct>'&&tracked.has(p.pid))&&ports.every(port=>listeners(port).length===0))return;
+  await wait(100);
+ }while(Date.now()<deadline);
+ fail('runtime_exit_timeout');
+}
 async function apply(tx){
  const t=JSON.parse(await fs.readFile(tx+'/transaction.json','utf8'));let moved=false,installed=false,keepLock=false;
  try{
