@@ -10,4 +10,6 @@ For model configuration and connection tests, follow `docs/public/v6-model-setti
 
 For the console, isolate control styles from generic dialog rules and verify both browser interaction and the actual installed native layout. See `docs/public/ideas-console.md` and `docs/public/validation.md`.
 
+Keep V6 memory folders accessible during reads, and scope retry and draft reconciliation to the resource involved. See [记忆资料库](docs/public/memory-library.md).
+
 Private local guidance, when present, is stored at `.local/private-project-instructions/CLAUDE.md`. Never commit private guidance, configuration, user data or historical acceptance evidence.

@@ -44,48 +44,50 @@ function project(item:any){
  const content=say(`${who}：“${excerpt}”${decision?'需要你定一下。':'还需要答复。'}${ready?'回复草稿已备好，等你确认。':''}`,`${who}: “${excerpt}” ${decision?'Needs your decision.':'Still needs a reply.'}${ready?' A draft is ready for your review.':''}`);
  return {tier:inboxTier(item),deliveryId:hash([item.id,matter.requestMessageId||'',matter.requestRevision]),matterKey:matter.key,revision:matter.requestRevision,content,itemId:item.id,requestMessageId:matter.requestMessageId,requestRevision:matter.requestRevision,occurredAt:matter.occurredAt,sourceVersion:t.sourceVersion,state:ready?'ready':'review',triageStatus:t.status,preparationStatus:p?.status,requestId:p?.requestId,runId:item.draftRunId||item.sourceProcessing?.runId,actions:[decision?'create_task':ready?'create_task':'draft_reply','snooze','dismiss']};
 }
-function digestLine(row:any,en:boolean){
+function digestLine(row:any,en:boolean,item:any){
  if(row.kind==='idea'){const idea=get('ideas',row.entityId);return idea?{occurredAt:idea.occurredAt,line:clip(line(idea.title),48)}:undefined}
- const item=get('inbox',row.entityId),value:any=project(item);if(!value||value.tier==='recovery')return;
+ const value:any=project(item);if(!value||value.tier==='recovery')return;
  return {occurredAt:value.occurredAt,line:clip(line(item.sender||item.title),16)+(en?': ':'：')+clip(line(requestText(item).replace(/\s+/g,' ')),36)};
 }
-const entryLive=(e:any,ideaValid:ReturnType<typeof ideaReminderValidator>)=>{
+const entryLive=(e:any,item:any,ideaValid:ReturnType<typeof ideaReminderValidator>)=>{
  if(e.kind==='idea')return ideaValid(e.entityId,e.revision,e.visualFingerprint);
- const item=get('inbox',e.entityId);if(item?.attention?.reason==='reevaluating_open')return inboxMatter(item).requestRevision===e.revision;
+ if(item?.attention?.reason==='reevaluating_open')return inboxMatter(item).requestRevision===e.revision;
  const v:any=project(item);return !!v&&v.matterKey===e.matterKey&&v.revision===e.revision;
 };
 function digestText(entries:any[],more:number,en:boolean){
  return [en?'Updates':'最新动态',...entries.map(e=>'- '+e.line)].join('\n');
 }
-function syncDigests(conversationId:string){
- let changed=0;const en=settings().identity.language==='en',modes=deliveryModes();
- // One fresh source snapshot per sync, never one full scan per held/delivered line.
+function syncDigests(conversationId:string,inbox:any[],items:Map<string,any>,existing:any[],modes:ReturnType<typeof deliveryModes>){
+ let changed=0;const en=settings().identity.language==='en',due=digestDue(modes);
+ // This synchronous pass only writes derived messages and ledger entries. Reuse
+ // the current Inbox snapshot for held/delivered lines and idea eligibility.
  let validateIdea:ReturnType<typeof ideaReminderValidator>|undefined;
- const ideaValid=(id:string,revision?:string,visualFingerprint?:string)=>(validateIdea??=ideaReminderValidator())(id,revision,visualFingerprint);
+ const ideaValid=(id:string,revision?:string,visualFingerprint?:string)=>(validateIdea??=ideaReminderValidator(()=>inbox))(id,revision,visualFingerprint);
  // Every line is rechecked: a resolved, snoozed or changed matter leaves the digest, and an empty digest is withdrawn.
- for(const m of list('messages').filter(x=>x.inboxAnalysis?.kind===kind&&x.inboxAnalysis.digest)){
-  const entries=m.inboxAnalysis.entries||[],live=entries.filter((e:any)=>entryLive(e,ideaValid));if(live.length===entries.length)continue;
+ for(const m of existing.filter(x=>x.inboxAnalysis.digest)){
+  const entries=m.inboxAnalysis.entries||[],live=entries.filter((e:any)=>entryLive(e,items.get(e.entityId),ideaValid));if(live.length===entries.length)continue;
   if(!live.length){remove('messages',m.id);changed++;continue}
   put('messages',{...m,content:digestText(live,m.inboxAnalysis.more||0,en),inboxAnalysis:{...m.inboxAnalysis,entries:live}});changed++;
  }
  const ready:any[]=[];
  for(const row of heldRows()){
-  const item=row.kind==='inbox'?get('inbox',row.entityId):undefined;
+  const item=row.kind==='inbox'?items.get(row.entityId):undefined;
   // A snoozed or re-judged matter keeps waiting; held work is never dropped while it is still open.
   if(item&&(snoozeActive(item)||item.attention?.reason==='reevaluating_open'))continue;
   const value:any=row.kind==='inbox'?project(item):undefined,valid=row.kind==='idea'?ideaValid(row.entityId,row.revision):!!value&&value.matterKey===row.matterKey&&value.revision===row.revision;
   if(!valid){ledgerPut(row.matterKey,row.revision,{kind:row.kind,entityId:row.entityId,tier:row.tier,decision:'suppressed',reason:'no_longer_valid'});changed++;continue}
+  if(!due)continue;
   const visualFingerprint=row.kind==='idea'?readyIdeaVisualFingerprint(get('ideas',row.entityId)):undefined;
   // A valid held insight can still be waiting for generation or a newer reviewed graph.
   if(row.kind==='idea'&&!visualFingerprint)continue;
   ready.push({...row,visualFingerprint});
  }
- if(!ready.length||!digestDue(modes))return changed;
+ if(!ready.length)return changed;
  // Withdrawal above remains immediate. A due background digest can wait
  // until the primary chat has finished; it is never part of the answer.
  if(db.prepare("SELECT 1 FROM chat_requests WHERE state='running' AND json_extract(data,'$.conversationId')=? LIMIT 1").get(conversationId))return changed;
  ready.sort((a,b)=>Number(b.tier==='urgent')-Number(a.tier==='urgent')||String(a.at).localeCompare(String(b.at))||String(a.id).localeCompare(String(b.id)));
- const entries=ready.slice(0,DIGEST_LINES).flatMap(row=>{const l=digestLine(row,en);return l?[{kind:row.kind,entityId:row.entityId,matterKey:row.matterKey,revision:row.revision,visualFingerprint:row.visualFingerprint,...l}]:[]});
+ const entries=ready.slice(0,DIGEST_LINES).flatMap(row=>{const l=digestLine(row,en,items.get(row.entityId));return l?[{kind:row.kind,entityId:row.entityId,matterKey:row.matterKey,revision:row.revision,visualFingerprint:row.visualFingerprint,...l}]:[]});
  if(!entries.length)return changed;
  const more=ready.length-entries.length,at=now(),id='inbox-digest-'+hash(entries.map(e=>[e.matterKey,e.revision])).slice(0,32);
  put('messages',{id,conversationId,role:'assistant',content:digestText(entries,more,en),inboxAnalysis:{kind,digest:true,entries,more,surfacedAt:at}});
@@ -97,13 +99,13 @@ export function syncInboxChat(){
  if(!primary||primary.sideChat||primary.archived)return;
  const existing=list('messages').filter(m=>m.inboxAnalysis?.kind===kind),byItem=new Map<string,any>();
  for(const m of existing)if(!m.inboxAnalysis.aggregate&&!m.inboxAnalysis.digest&&!byItem.has(m.inboxAnalysis.itemId))byItem.set(m.inboxAnalysis.itemId,m);
- const items=list('inbox'),ids=new Set(items.map(i=>i.id)),modes=deliveryModes();let changed=0;
+ const inbox=list('inbox'),items=new Map(inbox.map(i=>[i.id,i])),modes=deliveryModes();let changed=0;
  db.exec('BEGIN IMMEDIATE');
  try{
   // Retire old generic digests and orphaned derived messages. Canonical records
   // and all ordinary user/assistant messages stay untouched.
-  for(const old of existing)if(old.inboxAnalysis.aggregate||(!old.inboxAnalysis.digest&&!ids.has(old.inboxAnalysis.itemId))){remove('messages',old.id);changed++;}
-  for(const item of items){
+  for(const old of existing)if(old.inboxAnalysis.aggregate||(!old.inboxAnalysis.digest&&!items.has(old.inboxAnalysis.itemId))){remove('messages',old.id);changed++;}
+  for(const item of inbox){
    const old=byItem.get(item.id),value:any=project(item);
    if(!value){
     // A sibling's feedback re-judges this item; the reminder stays while the same open request is re-evaluated.
@@ -131,18 +133,18 @@ export function syncInboxChat(){
    put('messages',{...retired,id,conversationId:retired?.conversationId||primary.id,role:'assistant',content,inboxAnalysis,contextIds:[item.id]});if(retired&&!get('messages',id))restore('messages',id);
    ledgerPut(matterKey,revision,{kind:'inbox',entityId:item.id,tier,decision:'chat',reason:tier});changed++;
   }
-  changed+=syncDigests(primary.id);
+  changed+=syncDigests(primary.id,inbox,items,existing,modes);
   db.exec('COMMIT');
  }catch(error){db.exec('ROLLBACK');throw error}
  return changed;
 }
 export function startInboxChat(){
  if(!meta('inboxChatEnabledAt',null))setMeta('inboxChatEnabledAt',now());
- let scheduled=false;
- const run=()=>{scheduled=false;try{syncInboxChat()}catch{console.error(JSON.stringify({event:'inbox_chat_projection_failed'}))}};
+ let scheduled:ReturnType<typeof setTimeout>|undefined;
+ const run=()=>{clearTimeout(scheduled);scheduled=undefined;try{syncInboxChat()}catch{console.error(JSON.stringify({event:'inbox_chat_projection_failed'}))}};
  // Source sync commits many records across async reads. Coalesce them and let
  // pending HTTP/health requests run before projecting the full Inbox again.
- const schedule=()=>{if(!scheduled){scheduled=true;setTimeout(run,1000).unref()}};
+ const schedule=()=>{scheduled??=setTimeout(run,1000).unref()};
  onEntityChange(type=>{if(['inbox','inbox_triages','conversations','inbox_source_rules','inbox_feedback','connections','attention_ledger','insight_visuals'].includes(type))schedule()});
  schedule();const timer=setInterval(run,3000);timer.unref();return timer;
 }

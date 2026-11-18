@@ -8,7 +8,7 @@
 
 `GET /api/memory-library/people` 返回 `owner`（姓名、别名、角色、已有简介）、`incomplete` 与 `people`。人物项保留原档 `id/name/aliases/role/relationship/reviewedAt/markdown/truncated`，以及既有 `person_tracking` 的 `observations`（原事件时间、分类、摘要、原来源 ID、消息 ID、引用和发言方向）。不返回目录绝对路径，不执行分析或修改 Wiki；读取范围沿用已配置且符合人员模板的目录与既有截断上限。
 
-客户端四项资源独立加载，人物读取失败时停止展示旧档案详情，明确提示重试；成功刷新后不存在的档案显示不可用。人物档案日期、跟踪事件时间与界面读取时间不混用。个人文档、自动记忆、原档与跟踪记录分别读取，不因新的资料夹布局改变存储归属。
+客户端四项资源独立加载，分类入口立即可用。人物读取失败时停止展示旧档案详情，明确提示重试；成功刷新后不存在的档案显示不可用。重试与冲突重新载入只读取相关资源。人物档案日期、跟踪事件时间与界面读取时间不混用。个人文档、自动记忆、原档与跟踪记录分别读取，不因新的资料夹布局改变存储归属。
 
 本页对应 `server/src/{drafts,chat-work,native-api,agent-capabilities,index}.ts`、`shared/v6-visuals.ts` 与 `web/src/v6/`。界面入口见 [V6 规格](cyberme-v6.md)。
 

@@ -78,8 +78,8 @@ export function currentIdeaReminder(message:any){
   !support(message,new Map(sources().map(x=>[x.id,x])),inboxSnapshot()).problem;
 }
 /** Can this Idea still be mentioned at all? Used to re-check a held digest line just before and after display. */
-export function ideaReminderValidator(){
- const fresh=new Map(sources().map(x=>[x.id,x])),inbox=inboxSnapshot();
+export function ideaReminderValidator(inbox=inboxSnapshot()){
+ const fresh=new Map(sources().map(x=>[x.id,x]));
  return (id:string,revision?:string,visualFingerprint?:string)=>{const idea=resolve(id);return !!idea&&!ideaProblem(idea,fresh,true,inbox)&&idea.deliveryStrategy!=='quiet'&&(!revision||revision.split(':wake:')[0]===keys(idea,fresh).provenanceKey)&&(!visualFingerprint||visualFingerprint===readyIdeaVisualFingerprint(idea))};
 }
 /** Runs inside the caller's transaction, so Idea status, ledger and messages change together. */

@@ -30,7 +30,10 @@ async function read(key:Key){
  finally{clearTimeout(timeout);if(generation===generations[key])delete requests[key];}})();
  requests[key]={controller,promise};return promise;
 }
-export async function refreshMemory(){await Promise.all(['soul','memory','automatic','people'].map(k=>read(k as Key)));return state;}
+export async function refreshMemory(key?:Key){
+ if(key)await read(key);else await Promise.all((['soul','memory','automatic','people'] as const).map(read));
+ return state;
+}
 // A GET sent before the commit may still be in flight: drop it instead of joining it. Edited documents are never touched.
 onChatMemoryChanged(keys=>{for(const key of ['people','automatic'] as const)if(keys.includes(key)){invalidate(key);void read(key);}});
 export function cacheMemoryDocument(kind:'soul'|'memory',value:Doc){invalidate(kind);publish(kind,{value,loading:false,error:false});}

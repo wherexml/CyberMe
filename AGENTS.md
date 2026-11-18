@@ -11,6 +11,7 @@
 - For V6 reply cards, use the current inbox judgment and exact request to offer drafting. Preserve drafts and recovery receipts, and read fresh judgment data after rechecking. See `docs/public/intent-handling.md`.
 - Apply V6 dismissal and undo receipts to the exact item immediately. Reconcile the workspace in the background and guard against older snapshots. See `docs/public/intent-handling.md`.
 - For V6 models, follow the [selection, provider and test receipt contract](docs/public/v6-model-settings.md).
+- Keep the V6 memory overview navigable before reads finish. Detail loading and retry belong to the relevant resource. See [记忆资料库](docs/public/memory-library.md).
 - The ideas console is read-only. Registration, configuration, worker enablement and actual execution are separate facts; never infer completion from generation or conversion alone.
 - Update module specifications and provide precise validation boundaries in Chinese commit descriptions.
 - Workspace-local guidance, when present, remains private at `.local/private-project-instructions/AGENTS.md`; read it without publishing its contents.
