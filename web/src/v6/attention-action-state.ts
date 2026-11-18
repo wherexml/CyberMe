@@ -141,7 +141,13 @@ export function useTypedActions(ctx:Ctx,binding:AttentionBinding,types:Attention
   if(capRefused.has(key)&&(!r||!UNRESOLVED.includes(r.phase)))return {busy:false,own:true,receipt:r,error:t('待核对的操作过多，请先核对已有结果。','Too many unconfirmed actions. Check them first.'),tone:'err'};
   if(!r)return {busy:false,own:false,error:'',tone:''};
   const own=sameBinding(r.binding as AttentionBinding,binding),busy=r.phase==='pending'||reading.has(r.operationId);
-  const error=r.phase==='not_saved'?t('未保存，未提交。','Not saved, not submitted.')
+  // The judgment can move on even while the original terminal receipt remains available.
+  const item=type==='draft_reply'&&binding.entityKind==='inbox'&&r.code==='draft_judgment_required'
+   ?ctx.ws.inbox.find(x=>x.id===binding.entityId):undefined;
+  const judgmentSupersedesRefusal=item?.attention?.reason==='reevaluating_open'||
+   Date.parse(item?.triage?.completedAt||'')>Date.parse(r.at);
+  const error=judgmentSupersedesRefusal&&(r.phase==='refused'||r.phase==='failed')?''
+   :r.phase==='not_saved'?t('未保存，未提交。','Not saved, not submitted.')
    :r.phase==='unknown'||r.phase==='missing'?t('结果未确认，请查看原记录。','Result not confirmed. Check the record.')
    // A stale-binding refusal is shown after the card re-binds (that is its point); other old results never label a new request.
    :r.phase==='refused'&&(own||r.code==='action_stale')?(r.code==='action_stale'?t('事项已变化，请查看最新内容。','This item changed. Check the latest version.'):t('未能完成：','Couldn\'t finish: ')+(r.message||r.code||''))

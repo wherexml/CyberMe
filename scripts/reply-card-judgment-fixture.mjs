@@ -7,7 +7,7 @@ import {Hono} from 'hono';
 
 const port = Number(process.env.CYBERME_REPLY_FIXTURE_PORT || 47941);
 const modelPort = port + 1;
-const assets = resolve('.local/reply-card-web');
+const assets = resolve(process.env.CYBERME_REPLY_FIXTURE_ASSETS || '.local/reply-card-web');
 const parent = resolve('.local/acceptance');
 await mkdir(parent, {recursive: true});
 const scope = await mkdtemp(parent + '/reply-card-');
@@ -48,6 +48,10 @@ function seed(id, title, triage, text, time = sentAt, extra = {}) {
     sourceVersion:store.inboxTriageVersion(item), peopleFingerprint:peopleContext().fingerprint});
 }
 seed('meeting', '演示协调群', {...failed, priorOpenRequest:{requestMessageId:'meeting-q'}}, source);
+seed('waiting', '资料交接', {...open, requestMessageId:'waiting-q'}, '这周能发一下交接资料吗？');
+const waiting = store.get('inbox_triages','waiting');
+store.put('inbox_triages', {...waiting, sourceVersion:'previous-source-version'});
+seed('running', '原型演示', {status:'running', priorOpenRequest:{requestMessageId:'running-q'}}, '能发一下原型地址吗？');
 seed('unbound', '项目联络人', {...open, route:'review', resolution:'unknown', missingContext:.82},
   '这只是聊天中的一句背景消息。');
 seed('bad-time', '时间缺失的请求', {...open, requestMessageId:'bad-time-q'}, '请确认样稿的颜色。', 'unknown');
@@ -58,6 +62,9 @@ seed('saved', '设计联络组', {...open, requestMessageId:'saved-q'}, '能发�
 seed('decision', '样稿评审', {...open, route:'review', actionType:'decision', requestMessageId:'decision-q'}, '需要你决定保留哪一版样稿。');
 const {messageRevision} = await import('../shared/inbox-surfacing.ts');
 const sourceMessage = store.get('inbox','meeting').messages[0];
+const legacyRefusal = {type:'draft_reply', operationId:'legacy-draft-refusal', phase:'refused', code:'draft_judgment_required',
+  at:new Date(Date.now()-60000).toISOString(), message:'当前事项不在有效回复待处理中，请先核实判断或手动回复',
+  binding:{entityKind:'inbox',entityId:'meeting',requestMessageId:sourceMessage.id,requestRevision:messageRevision(sourceMessage)}};
 store.put('messages',{id:'previous-meeting',conversationId:'main',role:'assistant',content:'上一次判断留下的演示安排提醒。',
   inboxAnalysis:{itemId:'meeting',deliveryId:'synthetic-meeting',actions:['draft_reply','snooze'],
     requestMessageId:sourceMessage.id,requestRevision:messageRevision(sourceMessage)}});
@@ -78,6 +85,7 @@ model.post('/v1/chat/completions', async c => {
 });
 serve({fetch:model.fetch, hostname:'127.0.0.1', port:modelPort});
 const gate = new Hono();
+gate.get('/__fixture/legacy-refusal', c=>c.json(legacyRefusal));
 gate.get('/__fixture/evidence', c=>c.json({requests, sends:store.db.prepare('SELECT COUNT(*) AS n FROM send_intents').get().n}));
 gate.all('/api/*', async c=>{
   if(c.req.method === 'POST'){

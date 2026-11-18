@@ -4,7 +4,7 @@ Follow `AGENTS.md` and the public module specifications in `docs/public/`.
 
 The desktop product uses MyGO; preserve bundle identifiers, local data and update compatibility. New capability/intent observations must remain read-only, use exact linked records and preserve failed, partial and unknown outcomes.
 
-For reply cards and message actions, follow the judgment and request binding rules in `docs/public/intent-handling.md`.
+For reply cards and message actions, follow the current judgment, exact request binding and receipt display rules in `docs/public/intent-handling.md`.
 
 For model configuration and connection tests, follow `docs/public/v6-model-settings.md`.
 

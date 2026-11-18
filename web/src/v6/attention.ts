@@ -45,8 +45,8 @@ export function useAttentionAction(ctx:Ctx){
  const lock=useRef(false);
  async function run(work:()=>Promise<string|void>,failure:(e:any)=>string){
   if(lock.current)return;lock.current=true;setBusy(true);setError('');setNote('');
-  try{const done=await work();if(done)setNote(done);await ctx.refresh()}
-  catch(e:any){setError(failure(e));try{await ctx.refresh()}catch{}}
+  try{const done=await work();await ctx.refresh(true);if(done)setNote(done)}
+  catch(e:any){setError(failure(e));try{await ctx.refresh(true)}catch{}}
   finally{lock.current=false;setBusy(false)}
  }
  const reason=(e:any)=>e?.message?`：${e.message}`:'';
