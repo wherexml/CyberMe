@@ -28,7 +28,7 @@
 
 ## 模型与连接
 
-- [V6 模型设置](v6-model-settings.md)：单一当前模型、供应商管理、连接测试与回执恢复。
+- [V6 模型设置](v6-model-settings.md)：单一当前模型、供应商目录获取、批量连接测试与回执恢复。
 - [应用连接](app-connections.md)：V6 添加飞书/微信、Gmail 授权与对话查信、Agent 连接权限门禁。
 - [GitHub Issue 与 Apple 只读](github-apple-read.md)：精确 Issue 读取、Apple 日历/提醒事项授权与按需读取。
 - [连接新鲜度](connection-freshness.md)：飞书附件/精确时间、微信续页、判断重算与过期草稿保护。

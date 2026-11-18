@@ -46,10 +46,13 @@
 
 ## 供应商目录读取与批量探测
 
-供应商详情可获取目录、搜索、添加所选模型或手动填写。从目录选中模型时只改变表单，配置仍由「保存供应商」写入。端点、协议或密钥变更会清除旧目录和测试反馈。
+供应商详情提供「获取模型」「批量测试」和「手动添加」。目录可搜索和多选，已有模型按精确 ID 保留参数。模型行展开后可编辑或移除。「保存供应商」写入表单，「保存」当前模型才切换普通和深度角色。
 
-- `POST /api/settings/models/providers/discover` 接收配置版本和正在编辑的供应商连接。目录在同一来源内读取，受请求时间、分页和响应大小约束，模型 ID 去重并标明截断。手动录入可用于没有目录端点的供应商。
-- `POST /api/settings/models/provider-tests` 使用表单当前端点、协议和凭据对明确选定的模型 ID 运行固定短文本。以请求 ID 先登记批次，每批最多四路并发。相同 ID 可回读原结果，参数变化时返回冲突。
-- `GET /api/settings/models/provider-tests/:id` 回读每个模型的排队、测试中、正常、失败或未确认状态。服务重启后，已完成行继续可查，未完成行显示未确认。保存供应商和选择当前模型仍需各自明确操作。
+- `POST /api/settings/models/providers/discover` 使用配置版本及表单端点、协议和凭据。已保存密钥仅供原供应商、端点与协议使用。兼容目录及 Anthropic 分页在同源读取，DeepSeek 的 Anthropic 端点使用同源目录。请求时间、页数与响应大小有上限，结果按 ID 去重并标明截断。无目录时可手填。
+- `POST /api/settings/models/provider-tests` 以 `requestId` 登记表单模型 ID，使用该连接运行固定短文本。全局一次一批，单批最多四路并发。同 ID 同参数回读原结果，参数变化返回冲突。端点、协议或密钥变更会清除表单上的旧目录与探测反馈。
+- `GET /api/settings/models/provider-tests/:id` 回读每个模型的排队、测试中、正常、失败或未确认状态。服务重启后，已完成行继续可查，未完成行显示未确认。
+- 旧 Claude Code 兼容配置随原地址和协议保留，旧客户端可通过原字段显式更新。V6 编辑器使用现有协议选项。
 
-复验时先运行 `npm exec -- vite build --config web/mygo.vite.config.ts --outDir ../.local/v6-model-discovery-web`，然后启动 `node --import tsx scripts/v6-provider-catalog-fixture.mjs`。另开终端运行 `node scripts/v6-provider-catalog-http-e2e.mjs` 和 `ego-browser nodejs < scripts/v6-provider-catalog-browser-e2e.mjs`。默认隔离预览为 `http://127.0.0.1:46991/cyberme.html`。本轮通过 25 项 HTTP 和 16 项浏览器检查，覆盖协议差异、目录去重、手动回退、批次局部失败、丢响应回查，以及表单与已保存配置的边界。上游为受控样例。
+复验时先运行 `npm exec -- vite build --config web/mygo.vite.config.ts --outDir ../.local/v6-model-discovery-web`，然后启动 `node --import tsx scripts/v6-provider-catalog-fixture.mjs`。另开终端顺序运行 `node scripts/v6-provider-catalog-http-e2e.mjs` 和 `ego-browser nodejs < scripts/v6-provider-catalog-browser-e2e.mjs`。重复浏览器验收前启动新夹具。默认预览为 `http://127.0.0.1:46991/cyberme.html`。
+
+提交验收通过 25 项 HTTP 和 16 项浏览器检查。随后定向验收记录 25 项 HTTP、17 项浏览器检查通过，覆盖协议差异、目录分页、手填回退、版本冲突、重定向拒绝、混合结果和原 ID 回查。独立 macOS 验收包使用受控供应商，三项批次结果与界面一致。两个已配置供应商的真实目录获取成功，原配置保持。定向证据与预览 URL 位于本机 `output/v6-model-discovery/`，日常 App 使用上一构建。
